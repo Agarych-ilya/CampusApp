@@ -1,0 +1,1 @@
+export 'shedule_screen.dart';
