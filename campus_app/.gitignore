@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+#backend(python)
+__pycache__/
+backend/database_university/tests/
