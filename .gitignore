@@ -1,0 +1,69 @@
+# Miscellaneous
+
+*.class
+*.log
+*.pyc
+*.swp
+*.tmp
+*.temp
+*.bak
+*.orig
+.DS_Store
+Thumbs.db
+
+# IDE / editors
+
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Flutter / Dart / Pub
+
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Flutter generated files
+
+**/GeneratedPluginRegistrant.*
+**/generated_plugin_registrant.*
+**/doc/api/
+
+# Android
+
+android/local.properties
+android/.gradle/
+android/captures/
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android signing / keys
+
+*.jks
+*.keystore
+key.properties
+android/key.properties
+
+# Build / package artifacts
+
+app.*.symbols
+app.*.map.json
+
+# Environment / secrets
+
+.env
+.env.*
+!.env.example
+
+# Other VCS / history folders
+
+.svn/
+.history/
