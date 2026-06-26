@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth.dart';
 
@@ -16,7 +17,7 @@ class CampusApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.dark,
+      themeMode: ThemeMode.system,
       home: const AuthScreen(),
     );
   }
