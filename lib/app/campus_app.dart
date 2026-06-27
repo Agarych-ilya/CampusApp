@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
+import '/core/theme/app_theme.dart';
+import '/features/auth/auth.dart';
 
-import 'core/theme/app_theme.dart';
-import 'features/auth/auth.dart';
 
-void main() {
-  runApp(const CampusApp());
-}
 
 class CampusApp extends StatelessWidget {
   const CampusApp({super.key});
@@ -17,13 +14,8 @@ class CampusApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-<<<<<<< HEAD
-      themeMode: ThemeMode.system,
-      home: const AuthScreen(),
-=======
-      themeMode: ThemeMode.dark,
+      themeMode: ThemeMode.dark, // Переключение темы
       home: const RegisterScreen(),
->>>>>>> b1adec4 (refactor(app): extract root app widget)
     );
   }
 }
