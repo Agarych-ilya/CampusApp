@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
+import '../data/auth_api.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -10,14 +12,103 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final AuthApi _authApi = AuthApi();
+
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _repeatPasswordController =
+      TextEditingController();
+
   bool _passwordHidden = true;
   bool _repeatPasswordHidden = true;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _repeatPasswordController.dispose();
+
+    super.dispose();
+  }
+
+  Future<void> _register() async {
+    FocusScope.of(context).unfocus();
+
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final repeatPassword = _repeatPasswordController.text;
+
+    if (username.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        repeatPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Заполните все поля'),
+        ),
+      );
+      return;
+    }
+
+    if (password != repeatPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Пароли не совпадают'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final message = await _authApi.register(
+        username: username,
+        email: email,
+        password: password,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context); //Получаем текущую тему приложения
-    final textColor = theme.colorScheme.onSurface; //Получаем текущий цвет текса из темы
-    final secondaryTextColor = theme.colorScheme.onSurfaceVariant; //Второстеппенный цвет текста из темы
+    final theme = Theme.of(context);
+    final textColor = theme.colorScheme.onSurface;
+    final secondaryTextColor = theme.colorScheme.onSurfaceVariant;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -26,7 +117,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(28, 0, 28, 18),
             child: Transform.translate(
-              offset: const Offset(0, -35), // Здесь регулируется высота всего блока.
+              offset: const Offset(0, -35),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 360),
                 child: Column(
@@ -70,14 +161,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                     const SizedBox(height: 18),
 
-                    const CampusInputField(
+                    CampusInputField(
+                      controller: _usernameController,
                       hintText: 'name surname',
                       keyboardType: TextInputType.name,
                     ),
 
                     const SizedBox(height: 14),
 
-                    const CampusInputField(
+                    CampusInputField(
+                      controller: _emailController,
                       hintText: 'student@mpei.ru',
                       keyboardType: TextInputType.emailAddress,
                     ),
@@ -85,6 +178,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 14),
 
                     CampusInputField(
+                      controller: _passwordController,
                       hintText: 'password',
                       obscureText: _passwordHidden,
                       suffixIcon: IconButton(
@@ -105,6 +199,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 14),
 
                     CampusInputField(
+                      controller: _repeatPasswordController,
                       hintText: 'repeat password',
                       obscureText: _repeatPasswordHidden,
                       suffixIcon: IconButton(
@@ -124,7 +219,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                     const SizedBox(height: 22),
 
-                    const GradientButton(text: 'Зарегистрироваться'),
+                    GradientButton(
+                      text : 'Зарегистрироваться',
+                      isLoading: _isLoading,
+                      onPressed : _register,
+                    ),
 
                     const SizedBox(height: 16),
 
@@ -163,8 +262,5 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 }
-
-
-
 
 
