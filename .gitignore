@@ -67,3 +67,6 @@ app.*.map.json
 
 .svn/
 .history/
+
+# Tests
+/test/widget_test.dart
