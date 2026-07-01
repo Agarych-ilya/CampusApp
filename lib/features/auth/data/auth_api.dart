@@ -20,13 +20,13 @@ class AuthApi {
       }),
     );
 
-    final Map<String, dynamic> data = jsonDecode(response.body);
+    final data = jsonDecode(response.body);
 
-    if (response.statusCode == 201) {
-      return data['message'];
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return data['message'] ?? 'Регистрация выполнена';
     }
 
-    throw Exception(data['detail'] ?? 'Ошибка регистрации');
+    throw Exception(_getErrorMessage(data));
   }
 
   Future<Map<String, dynamic>> login({
@@ -39,12 +39,26 @@ class AuthApi {
       body: jsonEncode({'email': email, 'password': password}),
     );
 
-    final Map<String, dynamic> data = jsonDecode(response.body);
+    final data = jsonDecode(response.body);
 
-    if (response.statusCode == 200) {
+    if (response.statusCode == 200 || response.statusCode == 201) {
       return data;
     }
 
-    throw Exception(data['detail'] ?? 'Ошибка входа');
+    throw Exception(_getErrorMessage(data));
+  }
+
+  String _getErrorMessage(dynamic data) {
+    final detail = data['message'] ?? data['detail'];
+
+    if (detail is String) {
+      return detail;
+    }
+
+    if (detail is List) {
+      return detail.join('\n');
+    }
+
+    return 'Ошибка запроса';
   }
 }
