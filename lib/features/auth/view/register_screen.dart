@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
 import '../data/auth_api.dart';
+import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -239,7 +240,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         GestureDetector(
                           onTap: () {
-                            // Здесь потом будет переход на экран входа.
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const LoginScreen(),
+                              ),
+                            );
                           },
                           child: const Text(
                             'Войти',
