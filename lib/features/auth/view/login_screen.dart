@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '/app/router_app.dart';
 import '/core/theme/app_theme.dart';
-import '../widgets/widgets.dart';
 import '../data/test_auth_data.dart'; // Потом удалить
-import 'forgot_password_screen.dart';
+import '../widgets/widgets.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,12 +37,11 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (TestAuthData.isValidLogin(inputEmail: email, inputPassword: password)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Вход выполнен')));
-
-      // Здесь потом будет переход на главный экран.
+    if (TestAuthData.isValidLogin(
+      inputEmail: email, 
+      inputPassword: password
+      )) {
+      Navigator.of(context).pushReplacementNamed(AppRoutes.main);
       return;
     }
 
@@ -124,11 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const ForgotPasswordScreen(),
-                      ),
-                    );
+                    Navigator.of(context).pushNamed(AppRoutes.forgotPassword);
                   },
                 
                   child: const Text(
