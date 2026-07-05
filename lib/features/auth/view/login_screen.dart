@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '/app/router_app.dart';
 import '/core/theme/app_theme.dart';
-import '../data/test_auth_data.dart'; // Потом удалить
+import '../data/data.dart';
 import '../widgets/widgets.dart';
 
 

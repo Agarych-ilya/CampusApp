@@ -13,9 +13,9 @@ class AppRoutes {
 
 class AppRouter {
   static Map<String, WidgetBuilder> routes = {
-    AppRoutes.register:(context) => const RegisterScreen(),
+    AppRoutes.register: (context) => const RegisterScreen(),
     AppRoutes.login: (context) => const LoginScreen(),
-    AppRoutes.forgotPassword:(context) => const ForgotPasswordScreen(),
+    AppRoutes.forgotPassword: (context) => const ForgotPasswordScreen(),
     AppRoutes.main: (context) => const MainTabsScreen(),
   };
 
