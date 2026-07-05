@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '/app/router_app.dart';
 import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
-import '../data/auth_api.dart';
+import '../data/data.dart';
 
 
 class RegisterScreen extends StatefulWidget {

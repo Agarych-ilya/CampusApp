@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
-import '../data/schedule_api.dart';
-import '../data/schedule_lesson.dart';
+import '../data/data.dart';
 
+// Экран расписания.
+// Здесь отображается выбранная неделя, выбранный день и список занятий на этот день.
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
 
@@ -12,21 +14,33 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
+  // API-класс, через который экран получает расписание.
   final ScheduleApi _scheduleApi = ScheduleApi();
 
+  // Пока группа задана вручную.
+  // Позже можно будет брать её из профиля пользователя или настроек.
   static const String _groupName = 'А-03-23';
 
+  // Текущая выбранная дата.
   late DateTime _selectedDate;
+
+  // Future с расписанием на всю выбранную неделю.
+  // Важно: здесь хранится именно неделя, а не один день.
   late Future<List<ScheduleLesson>> _weekLessonsFuture;
 
   @override
   void initState() {
     super.initState();
 
+    // При открытии экрана выбираем сегодняшнюю дату.
     _selectedDate = DateTime.now();
+
+    // Загружаем расписание на неделю, в которую входит выбранная дата.
     _weekLessonsFuture = _loadWeekLessons();
   }
 
+  // Загружает расписание на всю неделю.
+  // forceRefresh = true нужен, чтобы принудительно обновить кэш.
   Future<List<ScheduleLesson>> _loadWeekLessons({bool forceRefresh = false}) {
     return _scheduleApi.getWeekSchedule(
       group: _groupName,
@@ -35,6 +49,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  // Выбор даты.
+  // Если пользователь нажал на другой день той же недели,
+  // новый запрос на сервер не делаем — просто фильтруем уже загруженную неделю.
+  //
+  // Если пользователь выбрал дату из другой недели,
+  // загружаем новую неделю.
   void _selectDate(DateTime date) {
     final oldWeekStart = _getWeekStart(_selectedDate);
     final newWeekStart = _getWeekStart(date);
@@ -42,18 +62,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     setState(() {
       _selectedDate = date;
 
+      // Если неделя изменилась, загружаем расписание новой недели.
       if (!_isSameDate(oldWeekStart, newWeekStart)) {
         _weekLessonsFuture = _loadWeekLessons();
       }
     });
   }
 
+  // Принудительно обновляет расписание выбранной недели.
+  // Используется по кнопке обновления справа сверху.
   void _refreshWeekSchedule() {
     setState(() {
       _weekLessonsFuture = _loadWeekLessons(forceRefresh: true);
     });
   }
 
+  // Показывает маленький календарь месяца.
+  // Через него можно выбрать любую дату.
   Future<void> _showMonthCalendar() async {
     await showDialog<void>(
       context: context,
@@ -69,7 +94,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           ),
           backgroundColor: Colors.transparent,
           elevation: 0,
-          child: _MonthCalendarPopup(
+          child: MonthCalendarPopup(
             selectedDate: _selectedDate,
             onDateSelected: (date) {
               _selectDate(date);
@@ -81,6 +106,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  // Возвращает понедельник недели, в которую входит переданная дата.
   DateTime _getWeekStart(DateTime date) {
     return DateTime(
       date.year,
@@ -89,12 +115,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     ).subtract(Duration(days: date.weekday - 1));
   }
 
+  // Сравнение двух дат без учёта времени.
   bool _isSameDate(DateTime firstDate, DateTime secondDate) {
     return firstDate.year == secondDate.year &&
         firstDate.month == secondDate.month &&
         firstDate.day == secondDate.day;
   }
 
+  // Преобразует дату занятия из строки формата "01.06.2026" в DateTime.
   DateTime? _parseLessonDate(String date) {
     final match = RegExp(r'(\d{1,2})\.(\d{1,2})\.(\d{4})').firstMatch(date);
 
@@ -113,6 +141,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return DateTime(year, month, day);
   }
 
+  // Фильтрует расписание всей недели и оставляет только занятия выбранного дня.
+  //
+  // Например:
+  // сервер вернул всю неделю: 01.06, 02.06, 06.06
+  // пользователь выбрал 02.06
+  // здесь останутся только занятия за 02.06.
   List<ScheduleLesson> _filterLessonsBySelectedDate(
     List<ScheduleLesson> weekLessons,
   ) {
@@ -126,6 +160,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       return _isSameDate(lessonDate, _selectedDate);
     }).toList();
 
+    // Сортируем занятия выбранного дня по времени.
     filteredLessons.sort((firstLesson, secondLesson) {
       return firstLesson.time.compareTo(secondLesson.time);
     });
@@ -145,6 +180,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           children: [
             const SizedBox(height: 20),
 
+            // Верхняя строка:
+            // слева день недели, справа месяц и кнопка обновления.
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -180,6 +217,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
+
+                    // Кнопка принудительного обновления расписания недели.
                     IconButton(
                       onPressed: _refreshWeekSchedule,
                       icon: const Icon(Icons.refresh, size: 21),
@@ -191,13 +230,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 12),
 
-            _WeekDaysRow(
+            // Строка дней текущей недели.
+            WeekDaysRow(
               selectedDate: _selectedDate,
               onDateSelected: _selectDate,
             ),
 
             const SizedBox(height: 20),
 
+            // Название группы.
             Text(
               _groupName,
               style: theme.textTheme.titleMedium?.copyWith(
@@ -208,6 +249,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 8),
 
+            // Выбранная дата текстом.
             Text(
               _formatSelectedDate(_selectedDate),
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -217,18 +259,21 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 14),
 
+            // Основная область расписания.
             Expanded(
               child: FutureBuilder<List<ScheduleLesson>>(
                 future: _weekLessonsFuture,
                 builder: (context, snapshot) {
+                  // Пока расписание загружается.
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
                       child: CircularProgressIndicator(color: AppTheme.pink),
                     );
                   }
 
+                  // Если при загрузке произошла ошибка.
                   if (snapshot.hasError) {
-                    return _ScheduleMessage(
+                    return ScheduleMessage(
                       icon: Icons.error_outline,
                       title: 'Не удалось загрузить расписание',
                       subtitle: 'Проверь, что backend запущен на порту 8000',
@@ -237,24 +282,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     );
                   }
 
+                  // Это расписание всей недели.
                   final weekLessons = snapshot.data ?? [];
 
+                  // А это уже только занятия выбранного дня.
                   final dayLessons = _filterLessonsBySelectedDate(weekLessons);
 
+                  // Если в выбранный день занятий нет.
                   if (dayLessons.isEmpty) {
-                    return const _ScheduleMessage(
+                    return const ScheduleMessage(
                       icon: Icons.event_busy_outlined,
                       title: 'Занятий нет',
                       subtitle: 'Для выбранного дня расписание не найдено',
                     );
                   }
 
+                  // Список карточек занятий выбранного дня.
                   return ListView.builder(
                     itemCount: dayLessons.length,
                     itemBuilder: (context, index) {
                       final lesson = dayLessons[index];
 
-                      return _LessonCard(
+                      return LessonCard(
                         time: lesson.time,
                         subject: lesson.subject,
                         type: lesson.type,
@@ -272,6 +321,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  // Название дня недели для верхней строки.
   String _getWeekDayName(DateTime date) {
     final weekDays = [
       'Понедельник',
@@ -286,6 +336,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return weekDays[date.weekday - 1];
   }
 
+  // Название месяца для верхней строки.
   String _getMonthName(DateTime date) {
     final months = [
       'Январь',
@@ -305,6 +356,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return months[date.month - 1];
   }
 
+  // Дата под названием группы.
   String _formatSelectedDate(DateTime date) {
     final months = [
       'января',
@@ -325,479 +377,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 }
 
-class _WeekDaysRow extends StatelessWidget {
-  const _WeekDaysRow({
-    required this.selectedDate,
-    required this.onDateSelected,
-  });
 
-  final DateTime selectedDate;
-  final ValueChanged<DateTime> onDateSelected;
 
-  @override
-  Widget build(BuildContext context) {
-    final monday = selectedDate.subtract(
-      Duration(days: selectedDate.weekday - 1),
-    );
 
-    final weekDays = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: List.generate(7, (index) {
-        final date = monday.add(Duration(days: index));
 
-        return _WeekDayItem(
-          weekDay: weekDays[index],
-          dayNumber: date.day.toString(),
-          isSelected: _isSameDate(date, selectedDate),
-          onTap: () {
-            onDateSelected(date);
-          },
-        );
-      }),
-    );
-  }
 
-  bool _isSameDate(DateTime firstDate, DateTime secondDate) {
-    return firstDate.year == secondDate.year &&
-        firstDate.month == secondDate.month &&
-        firstDate.day == secondDate.day;
-  }
-}
-
-class _WeekDayItem extends StatelessWidget {
-  const _WeekDayItem({
-    required this.weekDay,
-    required this.dayNumber,
-    required this.onTap,
-    this.isSelected = false,
-  });
-
-  final String weekDay;
-  final String dayNumber;
-  final VoidCallback onTap;
-  final bool isSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final textColor = Theme.of(context).colorScheme.onSurface;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: SizedBox(
-        width: 36,
-        child: Column(
-          children: [
-            Text(
-              weekDay,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: textColor,
-              ),
-            ),
-
-            const SizedBox(height: 4),
-
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.pink : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  dayNumber,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: isSelected ? Colors.white : textColor,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MonthCalendarPopup extends StatefulWidget {
-  const _MonthCalendarPopup({
-    required this.selectedDate,
-    required this.onDateSelected,
-  });
-
-  final DateTime selectedDate;
-  final ValueChanged<DateTime> onDateSelected;
-
-  @override
-  State<_MonthCalendarPopup> createState() => _MonthCalendarPopupState();
-}
-
-class _MonthCalendarPopupState extends State<_MonthCalendarPopup> {
-  late DateTime _visibleMonth;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _visibleMonth = DateTime(
-      widget.selectedDate.year,
-      widget.selectedDate.month,
-    );
-  }
-
-  void _showPreviousMonth() {
-    setState(() {
-      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1);
-    });
-  }
-
-  void _showNextMonth() {
-    setState(() {
-      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final firstCalendarDate = _getFirstCalendarDate();
-
-    return Container(
-      width: 320,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                onPressed: _showPreviousMonth,
-                icon: const Icon(Icons.chevron_left),
-              ),
-
-              Expanded(
-                child: Text(
-                  _getMonthTitle(_visibleMonth),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-
-              IconButton(
-                onPressed: _showNextMonth,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _CalendarWeekDayText('пн'),
-              _CalendarWeekDayText('вт'),
-              _CalendarWeekDayText('ср'),
-              _CalendarWeekDayText('чт'),
-              _CalendarWeekDayText('пт'),
-              _CalendarWeekDayText('сб'),
-              _CalendarWeekDayText('вс'),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: 42,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 4,
-              crossAxisSpacing: 4,
-            ),
-            itemBuilder: (context, index) {
-              final date = firstCalendarDate.add(Duration(days: index));
-
-              final isCurrentMonth = date.month == _visibleMonth.month;
-              final isSelected = _isSameDate(date, widget.selectedDate);
-              final isToday = _isSameDate(date, DateTime.now());
-
-              return InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () {
-                  widget.onDateSelected(date);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.pink : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: isToday && !isSelected
-                        ? Border.all(color: AppTheme.pink.withOpacity(0.5))
-                        : null,
-                  ),
-                  child: Center(
-                    child: Text(
-                      date.day.toString(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isSelected
-                            ? Colors.white
-                            : isCurrentMonth
-                            ? Colors.black
-                            : Colors.grey,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  DateTime _getFirstCalendarDate() {
-    final firstMonthDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
-
-    return firstMonthDay.subtract(Duration(days: firstMonthDay.weekday - 1));
-  }
-
-  String _getMonthTitle(DateTime date) {
-    final months = [
-      'Январь',
-      'Февраль',
-      'Март',
-      'Апрель',
-      'Май',
-      'Июнь',
-      'Июль',
-      'Август',
-      'Сентябрь',
-      'Октябрь',
-      'Ноябрь',
-      'Декабрь',
-    ];
-
-    return '${months[date.month - 1]} ${date.year}';
-  }
-
-  bool _isSameDate(DateTime firstDate, DateTime secondDate) {
-    return firstDate.year == secondDate.year &&
-        firstDate.month == secondDate.month &&
-        firstDate.day == secondDate.day;
-  }
-}
-
-class _CalendarWeekDayText extends StatelessWidget {
-  const _CalendarWeekDayText(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 34,
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Colors.grey,
-        ),
-      ),
-    );
-  }
-}
-
-class _LessonCard extends StatelessWidget {
-  const _LessonCard({
-    required this.time,
-    required this.subject,
-    required this.type,
-    required this.room,
-    required this.teacher,
-  });
-
-  final String time;
-  final String subject;
-  final String type;
-  final String room;
-  final String teacher;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 4,
-            height: 76,
-            decoration: BoxDecoration(
-              color: AppTheme.pink,
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-
-          const SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  time.isEmpty ? 'Время не указано' : time,
-                  style: const TextStyle(
-                    color: AppTheme.pink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(
-                  subject.isEmpty ? 'Занятие' : subject,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(_formatLessonInfo(), style: theme.textTheme.bodyMedium),
-
-                if (teacher.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    teacher,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.55),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatLessonInfo() {
-    final parts = [if (type.isNotEmpty) type, if (room.isNotEmpty) room];
-
-    if (parts.isEmpty) {
-      return 'Информация уточняется';
-    }
-
-    return parts.join(' • ');
-  }
-}
-
-class _ScheduleMessage extends StatelessWidget {
-  const _ScheduleMessage({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.buttonText,
-    this.onPressed,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final String? buttonText;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 54, color: AppTheme.pink),
-
-            const SizedBox(height: 16),
-
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-
-            if (buttonText != null && onPressed != null) ...[
-              const SizedBox(height: 18),
-              TextButton(
-                onPressed: onPressed,
-                child: Text(
-                  buttonText!,
-                  style: const TextStyle(
-                    color: AppTheme.pink,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
