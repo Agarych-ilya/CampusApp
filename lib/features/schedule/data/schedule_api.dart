@@ -2,8 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'schedule_cache.dart';
-import 'schedule_lesson.dart';
+import 'data.dart';
 
 class ScheduleApi {
   static const String _baseUrl = 'http://10.0.2.2:8000';

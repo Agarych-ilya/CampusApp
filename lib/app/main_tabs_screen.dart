@@ -1,7 +1,10 @@
+import 'package:campusapp/features/profile/view/profile_screen.dart';
 import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
 import '/features/schedule/schedule.dart';
+import '/features/services/services.dart';
+import '/features/profile/profile.dart';
 
 class MainTabsScreen extends StatefulWidget {
   const MainTabsScreen({super.key});
@@ -25,16 +28,8 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
       subtitle: 'Здесь потом будут сообщения',
       icon: Icons.chat_bubble_outline,
     ),
-    _EmptyTabScreen(
-      title: 'Сервисы',
-      subtitle: 'Здесь потом будут сервисы',
-      icon: Icons.apps_outlined,
-    ),
-    _EmptyTabScreen(
-      title: 'Профиль',
-      subtitle: 'Здесь потом будет профиль пользователя',
-      icon: Icons.person_outline,
-    ),
+    ServicesScreen(),
+    ProfileScreen(),
   ];
 
   @override
