@@ -639,32 +639,16 @@ class _SubjectCard extends StatelessWidget {
   final BarsSubject subject;
   final int index;
 
-  static const _accents = [
-    Color(0xFF60A5FA),
-    Color(0xFF8B8CF8),
-    Color(0xFF2DD4BF),
-    Color(0xFF38BDF8),
-    Color(0xFF64748B),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final accent = _accents[index % _accents.length];
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor = dark
-        ? const Color(0xFF333D56)
-        : const Color(0xFFD7E0EF);
-
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: _subjectSurface(context),
         borderRadius: BorderRadius.circular(21),
-        border: Border.all(color: borderColor, width: 1),
       ),
       child: Column(
         children: [
-          Container(height: 3, color: accent),
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
