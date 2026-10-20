@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '/app/router_app.dart';
+import '/features/auth/view/login_screen.dart';
+import '/features/profile/data/bars_subjects_storage.dart';
 import '/features/profile/data/student_grades_storage.dart';
 import '/features/profile/data/student_profile_storage.dart';
 import '/features/schedule/data/group_storage.dart';
@@ -16,6 +18,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final StudentProfileStorage _profileStorage = StudentProfileStorage();
 
   final StudentGradesStorage _gradesStorage = StudentGradesStorage();
+
+  final BarsSubjectsStorage _subjectsStorage = BarsSubjectsStorage();
 
   final GroupStorage _groupStorage = GroupStorage();
 
@@ -71,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await Future.wait([
         _profileStorage.clearProfile(),
         _gradesStorage.clearGrades(),
+        _subjectsStorage.clearSubjects(),
         _groupStorage.clearGroup(),
       ]);
 
@@ -150,9 +155,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTile(
                 icon: Icons.sync,
                 title: 'Обновить данные из БАРС',
-                subtitle: 'Профиль и оценки',
+                subtitle: 'Повторно загрузить предметы и оценки из БАРС',
                 onTap: () {
-                  _comingSoon('Обновление данных');
+                  // Open BARS directly: /login goes through StartupGate
+                  // and would skip it when the profile is cached.
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const LoginScreen(),
+                    ),
+                  );
                 },
               ),
             ],
