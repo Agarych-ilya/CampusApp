@@ -380,7 +380,7 @@ class _ProfileHeader extends StatelessWidget {
                   profile.fullName,
                   style: const TextStyle(
                     fontSize: 17,
-                    fontWeight: FontWeight.w850,
+                    fontWeight: FontWeight.w800,
                     height: 1.25,
                   ),
                 ),
@@ -834,7 +834,7 @@ class _ControlDetails extends StatelessWidget {
                 Text(
                   control.title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w650,
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
                 ),
