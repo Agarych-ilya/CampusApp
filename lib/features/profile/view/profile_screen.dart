@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '/features/auth/view/login_screen.dart';
+
 import '../data/bars_control.dart';
 import '../data/bars_subject.dart';
 import '../data/bars_subjects_storage.dart';
@@ -72,6 +74,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
+    // The latest academic year must be shown first regardless of fetch order.
+    values.sort((a, b) => b.compareTo(a));
     return values;
   }
 
@@ -128,70 +132,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 24),
 
-            Row(
-              children: [
-                Text(
-                  'Оценки БАРС',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-
-                const Spacer(),
-
-                if (semesters.isNotEmpty)
-                  PopupMenuButton<String>(
-                    tooltip: 'Выбрать семестр',
-                    onSelected: (value) {
-                      setState(() {
-                        _selectedSemester = value;
-                      });
-                    },
-                    itemBuilder: (context) {
-                      return semesters
-                          .map(
-                            (semester) => PopupMenuItem(
-                              value: semester,
-                              child: Text(semester),
-                            ),
-                          )
-                          .toList();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.calendar_month_outlined, size: 18),
-
-                          const SizedBox(width: 6),
-
-                          Text(
-                            _selectedSemester ?? '',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+            Text(
+              'Оценки БАРС',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            if (semesters.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: PopupMenuButton<String>(
+                  tooltip: 'Выбрать семестр',
+                  onSelected: (value) {
+                    setState(() => _selectedSemester = value);
+                  },
+                  itemBuilder: (context) => semesters
+                      .map((semester) => PopupMenuItem<String>(
+                            value: semester,
+                            child: Text(semester),
+                          ))
+                      .toList(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.calendar_month_outlined, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          _selectedSemester ?? '',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
-
-                          const SizedBox(width: 4),
-
-                          const Icon(Icons.arrow_drop_down),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_drop_down),
+                      ],
                     ),
                   ),
-              ],
-            ),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 14),
 
@@ -379,22 +369,39 @@ class _GradeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = value.trim().isEmpty ? '—' : value.trim();
+    final raw = value.trim();
+    final grade = RegExp(r'^[2-5](?=\s|$)').firstMatch(raw)?.group(0);
+    final date = grade == null
+        ? null
+        : RegExp(r'\d{1,2}\.\d{1,2}\.\d{2,4}').firstMatch(raw)?.group(0);
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 42),
+      constraints: const BoxConstraints(minWidth: 46),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontWeight: FontWeight.w800,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            grade ?? (raw.isEmpty ? '—' : raw),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+          if (date != null)
+            Text(
+              date,
+              style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -454,7 +461,24 @@ class _EmptySubjects extends StatelessWidget {
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Text('Данные БАРС пока не загружены'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Данные БАРС пока не загружены'),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const LoginScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.sync),
+            label: const Text('Загрузить оценки из БАРС'),
+          ),
+        ],
+      ),
     );
   }
 }
