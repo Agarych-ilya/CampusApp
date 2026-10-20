@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '/core/config/api_config.dart';
+
 class AuthApi {
-  static const String _baseUrl = 'http://10.0.2.2:8000';
+  static const String _baseUrl = ApiConfig.baseUrl;
 
   Future<String> register({
     required String username,
