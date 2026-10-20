@@ -24,14 +24,13 @@ class ProfileAvatarStorage {
 
   /// Returns null when the user closes the file picker.
   Future<File?> pickAndSaveAvatar() async {
-    final picked = await FilePicker.platform.pickFiles(
+    final selection = await FilePicker.pickFile(
       type: FileType.image,
-      allowMultiple: false,
     );
-    if (picked == null || picked.files.isEmpty) return null;
+    if (selection == null) return null;
 
-    final selection = picked.files.single;
-    if (selection.size > _maxBytes) {
+    final size = selection.lengthSync() ?? await selection.length();
+    if (size > _maxBytes) {
       throw const FileSystemException(
         'Выбери фотографию размером не более 15 МБ',
       );
