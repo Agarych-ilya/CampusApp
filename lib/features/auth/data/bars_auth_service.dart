@@ -434,7 +434,7 @@ class BarsAuthService {
       const attestation = parts.find(x =>
         /экзамен|зачёт|зачет|диф\.?\s*зач/i.test(x)
       ) || '';
-      const credits = parts.find(x => /\d+\s*зе\b/i.test(x)) || '';
+      const credits = parts.find(x => /\d+\s*зе(?:\s|$)/i.test(x)) || '';
 
       const subject = {
         name,
