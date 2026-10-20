@@ -356,518 +356,266 @@ class BarsAuthService {
   // ВСЕ ПРЕДМЕТЫ ИЗ "ОЦЕНКИ В БАРС"
   // ============================================================
 
+  // Load subjects from the authenticated BARS page.
+  //
+  // Android WebView does not reliably await a Promise returned from
+  // runJavaScriptReturningResult. Start the job synchronously in the page,
+  // let it fetch previous semesters, then poll its explicit state.
   Future<List<Map<String, dynamic>>> extractSubjects(
     WebViewController controller,
   ) async {
+    const pause = Duration(milliseconds: 250);
+
     try {
-      final result = await controller.runJavaScriptReturningResult(r'''
-(async () => {
-  try {
-    const clean = (value) => {
-      return (value || '')
-        .replace(/\u00A0/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
+      // The study header can appear before the marks fragment has loaded.
+      var ready = false;
+      for (var attempt = 0; attempt < 40; attempt++) {
+        final result = await controller.runJavaScriptReturningResult(r'''
+(() => Boolean(
+  document.querySelector('#ddl_StudyFilterSemester') &&
+  document.querySelector('#div-Student_SemesterSheet__Mark [data-bs-target^="#s_ss_"]')
+))();
+''');
+        if (_toBool(result)) {
+          ready = true;
+          break;
+        }
+        await Future<void>.delayed(pause);
+      }
 
-    const allSubjects = [];
+      if (!ready) {
+        debugPrint('BARS SUBJECTS: marks fragment not ready');
+        return [];
+      }
 
-    const currentUrl =
-      new URL(
-        window.location.href
-      );
+      // This script only reads the currently authenticated, same-origin
+      // study page. It never exports session credentials to Campus backend.
+      await controller.runJavaScript(r'''
+(() => {
+  const clean = value => (value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-    const studentID =
-      currentUrl.searchParams.get(
-        'studentID'
-      );
+  const job = {
+    status: 'running',
+    subjects: [],
+    currentCount: 0,
+    semesters: 0,
+    processed: 0,
+    failed: 0
+  };
+  window.__campusBarsSubjectsJob = job;
 
-    if (!studentID) {
-      return JSON.stringify([]);
-    }
+  const parseSemester = (html, semester) => {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const subjects = [];
+    const seen = new Set();
 
-    const semesterSelect =
-      document.querySelector(
-        '#ddl_StudyFilterSemester'
-      );
+    for (const header of doc.querySelectorAll('[data-bs-target^="#s_ss_"]')) {
+      const target = header.getAttribute('data-bs-target') || '';
+      if (!/^#s_ss_\d+$/.test(target) || seen.has(target)) continue;
+      seen.add(target);
 
-    if (!semesterSelect) {
-      return JSON.stringify([]);
-    }
+      const panel = doc.getElementById(target.slice(1));
+      if (!panel) continue;
 
-    const semesters =
-      Array.from(
-        semesterSelect.options
-      ).map(
-        option => ({
-          id: clean(
-            option.value
-          ),
-          name: clean(
-            option.textContent
-          )
-        })
-      );
+      const headerClone = header.cloneNode(true);
+      headerClone.querySelectorAll('.badge, button, .btn').forEach(x => x.remove());
+      const parts = clean(headerClone.textContent).split(',').map(clean).filter(Boolean);
+      if (!parts.length) continue;
 
-    const currentSemesterId =
-      clean(
-        semesterSelect.value
-      );
+      // The subject itself may contain commas (e.g. "..., часть 2").
+      const name = parts.length >= 4
+        ? clean(parts.slice(0, -3).join(', '))
+        : parts[0];
+      if (!name) continue;
 
-    // =========================================================
-    // ПАРСИНГ HTML ОДНОГО СЕМЕСТРА
-    // =========================================================
+      const attestation = parts.find(x =>
+        /экзамен|зачёт|зачет|диф\.?\s*зач/i.test(x)
+      ) || '';
+      const credits = parts.find(x => /\d+\s*зе\b/i.test(x)) || '';
 
-    const parseSemester = (
-      html,
-      semesterName
-    ) => {
-      const parsedSubjects = [];
+      const subject = {
+        name,
+        semester,
+        attestation,
+        credits,
+        currentScore: '',
+        finalGrade: '',
+        controls: []
+      };
 
-      const parser =
-        new DOMParser();
+      for (const row of panel.querySelectorAll('table tbody tr')) {
+        if (row.id && row.id.startsWith('divMERes')) continue;
+        const cells = Array.from(row.children).filter(x => x.tagName === 'TD');
+        if (!cells.length) continue;
 
-      const doc =
-        parser.parseFromString(
-          html,
-          'text/html'
-        );
+        const first = clean(cells[0].textContent).toLowerCase();
+        const last = clean(cells[cells.length - 1].textContent);
 
-      const headers =
-        Array.from(
-          doc.querySelectorAll(
-            '[data-bs-target^="#s_ss_"]'
-          )
-        );
-
-      const used =
-        new Set();
-
-      for (const header of headers) {
-        const target =
-          header.getAttribute(
-            'data-bs-target'
-          );
-
-        if (
-          !target ||
-          used.has(target)
-        ) {
+        if (first.includes('балл текущего контроля')) {
+          subject.currentScore = last;
           continue;
         }
-
-        used.add(target);
-
-        let container = null;
-
-        try {
-          container =
-            doc.querySelector(
-              target
-            );
-        } catch (_) {}
-
-        if (!container) {
+        if (first.includes('итоговая оценка')) {
+          subject.finalGrade = last;
           continue;
         }
+        if (first.includes('промежуточная аттестация') ||
+            first.includes('контрольная неделя') ||
+            first.includes('текущий контроль')) continue;
 
-        // =====================================================
-        // ЗАГОЛОВОК ПРЕДМЕТА
-        // =====================================================
+        if (cells.length !== 4 || cells[0].hasAttribute('colspan')) continue;
 
-        const clone =
-          header.cloneNode(true);
+        const titleClone = cells[0].cloneNode(true);
+        titleClone.querySelectorAll('button, .btn, [data-bs-target^="#divMERes"]')
+          .forEach(x => x.remove());
+        const title = clean(titleClone.textContent).replace(/^\d+\.\s*/, '');
+        if (!title) continue;
 
-        for (
-          const element of
-          clone.querySelectorAll(
-            '.badge, button, .btn'
-          )
-        ) {
-          element.remove();
-        }
+        const gradeClone = cells[3].cloneNode(true);
+        // A previous mark after a retake is not the current grade.
+        gradeClone.querySelectorAll('.km-retaken').forEach(x => x.remove());
 
-        const headerText =
-          clean(
-            clone.textContent
-          );
-
-        if (!headerText) {
-          continue;
-        }
-
-        const parts =
-          headerText
-            .split(',')
-            .map(clean)
-            .filter(Boolean);
-
-        let name =
-          parts.length > 0
-            ? parts[0]
-            : headerText;
-
-        let attestation = '';
-        let credits = '';
-
-        for (const part of parts) {
-          const lower =
-            part.toLowerCase();
-
-          if (
-            lower.includes(
-              'экзамен'
-            ) ||
-            lower.includes(
-              'зачёт'
-            ) ||
-            lower.includes(
-              'зачет'
-            )
-          ) {
-            attestation =
-              part;
-          }
-
-          if (
-            /зе/i.test(part)
-          ) {
-            credits =
-              part;
-          }
-        }
-
-        const controls = [];
-
-        let currentScore = '';
-        let finalGrade = '';
-
-        const rows =
-          Array.from(
-            container.querySelectorAll(
-              'table tbody tr'
-            )
-          );
-
-        for (const row of rows) {
-          if (
-            row.id &&
-            row.id.startsWith(
-              'divMERes'
-            )
-          ) {
-            continue;
-          }
-
-          const cells =
-            Array.from(
-              row.children
-            ).filter(
-              cell =>
-                cell.tagName === 'TD'
-            );
-
-          if (
-            cells.length === 0
-          ) {
-            continue;
-          }
-
-          const rowText =
-            clean(
-              row.textContent
-            );
-
-          if (!rowText) {
-            continue;
-          }
-
-          const lower =
-            rowText.toLowerCase();
-
-          // ===============================================
-          // БАЛЛ ТЕКУЩЕГО КОНТРОЛЯ
-          // ===============================================
-
-          if (
-            lower.includes(
-              'балл текущего контроля'
-            )
-          ) {
-            currentScore =
-              clean(
-                cells[
-                  cells.length - 1
-                ].textContent
-              );
-
-            continue;
-          }
-
-          // ===============================================
-          // ИТОГОВАЯ ОЦЕНКА
-          // ===============================================
-
-          if (
-            lower.includes(
-              'итоговая оценка'
-            )
-          ) {
-            finalGrade =
-              clean(
-                cells[
-                  cells.length - 1
-                ].textContent
-              );
-
-            continue;
-          }
-
-          // ===============================================
-          // ПРОМЕЖУТОЧНУЮ АТТЕСТАЦИЮ ОТДЕЛЬНО НЕ ДОБАВЛЯЕМ
-          // ===============================================
-
-          if (
-            lower.includes(
-              'промежуточная аттестация'
-            )
-          ) {
-            continue;
-          }
-
-          // ===============================================
-          // СТРОКИ КОНТРОЛЬНЫХ НЕДЕЛЬ НЕ НУЖНЫ
-          // ===============================================
-
-          if (
-            lower.includes(
-              'контрольная неделя'
-            )
-          ) {
-            continue;
-          }
-
-          // ===============================================
-          // ЗАГОЛОВОК "ТЕКУЩИЙ КОНТРОЛЬ"
-          // ===============================================
-
-          if (
-            lower.includes(
-              'текущий контроль'
-            )
-          ) {
-            continue;
-          }
-
-          // ===============================================
-          // ОБЫЧНОЕ КОНТРОЛЬНОЕ МЕРОПРИЯТИЕ
-          // ===============================================
-
-          if (
-            cells.length !== 4
-          ) {
-            continue;
-          }
-
-          const titleCell =
-            cells[0].cloneNode(
-              true
-            );
-
-          for (
-            const element of
-            titleCell.querySelectorAll(
-              'button, .btn, [data-bs-target^="#divMERes"]'
-            )
-          ) {
-            element.remove();
-          }
-
-          let title =
-            clean(
-              titleCell.textContent
-            );
-
-          title =
-            title.replace(
-              /^\d+\.\s*/,
-              ''
-            );
-
-          title =
-            clean(title);
-
-          const weight =
-            clean(
-              cells[1].textContent
-            );
-
-          const deadline =
-            clean(
-              cells[2].textContent
-            );
-
-          const grade =
-            clean(
-              cells[3].textContent
-            );
-
-          if (!title) {
-            continue;
-          }
-
-          controls.push({
-            title: title,
-            weight: weight,
-            deadline: deadline,
-            grade: grade
-          });
-        }
-
-        parsedSubjects.push({
-          name: name,
-          semester:
-            semesterName,
-          attestation:
-            attestation,
-          credits:
-            credits,
-          currentScore:
-            currentScore,
-          finalGrade:
-            finalGrade,
-          controls:
-            controls
+        subject.controls.push({
+          title,
+          weight: clean(cells[1].textContent),
+          deadline: clean(cells[2].textContent),
+          grade: clean(gradeClone.textContent)
         });
       }
-
-      return parsedSubjects;
-    };
-
-    // =========================================================
-    // ТЕКУЩИЙ СЕМЕСТР
-    // =========================================================
-
-    const currentRoot =
-      document.querySelector(
-        '#div-Student_SemesterSheet__Mark'
-      );
-
-    if (currentRoot) {
-      const option =
-        semesterSelect.options[
-          semesterSelect.selectedIndex
-        ];
-
-      const semesterName =
-        option
-          ? clean(
-              option.textContent
-            )
-          : '';
-
-      const currentSubjects =
-        parseSemester(
-          currentRoot.outerHTML,
-          semesterName
-        );
-
-      allSubjects.push(
-        ...currentSubjects
-      );
+      subjects.push(subject);
     }
+    return subjects;
+  };
 
-    // =========================================================
-    // ОСТАЛЬНЫЕ СЕМЕСТРЫ
-    // =========================================================
+  // Run the async work without returning a Promise to Android WebView.
+  const run = async () => {
+    try {
+      const root = document.querySelector('#div-Student_SemesterSheet__Mark');
+      const select = document.querySelector('#ddl_StudyFilterSemester');
+      if (!root || !select) throw new Error('marks fragment not ready');
 
-    for (
-      const semester of semesters
-    ) {
-      if (
-        semester.id ===
-        currentSemesterId
-      ) {
-        continue;
-      }
+      const currentOption = select.options[select.selectedIndex];
+      const currentName = currentOption ? clean(currentOption.textContent) : '';
+      job.subjects.push(...parseSemester(root.outerHTML, currentName));
+      job.currentCount = job.subjects.length;
 
-      try {
-        const query = {
-          ID: studentID,
-          FilterSemester: {
-            Value:
-              semester.id
-          }
-        };
+      const studentID = new URL(window.location.href).searchParams.get('studentID');
+      if (!studentID) throw new Error('study page identifier unavailable');
 
-        const params =
-          new URLSearchParams();
+      const semesters = Array.from(select.options)
+        .map(x => ({ id: clean(x.value), name: clean(x.textContent) }))
+        .filter(x => /^\d+$/.test(x.id) && x.id !== clean(select.value));
+      job.semesters = semesters.length;
 
-        params.set(
-          'studentID',
-          studentID
-        );
-
-        params.set(
-          'query',
-          JSON.stringify(
-            query
-          )
-        );
-
-        const response =
-          await fetch(
-            '/bars_web/ST_Study/Student_SemesterSheet/_PartialListStudent_SemesterSheet__Mark?' +
-            params.toString(),
-            {
+      // Limit concurrent same-origin requests to avoid overloading BARS.
+      let next = 0;
+      const worker = async () => {
+        while (next < semesters.length) {
+          const semester = semesters[next++];
+          try {
+            const query = { ID: studentID, FilterSemester: { Value: semester.id } };
+            const params = new URLSearchParams({
+              studentID: studentID,
+              query: JSON.stringify(query)
+            });
+            const url = '/bars_web/ST_Study/Student_SemesterSheet/' +
+              '_PartialListStudent_SemesterSheet__Mark?' + params.toString();
+            const response = await fetch(url, {
               method: 'GET',
-              credentials:
-                'same-origin',
-              cache:
-                'no-store',
-              headers: {
-                'X-Requested-With':
-                  'XMLHttpRequest'
-              }
-            }
-          );
-
-        if (!response.ok) {
-          continue;
+              credentials: 'same-origin',
+              cache: 'no-store',
+              headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            if (!response.ok) throw new Error('semester unavailable');
+            const html = await response.text();
+            const parsed = parseSemester(html, semester.name);
+            if (parsed.length) job.subjects.push(...parsed);
+            else job.failed++;
+          } catch (_) {
+            job.failed++;
+          } finally {
+            job.processed++;
+          }
         }
+      };
 
-        const html =
-          await response.text();
-
-        const subjects =
-          parseSemester(
-            html,
-            semester.name
-          );
-
-        allSubjects.push(
-          ...subjects
-        );
-      } catch (_) {}
+      await Promise.all([worker(), worker()]);
+      job.status = 'complete';
+    } catch (_) {
+      job.status = 'error';
     }
+  };
 
-    return JSON.stringify(
-      allSubjects
-    );
-  } catch (_) {
-    return JSON.stringify([]);
-  }
+  void run();
 })();
 ''');
 
-      final subjects = _decodeList(result);
+      // Wait for the job, but retain any current-semester data on timeout.
+      final deadline = DateTime.now().add(const Duration(seconds: 25));
+      Map<String, dynamic>? state;
 
-      debugPrint('BARS SUBJECTS: count=${subjects.length}');
+      do {
+        await Future<void>.delayed(pause);
+        final result = await controller.runJavaScriptReturningResult(r'''
+(() => {
+  const job = window.__campusBarsSubjectsJob;
+  if (!job) return JSON.stringify({ status: 'missing', subjects: [] });
+  return JSON.stringify({
+    status: job.status,
+    subjects: job.status === 'running' ? [] : job.subjects,
+    currentCount: job.currentCount,
+    semesters: job.semesters,
+    processed: job.processed,
+    failed: job.failed
+  });
+})();
+''');
+        state = _decodeMap(result);
+        if (state?['status'] == 'complete' ||
+            state?['status'] == 'error' ||
+            state?['status'] == 'missing') {
+          break;
+        }
+      } while (DateTime.now().isBefore(deadline));
 
+      // A timeout must not throw away the current semester.
+      if (state?['status'] == 'running') {
+        final result = await controller.runJavaScriptReturningResult(r'''
+(() => JSON.stringify({
+  status: 'partial',
+  subjects: window.__campusBarsSubjectsJob?.subjects || [],
+  currentCount: window.__campusBarsSubjectsJob?.currentCount || 0,
+  processed: window.__campusBarsSubjectsJob?.processed || 0,
+  failed: window.__campusBarsSubjectsJob?.failed || 0
+}))();
+''');
+        state = _decodeMap(result);
+      }
+
+      final subjects = <Map<String, dynamic>>[];
+      final items = state?['subjects'];
+      if (items is List) {
+        for (final item in items) {
+          if (item is Map) {
+            subjects.add(Map<String, dynamic>.from(item));
+          }
+        }
+      }
+
+      debugPrint(
+        'BARS SUBJECTS: status=' + (state?['status']).toString() +
+        ', current=' + (state?['currentCount']).toString() +
+        ', semesters=' + (state?['processed']).toString() +
+        '/' + (state?['semesters']).toString() +
+        ', failed=' + (state?['failed']).toString() +
+        ', count=' + subjects.length.toString(),
+      );
       return subjects;
     } catch (e) {
-      debugPrint('BARS extractSubjects error: $e');
-
+      debugPrint('BARS SUBJECTS: loading failed');
       return [];
     }
   }
