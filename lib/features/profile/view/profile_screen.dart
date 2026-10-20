@@ -10,6 +10,7 @@ import '../data/bars_subjects_storage.dart';
 import '../data/profile_avatar_storage.dart';
 import '../data/student_profile.dart';
 import '../data/student_profile_storage.dart';
+import 'profile_statistics_view.dart';
 import 'settings_screen.dart';
 
 /// Newest academic year first. Within the same year spring is after autumn
@@ -87,11 +88,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _selectedSemester;
   bool _loading = true;
   bool _changingAvatar = false;
+  int _activePage = 0;
+  late final PageController _pageController;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: 0);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _switchPage(int page) {
+    _pageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+    );
   }
 
   Future<void> _load() async {
@@ -225,68 +243,191 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 36),
-          children: [
-            if (_profile != null)
-              _ProfileHeader(
+      body: Column(
+        children: [
+          if (_profile != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              child: _ProfileHeader(
                 profile: _profile!,
                 avatar: _avatar,
                 changingAvatar: _changingAvatar,
                 onAvatarTap: _editAvatar,
               ),
-            const SizedBox(height: 26),
-            Row(
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
+            child: _ProfilePagerTabs(
+              selectedPage: _activePage,
+              onSelected: _switchPage,
+            ),
+          ),
+          Expanded(
+            child: PageView(
+              controller: _pageController,
+              onPageChanged: (index) {
+                if (mounted) setState(() => _activePage = index);
+              },
               children: [
-                Text(
-                  'Оценки БАРС',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
+                // Default view: swipe left to open Statistics.
+                RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    key: const PageStorageKey('profile_grades'),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(18, 10, 18, 36),
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Оценки БАРС',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const Spacer(),
+                          if (visibleSubjects.isNotEmpty)
+                            Text(
+                              '${visibleSubjects.length} предм.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                        ],
                       ),
-                ),
-                const Spacer(),
-                if (visibleSubjects.isNotEmpty)
-                  Text(
-                    '${visibleSubjects.length} предм.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                      const SizedBox(height: 12),
+                      if (semesters.isNotEmpty)
+                        _SemesterSelector(
+                          selected: _selectedSemester ?? '',
+                          semesters: semesters,
+                          onSelected: (value) =>
+                              setState(() => _selectedSemester = value),
+                        ),
+                      const SizedBox(height: 16),
+                      if (visibleSubjects.isEmpty)
+                        const _EmptySubjects()
+                      else
+                        ...visibleSubjects.asMap().entries.map(
+                          (entry) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _SubjectCard(
+                              subject: entry.value,
+                              index: entry.key,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
+                // Swipe right on this page to return to Grades.
+                RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    key: const PageStorageKey('profile_statistics'),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(18, 10, 18, 36),
+                    children: [
+                      ProfileStatisticsView(
+                        profile: _profile,
+                        subjects: _subjects,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            if (semesters.isNotEmpty)
-              _SemesterSelector(
-                selected: _selectedSemester ?? '',
-                semesters: semesters,
-                onSelected: (value) {
-                  setState(() => _selectedSemester = value);
-                },
-              ),
-            const SizedBox(height: 16),
-            if (visibleSubjects.isEmpty)
-              const _EmptySubjects()
-            else
-              ...visibleSubjects.asMap().entries.map(
-                (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _SubjectCard(
-                    subject: entry.value,
-                    index: entry.key,
-                  ),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
+ 
+class _ProfilePagerTabs extends StatelessWidget {
+  const _ProfilePagerTabs({
+    required this.selectedPage,
+    required this.onSelected,
+  });
 
+  final int selectedPage;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final background = dark
+        ? const Color(0xFF222630)
+        : const Color(0xFFE9EDF3);
+    final active = dark
+        ? const Color(0xFF343D50)
+        : const Color(0xFFFFFFFF);
+    final activeText = dark
+        ? const Color(0xFFB9D7FF)
+        : const Color(0xFF225D9D);
+
+    Widget tab(int index, IconData icon, String title) {
+      final selected = selectedPage == index;
+      return Expanded(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => onSelected(index),
+            borderRadius: BorderRadius.circular(13),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              decoration: BoxDecoration(
+                color: selected ? active : Colors.transparent,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 17,
+                    color: selected
+                        ? activeText
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected
+                          ? activeText
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          tab(0, Icons.school_outlined, 'Оценки'),
+          tab(1, Icons.bar_chart_rounded, 'Статистика'),
+        ],
+      ),
+    );
+  }
+}
 class _ProfileHeader extends StatelessWidget {
   const _ProfileHeader({
     required this.profile,
