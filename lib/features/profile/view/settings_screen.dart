@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '/app/router_app.dart';
 import '/features/auth/view/login_screen.dart';
 import '/features/profile/data/bars_subjects_storage.dart';
+import '/features/profile/data/profile_avatar_storage.dart';
 import '/features/profile/data/student_grades_storage.dart';
 import '/features/profile/data/student_profile_storage.dart';
 import '/features/schedule/data/group_storage.dart';
@@ -20,6 +21,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final StudentGradesStorage _gradesStorage = StudentGradesStorage();
 
   final BarsSubjectsStorage _subjectsStorage = BarsSubjectsStorage();
+
+  final ProfileAvatarStorage _avatarStorage = ProfileAvatarStorage();
 
   final GroupStorage _groupStorage = GroupStorage();
 
@@ -76,6 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _profileStorage.clearProfile(),
         _gradesStorage.clearGrades(),
         _subjectsStorage.clearSubjects(),
+        _avatarStorage.clearAvatar(),
         _groupStorage.clearGroup(),
       ]);
 
