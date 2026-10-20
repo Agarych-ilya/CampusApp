@@ -42,22 +42,6 @@ String? _gradeNumber(String raw) {
   return match?.group(1);
 }
 
-String _shortControlTitle(String title) {
-  final clean = title.trim().replaceFirst(RegExp(r'^\d+\.\s*'), '');
-  final lower = clean.toLowerCase();
-  final number = RegExp(r'№\s*(\d+)').firstMatch(clean)?.group(1);
-
-  if (lower.contains('лабораторн')) {
-    final prefix = lower.contains('защит') ? 'Защита ЛР' : 'ЛР';
-    return number == null ? prefix : '$prefix №$number';
-  }
-  if (lower.contains('контрольн') && number != null) return 'КР №$number';
-  if (lower.contains('тест') && number != null) return 'Тест №$number';
-  if (lower.contains('практик')) return 'Практика';
-  if (clean.length > 22) return '${clean.substring(0, 21)}…';
-  return clean;
-}
-
 Color _subjectSurface(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
         ? const Color(0xFF202535)
@@ -656,10 +640,11 @@ class _SubjectCard extends StatelessWidget {
   final int index;
 
   static const _accents = [
-    Color(0xFF75BBFF),
-    Color(0xFFA99AFF),
-    Color(0xFF62D9C3),
-    Color(0xFFFFA0B6),
+    Color(0xFF60A5FA),
+    Color(0xFF8B8CF8),
+    Color(0xFF2DD4BF),
+    Color(0xFF38BDF8),
+    Color(0xFF64748B),
   ];
 
   @override
@@ -785,15 +770,20 @@ class _SubjectGradePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final gradedControls = subject.controls
-        .where((control) => control.grade.trim().isNotEmpty)
-        .toList();
-    final hasFinal = subject.finalGrade.trim().isNotEmpty;
-    final hasCurrent = subject.currentScore.trim().isNotEmpty;
+    final grades = <String>[];
 
-    if (gradedControls.isEmpty && !hasFinal && !hasCurrent) {
+    final finalGrade =
+        _gradeNumber(subject.finalGrade) ?? subject.finalGrade.trim();
+    if (finalGrade.isNotEmpty) grades.add(finalGrade);
+
+    for (final control in subject.controls) {
+      final grade = _gradeNumber(control.grade) ?? control.grade.trim();
+      if (grade.isNotEmpty) grades.add(grade);
+    }
+
+    if (grades.isEmpty) {
       return Text(
-        'Оценки пока не выставлены',
+        'Оценок пока нет',
         style: TextStyle(
           fontSize: 12,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -801,104 +791,15 @@ class _SubjectGradePreview extends StatelessWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Only the marks; labels, dates and current points are in expanded details.
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        if (gradedControls.isNotEmpty || hasFinal)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Text(
-              'ОЦЕНКИ',
-              style: TextStyle(
-                fontSize: 10,
-                letterSpacing: 1,
-                fontWeight: FontWeight.w800,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        if (gradedControls.isNotEmpty || hasFinal)
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: [
-              if (hasFinal)
-                _PreviewGradeChip(
-                  label: 'Итог',
-                  grade: subject.finalGrade,
-                  prominent: true,
-                ),
-              ...gradedControls.take(4).map(
-                    (control) => _PreviewGradeChip(
-                      label: _shortControlTitle(control.title),
-                      grade: control.grade,
-                    ),
-                  ),
-              if (gradedControls.length > 4)
-                _MetadataPill(
-                  text: '+${gradedControls.length - 4} оценки',
-                ),
-            ],
-          ),
-        if (hasCurrent)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Текущий балл: ${subject.currentScore}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
+        ...grades.take(8).map((grade) => _GradeDot(value: grade)),
+        if (grades.length > 8)
+          _MetadataPill(text: '+${grades.length - 8}'),
       ],
-    );
-  }
-}
-
-class _PreviewGradeChip extends StatelessWidget {
-  const _PreviewGradeChip({
-    required this.label,
-    required this.grade,
-    this.prominent = false,
-  });
-
-  final String label;
-  final String grade;
-  final bool prominent;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = _gradeNumber(grade) ?? grade.trim();
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(9, 6, 7, 6),
-      decoration: BoxDecoration(
-        color: _subjectInnerSurface(context),
-        borderRadius: BorderRadius.circular(10),
-        border: prominent ? Border.all(color: scheme.primary.withValues(alpha: 0.45)) : null,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 120),
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          _GradeDot(value: value),
-        ],
-      ),
     );
   }
 }
