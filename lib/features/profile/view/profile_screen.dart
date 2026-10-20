@@ -668,6 +668,12 @@ class _SubjectCard extends StatelessWidget {
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
+              // Each tile needs a distinct PageStorage entry. Without this
+              // key, it may read the ListView scroll offset (double) as the
+              // tile expansion state (bool), crashing the whole grades page.
+              key: PageStorageKey<String>(
+                'bars_subject:${subject.semester}:${subject.name}:$index',
+              ),
               shape: const Border(),
               collapsedShape: const Border(),
               tilePadding: const EdgeInsets.fromLTRB(16, 13, 14, 13),
