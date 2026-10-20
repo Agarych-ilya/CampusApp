@@ -260,14 +260,16 @@ class _LoginScreenState extends State<LoginScreen> {
       // СОХРАНЯЕМ ПРЕДМЕТЫ
       // --------------------------------------------------------
 
-      await _subjectsStorage.saveSubjects(subjects);
-
-      debugPrint(
-        'BARS SUBJECTS SAVED: '
-        '${subjects.length}',
-      );
+      // Never erase previously fetched subjects on a temporary BARS error.
+      if (subjects.isNotEmpty) {
+        await _subjectsStorage.saveSubjects(subjects);
+        debugPrint('BARS SUBJECTS SAVED: count=' + subjects.length.toString());
+      } else {
+        debugPrint('BARS SUBJECTS: empty result; previous cache preserved');
+      }
 
       // --------------------------------------------------------
+      
       // СОХРАНЯЕМ ПРОФИЛЬ
       // --------------------------------------------------------
 
