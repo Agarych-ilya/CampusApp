@@ -801,36 +801,41 @@ class _GradeDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalized = _gradeNumber(value) ?? value.trim();
+
     Color color;
-    switch (_gradeNumber(value) ?? value.trim()) {
+    switch (normalized) {
       case '5':
-        color = const Color(0xFF2AA77D);
+        color = const Color(0xFF57C084);
+        break;
       case '4':
-        color = const Color(0xFF327BD6);
+        color = const Color(0xFF5FA8FF);
+        break;
       case '3':
-        color = const Color(0xFFE3A030);
+        color = const Color(0xFFF0B35A);
+        break;
       case '2':
-        color = const Color(0xFFD65E65);
+        color = const Color(0xFFE26D6D);
+        break;
       default:
-        color = Theme.of(context).colorScheme.primary;
+        color = const Color(0xFFD98DA9);
+        break;
     }
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      constraints: const BoxConstraints(minWidth: 42, minHeight: 34),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.20),
-        borderRadius: BorderRadius.circular(7),
+        color: color.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        value,
+        normalized,
         textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: 16,
           fontWeight: FontWeight.w900,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Color.lerp(color, Colors.white, 0.28)!
-              : color,
+          color: color,
         ),
       ),
     );
