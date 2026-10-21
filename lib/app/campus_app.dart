@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '/core/theme/app_theme.dart';
 import 'router_app.dart';
 
-
-
 class CampusApp extends StatelessWidget {
   const CampusApp({super.key});
 
@@ -13,7 +11,7 @@ class CampusApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      initialRoute: AppRoutes.register,
+      initialRoute: AppRoutes.login,
       routes: AppRouter.routes,
     );
   }

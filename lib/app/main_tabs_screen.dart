@@ -1,10 +1,10 @@
-import 'package:campusapp/features/profile/view/profile_screen.dart';
 import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
 import '/features/schedule/schedule.dart';
 import '/features/services/services.dart';
 import '/features/profile/profile.dart';
+import '/features/map/view/campus_map_screen.dart';
 
 class MainTabsScreen extends StatefulWidget {
   const MainTabsScreen({super.key});
@@ -18,24 +18,27 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
 
   final List<Widget> _screens = const [
     ScheduleScreen(),
-    _EmptyTabScreen(
-      title: 'Кампус',
-      subtitle: 'Здесь потом будет что-то, пока не знаю что',
-      icon: Icons.map_outlined,
-    ),
+
+    CampusMapScreen(),
+
     _EmptyTabScreen(
       title: 'Чаты',
       subtitle: 'Здесь потом будут сообщения',
       icon: Icons.chat_bubble_outline,
     ),
+
     ServicesScreen(),
+
     ProfileScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _screens),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,
@@ -102,19 +105,19 @@ class _EmptyTabScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 58, color: AppTheme.pink),
-
+              Icon(
+                icon,
+                size: 58,
+                color: AppTheme.pink,
+              ),
               const SizedBox(height: 18),
-
               Text(
                 title,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
               ),
-
               const SizedBox(height: 8),
-
               Text(
                 subtitle,
                 textAlign: TextAlign.center,

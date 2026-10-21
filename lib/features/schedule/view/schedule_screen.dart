@@ -4,8 +4,6 @@ import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
 import '../data/data.dart';
 
-// Экран расписания.
-// Здесь отображается выбранная неделя, выбранный день и список занятий на этот день.
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
 
@@ -14,47 +12,77 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  // API-класс, через который экран получает расписание.
   final ScheduleApi _scheduleApi = ScheduleApi();
+  final GroupStorage _groupStorage = GroupStorage();
 
-  // Пока группа задана вручную.
-  // Позже можно будет брать её из профиля пользователя или настроек.
-  static const String _groupName = 'А-03-23';
+  String? _groupName;
 
-  // Текущая выбранная дата.
+  bool _isInitializing = true;
+
+  String? _initializationError;
+
   late DateTime _selectedDate;
 
-  // Future с расписанием на всю выбранную неделю.
-  // Важно: здесь хранится именно неделя, а не один день.
   late Future<List<ScheduleLesson>> _weekLessonsFuture;
 
   @override
   void initState() {
     super.initState();
 
-    // При открытии экрана выбираем сегодняшнюю дату.
     _selectedDate = DateTime.now();
 
-    // Загружаем расписание на неделю, в которую входит выбранная дата.
-    _weekLessonsFuture = _loadWeekLessons();
+    _initialize();
   }
 
-  // Загружает расписание на всю неделю.
-  // forceRefresh = true нужен, чтобы принудительно обновить кэш.
+  Future<void> _initialize() async {
+    try {
+      var group = await _groupStorage.getGroup();
+
+      // Временно используем тестовую группу.
+      // Позже эту группу будет сохранять вход через БАРС.
+      if (group == null || group.isEmpty) {
+        group = 'А-03-23';
+
+        await _groupStorage.saveGroup(group);
+      }
+
+      _groupName = group;
+
+      _weekLessonsFuture = _loadWeekLessons();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isInitializing = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _initializationError = error.toString();
+        _isInitializing = false;
+      });
+    }
+  }
+
   Future<List<ScheduleLesson>> _loadWeekLessons({bool forceRefresh = false}) {
+    final group = _groupName;
+
+    if (group == null || group.isEmpty) {
+      throw StateError('Группа пользователя не определена');
+    }
+
     return _scheduleApi.getWeekSchedule(
-      group: _groupName,
+      group: group,
       selectedDate: _selectedDate,
       forceRefresh: forceRefresh,
     );
   }
 
-  // Выбор даты.
-  // Если пользователь нажал на другой день той же недели,
-  // новый запрос на сервер не делаем — просто фильтруем уже загруженную неделю.
-  //
-  // Если пользователь выбрал дату из другой недели,
-  // загружаем новую неделю.
   void _selectDate(DateTime date) {
     final oldWeekStart = _getWeekStart(_selectedDate);
     final newWeekStart = _getWeekStart(date);
@@ -62,23 +90,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     setState(() {
       _selectedDate = date;
 
-      // Если неделя изменилась, загружаем расписание новой недели.
       if (!_isSameDate(oldWeekStart, newWeekStart)) {
         _weekLessonsFuture = _loadWeekLessons();
       }
     });
   }
 
-  // Принудительно обновляет расписание выбранной недели.
-  // Используется по кнопке обновления справа сверху.
   void _refreshWeekSchedule() {
+    if (_groupName == null) {
+      return;
+    }
+
     setState(() {
       _weekLessonsFuture = _loadWeekLessons(forceRefresh: true);
     });
   }
 
-  // Показывает маленький календарь месяца.
-  // Через него можно выбрать любую дату.
   Future<void> _showMonthCalendar() async {
     await showDialog<void>(
       context: context,
@@ -106,7 +133,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  // Возвращает понедельник недели, в которую входит переданная дата.
   DateTime _getWeekStart(DateTime date) {
     return DateTime(
       date.year,
@@ -115,14 +141,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     ).subtract(Duration(days: date.weekday - 1));
   }
 
-  // Сравнение двух дат без учёта времени.
   bool _isSameDate(DateTime firstDate, DateTime secondDate) {
     return firstDate.year == secondDate.year &&
         firstDate.month == secondDate.month &&
         firstDate.day == secondDate.day;
   }
 
-  // Преобразует дату занятия из строки формата "01.06.2026" в DateTime.
   DateTime? _parseLessonDate(String date) {
     final match = RegExp(r'(\d{1,2})\.(\d{1,2})\.(\d{4})').firstMatch(date);
 
@@ -141,12 +165,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return DateTime(year, month, day);
   }
 
-  // Фильтрует расписание всей недели и оставляет только занятия выбранного дня.
-  //
-  // Например:
-  // сервер вернул всю неделю: 01.06, 02.06, 06.06
-  // пользователь выбрал 02.06
-  // здесь останутся только занятия за 02.06.
   List<ScheduleLesson> _filterLessonsBySelectedDate(
     List<ScheduleLesson> weekLessons,
   ) {
@@ -160,7 +178,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       return _isSameDate(lessonDate, _selectedDate);
     }).toList();
 
-    // Сортируем занятия выбранного дня по времени.
     filteredLessons.sort((firstLesson, secondLesson) {
       return firstLesson.time.compareTo(secondLesson.time);
     });
@@ -172,6 +189,47 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    if (_isInitializing) {
+      return const SafeArea(
+        child: Center(child: CircularProgressIndicator(color: AppTheme.pink)),
+      );
+    }
+
+    if (_initializationError != null) {
+      return SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48),
+                const SizedBox(height: 16),
+                const Text(
+                  'Не удалось загрузить данные пользователя',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(_initializationError!, textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () {
+                    setState(() {
+                      _isInitializing = true;
+                      _initializationError = null;
+                    });
+
+                    _initialize();
+                  },
+                  child: const Text('Повторить'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -180,8 +238,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           children: [
             const SizedBox(height: 20),
 
-            // Верхняя строка:
-            // слева день недели, справа месяц и кнопка обновления.
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -216,9 +272,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+
                     const SizedBox(width: 6),
 
-                    // Кнопка принудительного обновления расписания недели.
                     IconButton(
                       onPressed: _refreshWeekSchedule,
                       icon: const Icon(Icons.refresh, size: 21),
@@ -230,7 +286,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 12),
 
-            // Строка дней текущей недели.
             WeekDaysRow(
               selectedDate: _selectedDate,
               onDateSelected: _selectDate,
@@ -238,9 +293,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 20),
 
-            // Название группы.
             Text(
-              _groupName,
+              _groupName ?? '',
               style: theme.textTheme.titleMedium?.copyWith(
                 color: Colors.blue,
                 fontWeight: FontWeight.w700,
@@ -249,7 +303,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 8),
 
-            // Выбранная дата текстом.
             Text(
               _formatSelectedDate(_selectedDate),
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -259,19 +312,16 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
             const SizedBox(height: 14),
 
-            // Основная область расписания.
             Expanded(
               child: FutureBuilder<List<ScheduleLesson>>(
                 future: _weekLessonsFuture,
                 builder: (context, snapshot) {
-                  // Пока расписание загружается.
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
                       child: CircularProgressIndicator(color: AppTheme.pink),
                     );
                   }
 
-                  // Если при загрузке произошла ошибка.
                   if (snapshot.hasError) {
                     return ScheduleMessage(
                       icon: Icons.error_outline,
@@ -282,13 +332,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     );
                   }
 
-                  // Это расписание всей недели.
                   final weekLessons = snapshot.data ?? [];
 
-                  // А это уже только занятия выбранного дня.
                   final dayLessons = _filterLessonsBySelectedDate(weekLessons);
 
-                  // Если в выбранный день занятий нет.
                   if (dayLessons.isEmpty) {
                     return const ScheduleMessage(
                       icon: Icons.event_busy_outlined,
@@ -297,7 +344,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     );
                   }
 
-                  // Список карточек занятий выбранного дня.
                   return ListView.builder(
                     itemCount: dayLessons.length,
                     itemBuilder: (context, index) {
@@ -321,9 +367,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  // Название дня недели для верхней строки.
   String _getWeekDayName(DateTime date) {
-    final weekDays = [
+    const weekDays = [
       'Понедельник',
       'Вторник',
       'Среда',
@@ -336,9 +381,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return weekDays[date.weekday - 1];
   }
 
-  // Название месяца для верхней строки.
   String _getMonthName(DateTime date) {
-    final months = [
+    const months = [
       'Январь',
       'Февраль',
       'Март',
@@ -356,9 +400,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return months[date.month - 1];
   }
 
-  // Дата под названием группы.
   String _formatSelectedDate(DateTime date) {
-    final months = [
+    const months = [
       'января',
       'февраля',
       'марта',
@@ -376,10 +419,5 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return '${date.day} ${months[date.month - 1]}';
   }
 }
-
-
-
-
-
 
 
