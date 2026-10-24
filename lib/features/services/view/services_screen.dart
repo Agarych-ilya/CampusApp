@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
 import '/features/services/cloud/view/cloud_screen.dart';
+import '../qr/view/qr_scanner_screen.dart';
 import '../widgets/widgets.dart';
 
 class ServicesScreen extends StatelessWidget {
@@ -61,6 +62,20 @@ class ServicesScreen extends StatelessWidget {
 
                   const SizedBox(width: 14),
 
+                  PopularServiceCard(
+                    title: 'QR-сканер',
+                    subtitle: 'Сканировать QR-код',
+                    icon: Icons.qr_code_scanner,
+                    iconColor: const Color(0xFF60A5FA),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const QrScannerScreen(),
+                        ),
+                      );
+                    },
+                  ),
+
                   // Можно вернуть позже:
                   //
                   // const SizedBox(width: 14),
@@ -116,6 +131,21 @@ class ServicesScreen extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (context) =>
                         const CloudScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 12),
+
+            _ServiceTile(
+              title: 'QR-сканер',
+              subtitle: 'Сканирование QR-кодов через камеру',
+              icon: Icons.qr_code_scanner,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const QrScannerScreen(),
                   ),
                 );
               },
