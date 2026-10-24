@@ -65,6 +65,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       // The decoded value is useful even if pausing the camera fails.
     } finally {
       _busy = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -78,6 +79,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       if (mounted) _showMessage('Не удалось запустить камеру.');
     } finally {
       _busy = false;
+      if (mounted) setState(() {});
     }
   }
 
