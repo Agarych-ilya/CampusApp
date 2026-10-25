@@ -391,6 +391,42 @@ class CommunityApi {
   }
 }
 
+/// Cache the last server-approved catalog, including admin edits/deletions.
+/// Never resurrect hardcoded groups when the backend is offline.
+class CommunityCatalogCache {
+  static const _key = 'campus_approved_communities_v2';
+
+  Future<void> save(List<CommunityData> communities) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _key,
+      jsonEncode(
+        communities
+            .where((item) => !item.isPending)
+            .map((item) => item.toJson())
+            .toList(),
+      ),
+    );
+  }
+
+  Future<List<CommunityData>> read() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_key);
+      if (value == null) return [];
+
+      final data = jsonDecode(value);
+      if (data is! List) return [];
+      return data.map(CommunityData.tryParse)
+          .whereType<CommunityData>()
+          .where((item) => !item.isPending)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+}
+
 /// Local visibility of the current device's submissions while under review.
 /// The server retains the authoritative status; local drafts are NOT public.
 class PendingCommunityStorage {
