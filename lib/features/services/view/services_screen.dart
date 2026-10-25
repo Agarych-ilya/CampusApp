@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '/core/theme/app_theme.dart';
 import '/features/services/cloud/view/cloud_screen.dart';
+import '../data/telegram_groups_api.dart';
 import '../nfc/view/nfc_pass_screen.dart';
 import '../qr/view/qr_scanner_screen.dart';
 import '../widgets/widgets.dart';
@@ -58,6 +59,7 @@ class ServicesScreen extends StatefulWidget {
 
 class _ServicesScreenState extends State<ServicesScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TelegramGroupsApi _groupsApi = const TelegramGroupsApi();
 
   static const _services = <_ServiceInfo>[
     _ServiceInfo(
@@ -86,7 +88,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
     ),
   ];
 
-  static const _groups = <_TelegramGroup>[
+  static const _fallbackGroups = <_TelegramGroup>[
     _TelegramGroup(
       title: 'Чат студентов МЭИ',
       username: 'mpeichat',
@@ -103,6 +105,34 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Telegram · канал',
     ),
   ];
+
+  late List<_TelegramGroup> _groups = _fallbackGroups;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGroups();
+  }
+
+  Future<void> _loadGroups() async {
+    try {
+      final fetched = await _groupsApi.getGroups();
+      if (!mounted) return;
+
+      setState(() {
+        _groups = fetched
+            .map((group) => _TelegramGroup(
+                  title: group.title,
+                  username: group.username,
+                  subtitle: group.subtitle,
+                ))
+            .toList();
+      });
+    } catch (_) {
+      // The service directory must remain usable when the server is offline.
+      // The last bundled, curated list remains visible without error prompts.
+    }
+  }
 
   @override
   void dispose() {
