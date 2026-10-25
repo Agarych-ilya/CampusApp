@@ -239,7 +239,18 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
       await task();
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = _message(error));
+      if (!mounted) return;
+      final expired = !_api.isSignedIn;
+      setState(() {
+        _error = _message(error);
+        if (expired) {
+          _signedIn = false;
+          _showBars = true;
+        }
+      });
+      if (expired) {
+        await _barsController.loadRequest(Uri.parse(_barsUrl));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
