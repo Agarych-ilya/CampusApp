@@ -38,12 +38,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     try {
       var group = await _groupStorage.getGroup();
 
-      // Временно используем тестовую группу.
-      // Позже эту группу будет сохранять вход через БАРС.
       if (group == null || group.isEmpty) {
-        group = 'А-03-23';
-
-        await _groupStorage.saveGroup(group);
+        throw StateError(
+          'Учебная группа не найдена. '
+          'Войди в CampusApp через БАРС, чтобы загрузить свою группу.',
+        );
       }
 
       _groupName = group;
@@ -326,7 +325,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     return ScheduleMessage(
                       icon: Icons.error_outline,
                       title: 'Не удалось загрузить расписание',
-                      subtitle: 'Проверь, что backend запущен на порту 8000',
+                      subtitle: snapshot.error?.toString() ??
+                          'Проверь соединение с сервером',
                       buttonText: 'Повторить',
                       onPressed: _refreshWeekSchedule,
                     );
@@ -344,19 +344,46 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     );
                   }
 
-                  return ListView.builder(
-                    itemCount: dayLessons.length,
-                    itemBuilder: (context, index) {
-                      final lesson = dayLessons[index];
+                  return Column(
+                    children: [
+                      if (_scheduleApi.showingOfflineCopy)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.cloud_off_outlined,
+                                size: 18,
+                                color: Colors.amber,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Нет связи с сервером. '
+                                  'Показано сохранённое расписание.',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: dayLessons.length,
+                          itemBuilder: (context, index) {
+                            final lesson = dayLessons[index];
 
-                      return LessonCard(
-                        time: lesson.time,
-                        subject: lesson.subject,
-                        type: lesson.type,
-                        room: lesson.room,
-                        teacher: lesson.teacher,
-                      );
-                    },
+                            return LessonCard(
+                              time: lesson.time,
+                              subject: lesson.subject,
+                              type: lesson.type,
+                              room: lesson.room,
+                              teacher: lesson.teacher,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
