@@ -42,6 +42,7 @@ class CommunityAdminApi {
   static final CommunityAdminApi instance = CommunityAdminApi._();
 
   String? _cookie;
+  String? _csrf;
 
   bool get isSignedIn => _cookie != null;
 
@@ -55,6 +56,7 @@ class CommunityAdminApi {
     required String password,
   }) async {
     _cookie = null;
+    _csrf = null;
     final response = await http.post(
       Uri.parse(_base + '/login'),
       headers: const {'Content-Type': 'application/json'},
@@ -70,7 +72,14 @@ class CommunityAdminApi {
       throw Exception('Сервер не выдал сессию администратора');
     }
 
+    final body = jsonDecode(utf8.decode(response.bodyBytes));
+    final csrf = body is Map ? body['csrfToken'] : null;
+    if (csrf is! String || csrf.length != 64) {
+      throw Exception('Сервер не выдал защитный токен сессии');
+    }
+
     _cookie = rawCookie.split(';').first;
+    _csrf = csrf;
   }
 
   Future<void> checkSession() async {
@@ -84,18 +93,24 @@ class CommunityAdminApi {
 
     if (response.statusCode != 200) {
       _cookie = null;
+      _csrf = null;
       throw Exception('Сессия истекла. Войди ещё раз.');
     }
   }
 
   Future<void> logout() async {
     final cookie = _cookie;
+    final csrf = _csrf;
     _cookie = null;
+    _csrf = null;
     if (cookie == null) return;
     try {
       await http.post(
         Uri.parse(_base + '/logout'),
-        headers: {'Cookie': cookie},
+        headers: {
+          'Cookie': cookie,
+          if (csrf != null) 'X-Community-CSRF': csrf,
+        },
       ).timeout(const Duration(seconds: 8));
     } catch (_) {
       // Discarding the in-memory session also prevents further app actions.
@@ -165,6 +180,13 @@ class CommunityAdminApi {
 
     final request = http.Request(method, Uri.parse(_base + path));
     request.headers['Cookie'] = cookie;
+    if (method != 'GET' && method != 'HEAD') {
+      final csrf = _csrf;
+      if (csrf == null) {
+        throw Exception('Сессия администратора не подтверждена');
+      }
+      request.headers['X-Community-CSRF'] = csrf;
+    }
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -176,6 +198,7 @@ class CommunityAdminApi {
 
     if (response.statusCode == 401 || response.statusCode == 403) {
       _cookie = null;
+      _csrf = null;
       throw Exception('Нет прав администратора или сессия истекла');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
