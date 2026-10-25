@@ -9,7 +9,7 @@ import '../widgets/community_avatar.dart';
 
 /// Uses Flutter's own image codec: no extra image/archive dependency.
 /// The uploaded 400x400 PNG is center-cropped and normally below 700 KB.
-Future<Uint8List> _prepareCommunityIcon(Uint8List bytes) async {
+Future<Uint8List> prepareCommunityIcon(Uint8List bytes) async {
   final codec = await ui.instantiateImageCodec(
     bytes,
     targetWidth: 512,
@@ -170,7 +170,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
         throw const FormatException('Выбери изображение размером до 15 МБ.');
       }
 
-      final icon = await _prepareCommunityIcon(original);
+      final icon = await prepareCommunityIcon(original);
       if (icon.length > 700 * 1024) {
         throw const FormatException(
           'Изображение слишком большое даже после уменьшения.',
