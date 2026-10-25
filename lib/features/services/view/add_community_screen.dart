@@ -228,7 +228,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
               ),
               const SizedBox(height: 11),
               DropdownButtonFormField<String>(
-                value: _category,
+                initialValue: _category,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Категория',
