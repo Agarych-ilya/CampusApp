@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '/features/profile/data/student_profile_storage.dart';
 import '../data/community_admin_api.dart';
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
@@ -26,6 +27,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   bool _signedIn = false;
   bool _showBars = false;
   DateTime? _lastCheck;
+  String? _recordBookHint;
   String _filter = 'pending';
   String? _error;
   List<CommunityAdminItem> _items = [];
@@ -33,6 +35,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _loadRecordBookHint();
     _barsController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -51,6 +54,19 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
     } else {
       // Reuse the session from the original BARS login if it is still valid.
       _tryBarsLogin();
+    }
+  }
+
+  Future<void> _loadRecordBookHint() async {
+    try {
+      final profile = await StudentProfileStorage().getProfile();
+      if (!mounted) return;
+      final recordBook = profile?.recordBook.trim();
+      if (recordBook != null && recordBook.isNotEmpty) {
+        setState(() => _recordBookHint = recordBook);
+      }
+    } catch (_) {
+      // Only a convenience hint. Local profile data never grants admin rights.
     }
   }
 
@@ -290,6 +306,18 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
                                 color: Color(0xFFFF808D),
                                 fontSize: 12,
                               ),
+                            ),
+                          ),
+                        if (_recordBookHint != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: SelectableText(
+                              'Твой №ЗК: ' + _recordBookHint! +
+                              '. Для назначения прав укажи его в '
+                              'COMMUNITY_ADMIN_BARS_RECORD_BOOKS '
+                              'на сервере.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: muted, fontSize: 12),
                             ),
                           ),
                         const SizedBox(height: 10),
