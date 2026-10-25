@@ -13,11 +13,13 @@ class CommunityAvatar extends StatelessWidget {
     required this.community,
     this.size = 60,
     this.previewBytes,
+    this.imageHeaders,
   });
 
   final CommunityData community;
   final double size;
   final Uint8List? previewBytes;
+  final Map<String, String>? imageHeaders;
 
   static IconData iconFor(String kind) => switch (kind) {
     'chat' => Icons.forum_rounded,
@@ -90,6 +92,7 @@ class CommunityAvatar extends StatelessWidget {
     } else if (remotePath != null) {
       image = Image.network(
         ApiConfig.baseUrl + remotePath,
+        headers: imageHeaders,
         fit: BoxFit.cover,
         width: size,
         height: size,
