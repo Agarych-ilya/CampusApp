@@ -435,13 +435,13 @@ class _AdminCommunityCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       item.community.category + ' · ' +
-                          switch (item.status) {
+                          (switch (item.status) {
                             'pending' => 'На проверке',
                             'approved' => 'Опубликовано',
                             'rejected' => 'Отклонено',
                             'hidden' => 'Скрыто',
                             _ => item.status,
-                          },
+                          }),
                       style: TextStyle(color: muted, fontSize: 12),
                     ),
                   ],
