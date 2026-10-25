@@ -9,6 +9,7 @@ import '../widgets/community_avatar.dart';
 import '../widgets/widgets.dart';
 import 'add_community_screen.dart';
 import 'community_detail_screen.dart';
+import 'community_admin_screen.dart';
 
 enum _ServiceType { cloud, qr, nfc }
 
@@ -132,6 +133,18 @@ class _ServicesScreenState extends State<ServicesScreen> {
         builder: (_) => CommunityDetailScreen(community: community),
       ),
     );
+  }
+
+  Future<void> _openAdmin() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const CommunityAdminScreen(),
+      ),
+    );
+    if (!mounted) return;
+    // Moderation may publish, reject or remove groups while the panel is open.
+    await _loadCommunities();
+    await _loadPending();
   }
 
   Future<void> _addCommunity() async {
@@ -309,7 +322,12 @@ class _ServicesScreenState extends State<ServicesScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _openAdmin,
+                    tooltip: 'Управление сообществами',
+                    icon: const Icon(Icons.admin_panel_settings_outlined),
+                  ),
+                  const SizedBox(width: 5),
                   FilledButton.tonalIcon(
                     onPressed: _addCommunity,
                     icon: const Icon(Icons.add_rounded, size: 19),
