@@ -160,7 +160,7 @@ class CommunityDetailScreen extends StatelessWidget {
                         if (community.memberCountSource == 'telegram_snapshot') ...[
                           const SizedBox(height: 4),
                           Text(
-                            'По публичной странице Telegram, снимок на ' +
+                            'По публичной странице Telegram, снимок за ' +
                                 (community.memberCountAsOf ?? 'октябрь 2026') +
                                 '. Не обновляется в реальном времени.',
                             style: TextStyle(fontSize: 11, color: muted),
