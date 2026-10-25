@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../data/community_admin_api.dart';
 import '../data/community_api.dart';
@@ -18,11 +19,13 @@ class CommunityAdminScreen extends StatefulWidget {
 class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   final _api = CommunityAdminApi.instance;
   final _pendingStorage = PendingCommunityStorage();
-  final _username = TextEditingController();
-  final _password = TextEditingController();
+  static const _barsUrl = 'https://bars.mpei.ru/bars_web/Auth/Menu';
 
+  late final WebViewController _barsController;
   bool _busy = false;
   bool _signedIn = false;
+  bool _showBars = false;
+  DateTime? _lastCheck;
   String _filter = 'pending';
   String? _error;
   List<CommunityAdminItem> _items = [];
@@ -30,37 +33,64 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _barsController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            if (_showBars && !_signedIn) {
+              _tryBarsLogin(automatic: true);
+            }
+          },
+        ),
+      );
+
     if (_api.isSignedIn) {
       _signedIn = true;
       _refresh();
+    } else {
+      // Reuse the session from the original BARS login if it is still valid.
+      _tryBarsLogin();
     }
   }
 
-  @override
-  void dispose() {
-    _username.dispose();
-    _password.dispose();
-    super.dispose();
+  Future<void> _openBars() async {
+    if (!mounted) return;
+    setState(() => _showBars = true);
+    await _barsController.loadRequest(Uri.parse(_barsUrl));
   }
 
-  Future<void> _login() async {
-    if (_busy || _username.text.trim().isEmpty || _password.text.isEmpty) return;
+  Future<void> _tryBarsLogin({bool automatic = false}) async {
+    if (_busy || _signedIn || !mounted) return;
+    final now = DateTime.now();
+    if (automatic &&
+        _lastCheck != null &&
+        now.difference(_lastCheck!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastCheck = now;
+
     setState(() {
       _busy = true;
       _error = null;
     });
 
     try {
-      await _api.login(
-        username: _username.text.trim(),
-        password: _password.text,
-      );
-      _password.clear();
+      // The server obtains the student's ID directly from BARS and
+      // checks a server-side allowlist. No user-supplied admin names.
+      await _api.loginWithBars();
       if (!mounted) return;
-      setState(() => _signedIn = true);
+      setState(() {
+        _signedIn = true;
+        _showBars = false;
+      });
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = _message(error));
+      if (!mounted) return;
+      setState(() => _error = _message(error));
+      if (!automatic && !_showBars) {
+        await _openBars();
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -76,8 +106,14 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      if (!_api.isSignedIn) setState(() => _signedIn = false);
-      setState(() => _error = _message(error));
+      if (!_api.isSignedIn) {
+        setState(() {
+          _signedIn = false;
+          _showBars = true;
+        });
+        await _barsController.loadRequest(Uri.parse(_barsUrl));
+      }
+      if (mounted) setState(() => _error = _message(error));
     }
   }
 
@@ -88,7 +124,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
       _signedIn = false;
       _items = [];
       _error = null;
-      _password.clear();
+      _showBars = false;
     });
   }
 
@@ -218,68 +254,82 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
       ),
       body: SafeArea(
         child: !_signedIn
-            ? ListView(
-                padding: const EdgeInsets.fromLTRB(22, 32, 22, 32),
+            ? Column(
                 children: [
-                  const Icon(
-                    Icons.admin_panel_settings_rounded,
-                    size: 62,
-                    color: Color(0xFF60A5FA),
-                  ),
-                  const SizedBox(height: 17),
-                  Text(
-                    'Вход администратора',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.verified_user_outlined,
+                          size: 45,
+                          color: Color(0xFF60A5FA),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Вход через БАРС',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Используем твою авторизацию БАРС. '
+                          'Сервер сам проверит номер зачётки и права '
+                          'администратора — отдельный пароль не нужен.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: muted, height: 1.35),
+                        ),
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFFFF808D),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 10,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _tryBarsLogin(),
+                              icon: const Icon(Icons.verified_outlined),
+                              label: const Text('Проверить вход'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _busy ? null : _openBars,
+                              icon: const Icon(Icons.login_rounded),
+                              label: const Text('Открыть БАРС'),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 9),
-                  Text(
-                    'Введи логин CampusApp и пароль аккаунта бэкенда. '
-                    'Сервер проверит пароль и права администратора. '
-                    'Вход через БАРС отдельно не даёт доступ к модерации.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: muted, height: 1.5),
-                  ),
-                  const SizedBox(height: 28),
-                  TextField(
-                    controller: _username,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.text,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Логин CampusApp',
-                      hintText: 'Например, OgarkovIA',
-                      prefixIcon: Icon(Icons.mail_outline_rounded),
+                  if (_busy)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(),
                     ),
+                  Expanded(
+                    child: _showBars
+                        ? WebViewWidget(controller: _barsController)
+                        : const Center(
+                            child: Text(
+                              'Если БАРС уже открыт в CampusApp, '
+                              'нажми «Проверить вход».',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                   ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _password,
-                    enabled: !_busy,
-                    obscureText: true,
-                    onSubmitted: (_) => _login(),
-                    decoration: const InputDecoration(
-                      labelText: 'Пароль',
-                      prefixIcon: Icon(Icons.lock_outline_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _login,
-                    icon: const Icon(Icons.login_rounded),
-                    label: const Text('Войти'),
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 14),
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(color: Color(0xFFFF808D)),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
                 ],
               )
             : RefreshIndicator(
