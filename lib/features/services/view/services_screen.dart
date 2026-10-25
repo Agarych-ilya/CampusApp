@@ -507,7 +507,7 @@ class _CommunityTile extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                               community.memberCount == null
-                                  ? 'Участники: —'
+                                  ? 'Нет данных об участниках'
                                   : community.membersLabel,
                               style: TextStyle(
                                 color: muted,
