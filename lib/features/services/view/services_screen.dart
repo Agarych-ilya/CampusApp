@@ -47,6 +47,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final CommunityApi _api = const CommunityApi();
   final PendingCommunityStorage _pendingStorage = PendingCommunityStorage();
+  final CommunityCatalogCache _catalogCache = CommunityCatalogCache();
 
   static const _services = <_ServiceInfo>[
     _ServiceInfo(
@@ -75,7 +76,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
     ),
   ];
 
-  List<CommunityData> _communities = CommunityData.fallback;
+  List<CommunityData> _communities = [];
   List<CommunityData> _pending = [];
   bool _offline = false;
   String _activeCategory = 'Все';
@@ -84,7 +85,14 @@ class _ServicesScreenState extends State<ServicesScreen> {
   void initState() {
     super.initState();
     _loadPending();
+    _loadCachedCatalog();
     _loadCommunities();
+  }
+
+  Future<void> _loadCachedCatalog() async {
+    final cached = await _catalogCache.read();
+    if (!mounted || !_offline && _communities.isNotEmpty) return;
+    setState(() => _communities = cached);
   }
 
   Future<void> _loadPending() async {
@@ -102,10 +110,21 @@ class _ServicesScreenState extends State<ServicesScreen> {
         _offline = false;
       });
 
-      await _pendingStorage.reconcile(groups);
+      try {
+        await _catalogCache.save(groups);
+        await _pendingStorage.reconcile(groups);
+      } catch (_) {
+        // Network data remains valid even if device storage is unavailable.
+      }
       await _loadPending();
     } catch (_) {
-      if (mounted) setState(() => _offline = true);
+      final cached = await _catalogCache.read();
+      if (mounted) {
+        setState(() {
+          _offline = true;
+          _communities = cached;
+        });
+      }
     }
   }
 
@@ -401,7 +420,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Сервер недоступен. Показаны основные сообщества.',
+                        'Сервер недоступен. Показан последний сохранённый каталог.',
                         style: TextStyle(
                           fontSize: 11,
                           color: theme.colorScheme.onSurfaceVariant,
