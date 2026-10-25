@@ -34,6 +34,15 @@ class CommunityDetailScreen extends StatelessWidget {
     }
   }
 
+  String _formatCheckedAt(String value) {
+    final date = DateTime.tryParse(value)?.toLocal();
+    if (date == null) return 'недавно';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return two(date.day) + '.' + two(date.month) + '.' +
+        date.year.toString() + ', ' +
+        two(date.hour) + ':' + two(date.minute);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -140,7 +149,7 @@ class CommunityDetailScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Участники сообщества',
+                          'Аудитория сообщества',
                           style: TextStyle(fontSize: 12, color: muted),
                         ),
                         const SizedBox(height: 3),
@@ -150,19 +159,27 @@ class CommunityDetailScreen extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        if (community.memberCountSource == 'self_reported') ...[
+                        if (community.memberCountSource != null) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Количество указано автором, не проверено',
+                            'Источник: ' +
+                                (community.memberCountSource == 'telegram'
+                                    ? 'Telegram'
+                                    : 'ВКонтакте') +
+                                '. Данные обновляются автоматически.',
                             style: TextStyle(fontSize: 11, color: muted),
                           ),
-                        ],
-                        if (community.memberCountSource == 'telegram_snapshot') ...[
+                          if (community.memberCountCheckedAt != null)
+                            Text(
+                              'Проверено: ' +
+                                  _formatCheckedAt(community.memberCountCheckedAt!),
+                              style: TextStyle(fontSize: 11, color: muted),
+                            ),
+                        ] else ...[
                           const SizedBox(height: 4),
                           Text(
-                            'По публичной странице Telegram, снимок за ' +
-                                (community.memberCountAsOf ?? 'октябрь 2026') +
-                                '. Не обновляется в реальном времени.',
+                            'Соцсеть пока не предоставила сведения. '
+                            'Попробуй обновить список сообществ позже.',
                             style: TextStyle(fontSize: 11, color: muted),
                           ),
                         ],
