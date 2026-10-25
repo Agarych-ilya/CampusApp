@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../data/community_admin_api.dart';
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
+import 'add_community_screen.dart' show prepareCommunityIcon;
 
 class CommunityAdminScreen extends StatefulWidget {
   const CommunityAdminScreen({super.key});
@@ -516,6 +520,8 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
   late String _category;
   late String _iconKind;
   bool _saving = false;
+  bool _selectingImage = false;
+  Uint8List? _newIconBytes;
   String? _error;
 
   @override
@@ -541,6 +547,42 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
     super.dispose();
   }
 
+  Future<void> _chooseIcon() async {
+    if (_saving || _selectingImage) return;
+    setState(() {
+      _selectingImage = true;
+      _error = null;
+    });
+    try {
+      final file = await FilePicker.pickFile(type: FileType.image);
+      if (file == null) return;
+
+      final fileSize = await file.length();
+      if (fileSize != null && fileSize > 15 * 1024 * 1024) {
+        throw const FormatException('Выбери фотографию до 15 МБ');
+      }
+      final original = await file.readAsBytes();
+      if (original.length > 15 * 1024 * 1024) {
+        throw const FormatException('Выбери фотографию до 15 МБ');
+      }
+      final icon = await prepareCommunityIcon(original);
+      if (icon.length > 700 * 1024) {
+        throw const FormatException(
+          'Слишком большая картинка после уменьшения (максимум 700 КБ)',
+        );
+      }
+      if (mounted) setState(() => _newIconBytes = icon);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.toString().replaceFirst('FormatException: ', '');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _selectingImage = false);
+    }
+  }
+
   Future<void> _save() async {
     if (_saving || !_form.currentState!.validate()) return;
     setState(() {
@@ -557,6 +599,12 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
         telegramUrl: _telegram.text,
         vkUrl: _vk.text,
       );
+      if (_newIconBytes != null) {
+        await CommunityAdminApi.instance.updateIcon(
+          widget.item.community.id,
+          _newIconBytes!,
+        );
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
@@ -581,6 +629,50 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              InkWell(
+                onTap: _saving || _selectingImage ? null : _chooseIcon,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      CommunityAvatar(
+                        community: widget.item.community,
+                        previewBytes: _newIconBytes,
+                        imageHeaders: CommunityAdminApi.instance.imageHeaders,
+                        size: 69,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Фотография сообщества',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _selectingImage
+                                  ? 'Обработка изображения…'
+                                  : _newIconBytes == null
+                                      ? 'Нажми, чтобы выбрать новую'
+                                      : 'Новая картинка выбрана',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.image_outlined),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 19),
               TextFormField(
                 controller: _title,
                 maxLength: 80,
@@ -645,9 +737,8 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
               ),
               const SizedBox(height: 13),
               Text(
-                'Исходная фотография сообщества сохраняется. '
-                'Здесь можно поменять текст, ссылки, категорию и '
-                'резервный значок.',
+                'Можно заменить изображение, название, описание, '
+                'категорию и ссылки на соцсети.',
                 style: theme.textTheme.bodySmall,
               ),
               if (_error != null)
