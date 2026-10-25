@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -156,6 +157,42 @@ class CommunityAdminApi {
         if (hidden != null) 'hidden': hidden,
       },
     );
+  }
+
+  Future<void> updateIcon(String id, Uint8List iconBytes) async {
+    final cookie = _cookie;
+    final csrf = _csrf;
+    if (cookie == null || csrf == null) {
+      throw Exception('Войди как администратор');
+    }
+    if (iconBytes.length < 12 || iconBytes.length > 700 * 1024) {
+      throw Exception('Изображение не должно превышать 700 КБ');
+    }
+
+    final request = http.MultipartRequest(
+      'PATCH',
+      Uri.parse(_base + '/groups/' + Uri.encodeComponent(id) + '/icon'),
+    );
+    request.headers['Cookie'] = cookie;
+    request.headers['X-Community-CSRF'] = csrf;
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'icon', iconBytes, filename: 'community_icon.png',
+      ),
+    );
+
+    final response = await http.Response.fromStream(
+      await request.send().timeout(const Duration(seconds: 15)),
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      _cookie = null;
+      _csrf = null;
+      throw Exception('Сессия администратора истекла');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_message(response));
+    }
   }
 
   Future<void> restore(String id) async {
