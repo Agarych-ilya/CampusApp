@@ -1,8 +1,35 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
+
+/// Runs on a background isolate: keeps large photos away from the UI thread.
+Uint8List _prepareCommunityIcon(Uint8List bytes) {
+  final photo = img.decodeImage(bytes);
+  if (photo == null || photo.width < 1 || photo.height < 1) {
+    throw const FormatException('Не удалось прочитать изображение.');
+  }
+
+  final side = photo.width < photo.height ? photo.width : photo.height;
+  final square = img.copyCrop(
+    photo,
+    x: (photo.width - side) ~/ 2,
+    y: (photo.height - side) ~/ 2,
+    width: side,
+    height: side,
+  );
+  final preview = img.copyResize(
+    square,
+    width: 400,
+    height: 400,
+  );
+  return Uint8List.fromList(img.encodeJpg(preview, quality: 82));
+}
 
 class AddCommunityScreen extends StatefulWidget {
   const AddCommunityScreen({super.key});
@@ -18,20 +45,28 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
 
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _membersController = TextEditingController();
   final _telegramController = TextEditingController();
   final _vkController = TextEditingController();
 
   String _category = communityCategories.first;
-  String _iconKind = communityIconKinds.first;
+  Uint8List? _iconBytes;
+  bool _selectingIcon = false;
   bool _submitting = false;
+
+  String get _fallbackIconKind => switch (_category) {
+    'Студенческие чаты' => 'chat',
+    'Первокурсникам' || 'Учёба' => 'study',
+    'Новости и мемы' => 'news',
+    'Новости университета' => 'campus',
+    'Мероприятия' => 'events',
+    _ => 'club',
+  };
   String? _error;
 
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
-    _membersController.dispose();
     _telegramController.dispose();
     _vkController.dispose();
     super.dispose();
@@ -72,6 +107,46 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
     return null;
   }
 
+  Future<void> _chooseIcon() async {
+    if (_submitting || _selectingIcon) return;
+    setState(() {
+      _selectingIcon = true;
+      _error = null;
+    });
+
+    try {
+      final file = await FilePicker.pickFile(type: FileType.image);
+      if (file == null) return;
+
+      final sourceLength = await file.length();
+      if (sourceLength != null && sourceLength > 15 * 1024 * 1024) {
+        throw const FormatException('Выбери изображение размером до 15 МБ.');
+      }
+
+      final original = await file.readAsBytes();
+      if (original.length > 15 * 1024 * 1024) {
+        throw const FormatException('Выбери изображение размером до 15 МБ.');
+      }
+
+      final icon = await compute(_prepareCommunityIcon, original);
+      if (icon.length > 700 * 1024) {
+        throw const FormatException(
+          'Изображение слишком большое даже после уменьшения.',
+        );
+      }
+
+      if (mounted) setState(() => _iconBytes = icon);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.toString().replaceFirst('FormatException: ', '');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _selectingIcon = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (_submitting || !_formKey.currentState!.validate()) return;
 
@@ -85,13 +160,17 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
       return;
     }
 
-    final rawCount = _membersController.text.trim();
+    final iconBytes = _iconBytes;
+    if (iconBytes == null) {
+      setState(() => _error = 'Выбери картинку сообщества из галереи.');
+      return;
+    }
+
     final draft = CommunityDraft(
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim(),
       category: _category,
-      iconKind: _iconKind,
-      memberCount: rawCount.isEmpty ? null : int.tryParse(rawCount),
+      iconKind: _fallbackIconKind,
       telegramUrl: telegram,
       vkUrl: vk,
     );
@@ -102,8 +181,15 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
     });
 
     try {
-      final id = await _api.submit(draft);
-      final pending = draft.asPending(id);
+      final id = await _api.submit(
+        draft,
+        iconBytes: iconBytes,
+        extension: 'jpg',
+      );
+      final localPath = await _pendingStorage.saveIcon(
+        id, iconBytes, 'jpg',
+      );
+      final pending = draft.asPending(id, localIconPath: localPath);
 
       // The backend has accepted the submission even when local caching fails.
       try {
@@ -136,7 +222,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
       subtitle: _category,
       description: '',
       category: _category,
-      iconKind: _iconKind,
+      iconKind: _fallbackIconKind,
     );
 
     return Scaffold(
@@ -160,7 +246,11 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
                 ),
                 child: Row(
                   children: [
-                    CommunityAvatar(community: example, size: 72),
+                    CommunityAvatar(
+                      community: example,
+                      size: 72,
+                      previewBytes: _iconBytes,
+                    ),
                     const SizedBox(width: 15),
                     Expanded(
                       child: Column(
@@ -256,51 +346,66 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
               _SectionTitle(label: 'Иконка сообщества'),
               const SizedBox(height: 8),
               Text(
-                'Выбери подходящий стиль. Его увидят все студенты.',
-                style: TextStyle(color: muted, fontSize: 12),
+                'Выбери собственную картинку из галереи. Она будет '
+                'квадратной и автоматически уменьшится для загрузки.',
+                style: TextStyle(color: muted, fontSize: 12, height: 1.5),
               ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 11,
-                runSpacing: 12,
-                children: [
-                  for (final icon in communityIconKinds)
-                    _IconOption(
-                      iconKind: icon,
-                      selected: _iconKind == icon,
-                      onTap: _submitting
-                          ? null
-                          : () => setState(() => _iconKind = icon),
-                    ),
-                ],
+              const SizedBox(height: 13),
+              InkWell(
+                onTap: _submitting || _selectingIcon ? null : _chooseIcon,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      CommunityAvatar(
+                        community: example,
+                        size: 72,
+                        previewBytes: _iconBytes,
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _iconBytes == null
+                                  ? 'Выбрать изображение'
+                                  : 'Изображение выбрано',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              _selectingIcon
+                                  ? 'Обрабатываем изображение…'
+                                  : 'Нажми, чтобы ' +
+                                      (_iconBytes == null
+                                          ? 'открыть галерею'
+                                          : 'заменить иконку'),
+                              style: TextStyle(color: muted, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.image_outlined, size: 23),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 25),
-              _SectionTitle(label: 'Участники'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _membersController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: 'Примерное число участников',
-                  hintText: 'Необязательно',
-                  prefixIcon: Icon(Icons.people_alt_outlined),
-                ),
-                validator: (value) {
-                  final raw = (value ?? '').trim();
-                  if (raw.isEmpty) return null;
-                  final parsed = int.tryParse(raw);
-                  if (parsed == null || parsed < 1 || parsed > 100000000) {
-                    return 'Укажи число от 1 до 100 000 000';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 6),
+              _SectionTitle(label: 'Количество участников'),
+              const SizedBox(height: 8),
               Text(
-                'Указанное число будет помечено «по данным автора». '
-                'CampusApp не считывает участников из Telegram или VK.',
-                style: TextStyle(fontSize: 11, color: muted, height: 1.45),
+                'Подписчики и участники определяются автоматически '
+                'через Telegram или API ВКонтакте. Если соцсеть '
+                'не предоставляет данные, число будет скрыто.',
+                style: TextStyle(color: muted, fontSize: 12, height: 1.5),
               ),
               const SizedBox(height: 25),
               _SectionTitle(label: 'Ссылки на соцсети'),
@@ -397,61 +502,3 @@ class _SectionTitle extends StatelessWidget {
   );
 }
 
-class _IconOption extends StatelessWidget {
-  const _IconOption({
-    required this.iconKind,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String iconKind;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = CommunityAvatar.colorsFor(iconKind);
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(17),
-      child: Container(
-        width: 91,
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: selected
-              ? colors.first.withValues(alpha: 0.16)
-              : Theme.of(context).colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(17),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              CommunityAvatar.iconFor(iconKind),
-              color: colors.first,
-              size: 26,
-            ),
-            const SizedBox(height: 7),
-            Text(
-              switch (iconKind) {
-                'chat' => 'Чат',
-                'campus' => 'Кампус',
-                'news' => 'Новости',
-                'study' => 'Учёба',
-                'club' => 'Клуб',
-                'events' => 'События',
-                _ => 'Группа',
-              },
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                color: selected ? colors.first : muted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
