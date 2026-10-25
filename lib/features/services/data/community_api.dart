@@ -9,6 +9,7 @@ const communityCategories = <String>[
   'Студенческие чаты',
   'Первокурсникам',
   'Новости и мемы',
+  'Новости университета',
   'Клубы и интересы',
   'Учёба',
   'Мероприятия',
@@ -34,6 +35,7 @@ class CommunityData {
     required this.iconKind,
     this.memberCount,
     this.memberCountSource,
+    this.memberCountAsOf,
     this.telegramUrl,
     this.vkUrl,
     this.isPending = false,
@@ -47,6 +49,7 @@ class CommunityData {
   final String iconKind;
   final int? memberCount;
   final String? memberCountSource;
+  final String? memberCountAsOf;
   final String? telegramUrl;
   final String? vkUrl;
   final bool isPending;
@@ -57,7 +60,8 @@ class CommunityData {
     return count.toString().replaceAllMapped(
       RegExp(r'(?<=\d)(?=(\d{3})+$)'),
       (_) => ' ',
-    ) + ' участников';
+    ) + (memberCountSource == 'telegram_snapshot'
+        ? ' подписчиков' : ' участников');
   }
 
   bool matches(String query) {
@@ -97,7 +101,52 @@ class CommunityData {
           'Актуальный контент и правила — в самом сообществе.',
       category: 'Новости и мемы',
       iconKind: 'news',
+      memberCount: 2392,
+      memberCountSource: 'telegram_snapshot',
+      memberCountAsOf: '2026-10-25',
       telegramUrl: 'https://t.me/MPEImai',
+    ),
+    CommunityData(
+      id: 'mpeiuniversity',
+      title: 'НИУ «МЭИ» | Официальный канал',
+      subtitle: 'Новости университета и объявления',
+      description: 'Официальный канал МЭИ с новостями университета, '
+          'мероприятиями и важными объявлениями.',
+      category: 'Новости университета',
+      iconKind: 'campus',
+      memberCount: 12091,
+      memberCountSource: 'telegram_snapshot',
+      memberCountAsOf: '2026-10-25',
+      telegramUrl: 'https://t.me/mpeiuniversity',
+      vkUrl: 'https://vk.com/mpei_ru',
+    ),
+    CommunityData(
+      id: 'mpei_profcom',
+      title: 'Профком студентов МЭИ',
+      subtitle: 'Поддержка и возможности студентов',
+      description: 'Профсоюзная организация обучающихся МЭИ: новости, '
+          'поддержка, инициативы и объявления.',
+      category: 'Новости университета',
+      iconKind: 'club',
+      memberCount: 2625,
+      memberCountSource: 'telegram_snapshot',
+      memberCountAsOf: '2026-10-25',
+      telegramUrl: 'https://t.me/mpei_profcom',
+      vkUrl: 'https://vk.com/profcom_mpei',
+    ),
+    CommunityData(
+      id: 'oss_mpei',
+      title: 'Объединённый студсовет МЭИ',
+      subtitle: 'Студенческое самоуправление',
+      description: 'Объединённый студенческий совет МЭИ: '
+          'студенческие проекты, события и инициативы.',
+      category: 'Новости университета',
+      iconKind: 'events',
+      memberCount: 2799,
+      memberCountSource: 'telegram_snapshot',
+      memberCountAsOf: '2026-10-25',
+      telegramUrl: 'https://t.me/oss_mpei',
+      vkUrl: 'https://vk.com/oss_mpei',
     ),
   ];
 
@@ -139,6 +188,8 @@ class CommunityData {
       memberCount: members,
       memberCountSource: value['memberCountSource'] is String
           ? value['memberCountSource'] as String : null,
+      memberCountAsOf: value['memberCountAsOf'] is String
+          ? value['memberCountAsOf'] as String : null,
       telegramUrl: telegram,
       vkUrl: vk,
       isPending: value['isPending'] == true,
@@ -168,6 +219,7 @@ class CommunityData {
     'iconKind': iconKind,
     'memberCount': memberCount,
     'memberCountSource': memberCountSource,
+    'memberCountAsOf': memberCountAsOf,
     'telegramUrl': telegramUrl,
     'vkUrl': vkUrl,
     'isPending': isPending,
