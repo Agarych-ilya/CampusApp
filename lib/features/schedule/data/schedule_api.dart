@@ -100,7 +100,7 @@ class ScheduleApi {
       http.Response response;
       try {
         response = await http.get(uri).timeout(
-          const Duration(seconds: 70),
+          const Duration(seconds: 90),
         );
       } on TimeoutException {
         throw const ScheduleLoadException(
