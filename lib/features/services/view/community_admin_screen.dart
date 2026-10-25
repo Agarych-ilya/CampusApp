@@ -18,7 +18,7 @@ class CommunityAdminScreen extends StatefulWidget {
 class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   final _api = CommunityAdminApi.instance;
   final _pendingStorage = PendingCommunityStorage();
-  final _email = TextEditingController();
+  final _username = TextEditingController();
   final _password = TextEditingController();
 
   bool _busy = false;
@@ -38,13 +38,13 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
 
   @override
   void dispose() {
-    _email.dispose();
+    _username.dispose();
     _password.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
-    if (_busy || _email.text.trim().isEmpty || _password.text.isEmpty) return;
+    if (_busy || _username.text.trim().isEmpty || _password.text.isEmpty) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -52,7 +52,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
 
     try {
       await _api.login(
-        email: _email.text.trim(),
+        username: _username.text.trim(),
         password: _password.text,
       );
       _password.clear();
@@ -236,20 +236,21 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
                   ),
                   const SizedBox(height: 9),
                   Text(
-                    'Нужен аккаунт бэкенда, которому сервер выдал '
-                    'права управления сообществами. Вход через БАРС '
-                    'не предоставляет эти права.',
+                    'Введи логин CampusApp и пароль аккаунта бэкенда. '
+                    'Сервер проверит пароль и права администратора. '
+                    'Вход через БАРС отдельно не даёт доступ к модерации.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, height: 1.5),
                   ),
                   const SizedBox(height: 28),
                   TextField(
-                    controller: _email,
+                    controller: _username,
                     enabled: !_busy,
-                    keyboardType: TextInputType.emailAddress,
+                    keyboardType: TextInputType.text,
                     autocorrect: false,
                     decoration: const InputDecoration(
-                      labelText: 'Email администратора',
+                      labelText: 'Логин CampusApp',
+                      hintText: 'Например, OgarkovIA',
                       prefixIcon: Icon(Icons.mail_outline_rounded),
                     ),
                   ),
