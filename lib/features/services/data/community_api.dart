@@ -214,8 +214,10 @@ class CommunityData {
 
   static String? _safeIconUrl(Object? input) {
     if (input is! String) return null;
-    return RegExp(r'^/services/(?:admin/)?groups/icons/[0-9]+
-        ? input : null;
+    return RegExp(
+      r'^/services/(?:admin/)?groups/icons/[0-9]+$'
+      r'|^/services/groups/featured-icons/[a-zA-Z0-9_]+$',
+    ).hasMatch(input) ? input : null;
   }
 
   static String? _safeSocial(Object? input, String expectedHost) {
