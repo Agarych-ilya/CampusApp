@@ -80,8 +80,7 @@ class CommunityAdminApi {
         !(address.scheme == 'https' ||
             (address.scheme == 'http' &&
                 (address.host == '127.0.0.1' ||
-                 address.host == 'localhost' ||
-                 address.host == '10.0.2.2')))) {
+                 address.host == 'localhost')))) {
       throw Exception(
         'Для входа через БАРС нужен HTTPS или локальный '
         'USB ADB Reverse (127.0.0.1:8000).',
