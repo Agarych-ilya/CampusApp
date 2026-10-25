@@ -1,34 +1,76 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
 
-/// Runs on a background isolate: keeps large photos away from the UI thread.
-Uint8List _prepareCommunityIcon(Uint8List bytes) {
-  final photo = img.decodeImage(bytes);
-  if (photo == null || photo.width < 1 || photo.height < 1) {
-    throw const FormatException('Не удалось прочитать изображение.');
-  }
+/// Uses Flutter's own image codec: no extra image/archive dependency.
+/// The uploaded 400x400 PNG is center-cropped and normally below 700 KB.
+Future<Uint8List> _prepareCommunityIcon(Uint8List bytes) async {
+  final codec = await ui.instantiateImageCodec(
+    bytes,
+    targetWidth: 512,
+    targetHeight: 512,
+    allowUpscaling: false,
+  );
 
-  final side = photo.width < photo.height ? photo.width : photo.height;
-  final square = img.copyCrop(
-    photo,
-    x: (photo.width - side) ~/ 2,
-    y: (photo.height - side) ~/ 2,
-    width: side,
-    height: side,
-  );
-  final preview = img.copyResize(
-    square,
-    width: 400,
-    height: 400,
-  );
-  return Uint8List.fromList(img.encodeJpg(preview, quality: 82));
+  try {
+    final frame = await codec.getNextFrame();
+    final source = frame.image;
+
+    try {
+      final side = source.width < source.height
+          ? source.width.toDouble()
+          : source.height.toDouble();
+      if (side <= 0) {
+        throw const FormatException('Не удалось прочитать изображение.');
+      }
+
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      final src = ui.Rect.fromLTWH(
+        (source.width - side) / 2,
+        (source.height - side) / 2,
+        side,
+        side,
+      );
+      final dst = ui.Rect.fromLTWH(0, 0, 400, 400);
+      canvas.drawImageRect(
+        source,
+        src,
+        dst,
+        ui.Paint()..filterQuality = ui.FilterQuality.high,
+      );
+
+      final picture = recorder.endRecording();
+      try {
+        final resized = await picture.toImage(400, 400);
+        try {
+          final data = await resized.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          if (data == null) {
+            throw const FormatException('Не удалось обработать изображение.');
+          }
+          return data.buffer.asUint8List(
+            data.offsetInBytes,
+            data.lengthInBytes,
+          );
+        } finally {
+          resized.dispose();
+        }
+      } finally {
+        picture.dispose();
+      }
+    } finally {
+      source.dispose();
+    }
+  } finally {
+    codec.dispose();
+  }
 }
 
 class AddCommunityScreen extends StatefulWidget {
@@ -128,7 +170,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
         throw const FormatException('Выбери изображение размером до 15 МБ.');
       }
 
-      final icon = await compute(_prepareCommunityIcon, original);
+      final icon = await _prepareCommunityIcon(original);
       if (icon.length > 700 * 1024) {
         throw const FormatException(
           'Изображение слишком большое даже после уменьшения.',
@@ -184,10 +226,10 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
       final id = await _api.submit(
         draft,
         iconBytes: iconBytes,
-        extension: 'jpg',
+        extension: 'png',
       );
       final localPath = await _pendingStorage.saveIcon(
-        id, iconBytes, 'jpg',
+        id, iconBytes, 'png',
       );
       final pending = draft.asPending(id, localIconPath: localPath);
 
