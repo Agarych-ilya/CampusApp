@@ -53,7 +53,7 @@ class CommunityAdminApi {
       _cookie == null ? const {} : {'Cookie': _cookie!};
 
   Future<void> login({
-    required String email,
+    required String username,
     required String password,
   }) async {
     _cookie = null;
@@ -61,7 +61,7 @@ class CommunityAdminApi {
     final response = await http.post(
       Uri.parse(_base + '/login'),
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email.trim(), 'password': password}),
+      body: jsonEncode({'username': username.trim(), 'password': password}),
     ).timeout(const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
