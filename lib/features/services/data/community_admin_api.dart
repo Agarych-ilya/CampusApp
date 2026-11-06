@@ -141,6 +141,45 @@ class CommunityAdminApi {
     _csrf = csrf;
   }
 
+  Future<bool>? _pendingBarsAuthorization;
+
+  /// Use the BARS login the student already completed in CampusApp.
+  /// A concurrent caller shares the same authorization attempt.
+  /// Never grant permissions from a locally cached profile.
+  Future<bool> ensureBarsAdminSession() async {
+    final pending = _pendingBarsAuthorization;
+    if (pending != null) return pending;
+
+    final attempt = _checkOrAuthorizeBars();
+    _pendingBarsAuthorization = attempt;
+    try {
+      return await attempt;
+    } finally {
+      if (identical(_pendingBarsAuthorization, attempt)) {
+        _pendingBarsAuthorization = null;
+      }
+    }
+  }
+
+  Future<bool> _checkOrAuthorizeBars() async {
+    if (_cookie != null) {
+      try {
+        await checkSession();
+        return true;
+      } catch (_) {
+        // The server may have restarted or the BARS proof may have expired.
+      }
+    }
+
+    try {
+      await loginWithBars();
+      return true;
+    } catch (_) {
+      // An ordinary student does not have moderation permissions.
+      return false;
+    }
+  }
+
   Future<void> checkSession() async {
     final cookie = _cookie;
     if (cookie == null) throw Exception('Войди как администратор');
