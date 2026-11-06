@@ -2,9 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
-import '/features/profile/data/student_profile_storage.dart';
 import '../data/community_admin_api.dart';
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
@@ -20,14 +18,8 @@ class CommunityAdminScreen extends StatefulWidget {
 class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   final _api = CommunityAdminApi.instance;
   final _pendingStorage = PendingCommunityStorage();
-  static const _barsUrl = 'https://bars.mpei.ru/bars_web/Auth/Menu';
-
-  late final WebViewController _barsController;
   bool _busy = false;
   bool _signedIn = false;
-  bool _showBars = false;
-  DateTime? _lastCheck;
-  String? _recordBookHint;
   String _filter = 'pending';
   String? _error;
   List<CommunityAdminItem> _items = [];
@@ -35,83 +27,40 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRecordBookHint();
-    _barsController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (_) {
-            if (_showBars && !_signedIn) {
-              _tryBarsLogin(automatic: true);
-            }
-          },
-        ),
-      );
-
     if (_api.isSignedIn) {
       _signedIn = true;
       _refresh();
     } else {
-      // Reuse the session from the original BARS login if it is still valid.
-      _tryBarsLogin();
+      // No second authentication screen. Reuse the existing BARS session.
+      _verifyExistingBarsSession();
     }
   }
 
-  Future<void> _loadRecordBookHint() async {
-    try {
-      final profile = await StudentProfileStorage().getProfile();
-      if (!mounted) return;
-      final recordBook = profile?.recordBook.trim();
-      if (recordBook != null && recordBook.isNotEmpty) {
-        setState(() => _recordBookHint = recordBook);
-      }
-    } catch (_) {
-      // Only a convenience hint. Local profile data never grants admin rights.
-    }
-  }
-
-  Future<void> _openBars() async {
-    if (!mounted) return;
-    setState(() => _showBars = true);
-    await _barsController.loadRequest(Uri.parse(_barsUrl));
-  }
-
-  Future<void> _tryBarsLogin({bool automatic = false}) async {
-    if (_busy || _signedIn || !mounted) return;
-    final now = DateTime.now();
-    if (automatic &&
-        _lastCheck != null &&
-        now.difference(_lastCheck!) < const Duration(seconds: 3)) {
-      return;
-    }
-    _lastCheck = now;
-
+  Future<void> _verifyExistingBarsSession() async {
+    if (_busy || !mounted) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-
     try {
-      // The server obtains the student's ID directly from BARS and
-      // checks a server-side allowlist. No user-supplied admin names.
-      final authenticated = await _api.ensureBarsAdminSession();
-      if (!authenticated) {
-        throw Exception(
-          _api.lastBarsAuthError ??
-              'Не удалось подтвердить права через текущую сессию БАРС',
-        );
-      }
+      final verified = await _api.ensureBarsAdminSession();
       if (!mounted) return;
-      setState(() {
-        _signedIn = true;
-        _showBars = false;
-      });
+      if (!verified) {
+        setState(() {
+          _signedIn = false;
+          _error = _api.lastBarsAuthError ??
+              'Не удалось проверить права через существующую сессию БАРС.';
+        });
+        return;
+      }
+      setState(() => _signedIn = true);
       await _refresh();
     } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = _message(error));
-      if (!automatic && !_showBars) {
-        await _openBars();
+      if (mounted) {
+        setState(() {
+          _signedIn = false;
+          _error = _message(error);
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -128,26 +77,11 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      if (!_api.isSignedIn) {
-        setState(() {
-          _signedIn = false;
-          _showBars = true;
-        });
-        await _barsController.loadRequest(Uri.parse(_barsUrl));
-      }
-      if (mounted) setState(() => _error = _message(error));
+      setState(() {
+        if (!_api.isSignedIn) _signedIn = false;
+        _error = _message(error);
+      });
     }
-  }
-
-  Future<void> _logout() async {
-    await _api.logout();
-    if (!mounted) return;
-    setState(() {
-      _signedIn = false;
-      _items = [];
-      _error = null;
-      _showBars = false;
-    });
   }
 
   Future<bool> _ask(
@@ -246,17 +180,10 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
       await _refresh();
     } catch (error) {
       if (!mounted) return;
-      final expired = !_api.isSignedIn;
       setState(() {
         _error = _message(error);
-        if (expired) {
-          _signedIn = false;
-          _showBars = true;
-        }
+        if (!_api.isSignedIn) _signedIn = false;
       });
-      if (expired) {
-        await _barsController.loadRequest(Uri.parse(_barsUrl));
-      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -276,106 +203,54 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
           'Управление группами',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        actions: [
-          if (_signedIn)
-            IconButton(
-              onPressed: _busy ? null : _logout,
-              tooltip: 'Выйти из админ-панели',
-              icon: const Icon(Icons.logout_rounded),
-            ),
-        ],
+
       ),
       body: SafeArea(
         child: !_signedIn
-            ? Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-                    child: Column(
-                      children: [
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_busy)
+                        const CircularProgressIndicator()
+                      else
                         const Icon(
-                          Icons.verified_user_outlined,
-                          size: 45,
-                          color: Color(0xFF60A5FA),
+                          Icons.cloud_off_outlined,
+                          size: 42,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Вход через БАРС',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                      const SizedBox(height: 18),
+                      Text(
+                        _busy
+                            ? 'Проверяем права...'
+                            : 'Не удалось открыть управление группами',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Используем твою авторизацию БАРС. '
-                          'Сервер сам проверит номер зачётки и права '
-                          'администратора — отдельный пароль не нужен.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: muted, height: 1.35),
-                        ),
-                        if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFFFF808D),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        if (_recordBookHint != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: SelectableText(
-                              'Твой №ЗК: ' + _recordBookHint! +
-                              '. Для назначения прав укажи его в '
-                              'COMMUNITY_ADMIN_BARS_RECORD_BOOKS '
-                              'на сервере.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: muted, fontSize: 12),
-                            ),
-                          ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 10,
-                          alignment: WrapAlignment.center,
-                          children: [
-                            FilledButton.icon(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _tryBarsLogin(),
-                              icon: const Icon(Icons.verified_outlined),
-                              label: const Text('Проверить вход'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: _busy ? null : _openBars,
-                              icon: const Icon(Icons.login_rounded),
-                              label: const Text('Открыть БАРС'),
-                            ),
-                          ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _busy
+                            ? 'Используем уже существующую сессию БАРС.'
+                            : (_error ??
+                                'Проверь бэкенд и действующую сессию БАРС. '
+                                'Отдельный вход администратора не нужен.'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: muted),
+                      ),
+                      if (!_busy) ...[
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _verifyExistingBarsSession,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Повторить проверку'),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                  if (_busy)
-                    const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: CircularProgressIndicator(),
-                    ),
-                  Expanded(
-                    child: _showBars
-                        ? WebViewWidget(controller: _barsController)
-                        : const Center(
-                            child: Text(
-                              'Если БАРС уже открыт в CampusApp, '
-                              'нажми «Проверить вход».',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                  ),
-                ],
+                ),
               )
             : RefreshIndicator(
                 onRefresh: _refresh,
