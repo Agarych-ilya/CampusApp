@@ -88,7 +88,7 @@ class CommunityAdminApi {
     }
 
     final cookies = await WebViewCookieManager().getCookies(
-      domain: Uri.parse('https://bars.mpei.ru/'),
+      domain: Uri.parse('https://bars.mpei.ru/bars_web/ST/Student/ListStudent'),
     );
     if (cookies.isEmpty) {
       throw Exception('Сессия БАРС не найдена. Открой БАРС и войди в аккаунт.');
