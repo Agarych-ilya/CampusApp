@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '/core/theme/app_theme.dart';
 import '/features/services/cloud/view/cloud_screen.dart';
 import '../data/community_api.dart';
+import '../data/community_admin_api.dart';
 import '../nfc/view/nfc_pass_screen.dart';
 import '../qr/view/qr_scanner_screen.dart';
 import '../widgets/community_avatar.dart';
@@ -79,6 +80,9 @@ class _ServicesScreenState extends State<ServicesScreen> {
   List<CommunityData> _communities = [];
   List<CommunityData> _pending = [];
   bool _offline = false;
+  bool _canManageCommunities = false;
+  bool _checkingAdmin = false;
+  String? _deletingCommunityId;
   String _activeCategory = 'Все';
 
   @override
@@ -87,6 +91,18 @@ class _ServicesScreenState extends State<ServicesScreen> {
     _loadPending();
     _loadCachedCatalog();
     _loadCommunities();
+    _checkExistingBarsAdmin();
+  }
+
+  Future<void> _checkExistingBarsAdmin() async {
+    if (_checkingAdmin) return;
+    _checkingAdmin = true;
+    try {
+      final allowed = await CommunityAdminApi.instance.ensureBarsAdminSession();
+      if (mounted) setState(() => _canManageCommunities = allowed);
+    } finally {
+      _checkingAdmin = false;
+    }
   }
 
   Future<void> _loadCachedCatalog() async {
@@ -164,7 +180,59 @@ class _ServicesScreenState extends State<ServicesScreen> {
     // Moderation may publish, reject or remove groups while the panel is open.
     await _loadCommunities();
     await _loadPending();
+    await _checkExistingBarsAdmin();
   }
+
+  Future<void> _deleteCommunity(CommunityData community) async {
+    if (_deletingCommunityId != null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить сообщество?'),
+        content: Text(
+          '«${community.title}» будет удалено из каталога. '
+          'Встроенные сообщества можно восстановить в управлении группами.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deletingCommunityId = community.id);
+    try {
+      final admin = CommunityAdminApi.instance;
+      if (!await admin.ensureBarsAdminSession()) {
+        throw Exception('Сессия БАРС истекла или нет прав администратора. '
+            'Открой управление группами для повторной проверки.');
+      }
+      await admin.delete(community.id);
+      await _loadCommunities();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сообщество удалено из каталога')),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _canManageCommunities = adminSessionAvailable());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingCommunityId = null);
+    }
+  }
+
+  bool adminSessionAvailable() => CommunityAdminApi.instance.isSignedIn;
 
   Future<void> _addCommunity() async {
     final result = await Navigator.of(context).push<CommunityData>(
@@ -174,6 +242,15 @@ class _ServicesScreenState extends State<ServicesScreen> {
     );
 
     if (!mounted || result == null) return;
+
+    if (!result.isPending) {
+      await _loadCommunities();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сообщество опубликовано')),
+      );
+      return;
+    }
 
     setState(() {
       _pending = [
@@ -466,6 +543,10 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     child: _CommunityTile(
                       community: community,
                       onTap: () => _openCommunity(community),
+                      onDelete: _canManageCommunities && !community.isPending
+                          ? () => _deleteCommunity(community)
+                          : null,
+                      deleting: _deletingCommunityId == community.id,
                     ),
                   ),
             ],
@@ -480,10 +561,14 @@ class _CommunityTile extends StatelessWidget {
   const _CommunityTile({
     required this.community,
     required this.onTap,
+    this.onDelete,
+    this.deleting = false,
   });
 
   final CommunityData community;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final bool deleting;
 
   @override
   Widget build(BuildContext context) {
