@@ -94,7 +94,13 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
     try {
       // The server obtains the student's ID directly from BARS and
       // checks a server-side allowlist. No user-supplied admin names.
-      await _api.loginWithBars();
+      final authenticated = await _api.ensureBarsAdminSession();
+      if (!authenticated) {
+        throw Exception(
+          _api.lastBarsAuthError ??
+              'Не удалось подтвердить права через текущую сессию БАРС',
+        );
+      }
       if (!mounted) return;
       setState(() {
         _signedIn = true;
