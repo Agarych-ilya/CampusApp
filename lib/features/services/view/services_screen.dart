@@ -222,7 +222,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       );
     } catch (error) {
       if (mounted) {
-        setState(() => _canManageCommunities = adminSessionAvailable());
+        setState(() => _canManageCommunities = CommunityAdminApi.instance.isSignedIn);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
         );
@@ -231,8 +231,6 @@ class _ServicesScreenState extends State<ServicesScreen> {
       if (mounted) setState(() => _deletingCommunityId = null);
     }
   }
-
-  bool adminSessionAvailable() => CommunityAdminApi.instance.isSignedIn;
 
   Future<void> _addCommunity() async {
     final result = await Navigator.of(context).push<CommunityData>(
@@ -659,12 +657,24 @@ class _CommunityTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 22,
-                color: muted,
-              ),
+              if (onDelete != null)
+                IconButton(
+                  onPressed: deleting ? null : onDelete,
+                  tooltip: 'Удалить сообщество',
+                  icon: deleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline_rounded, size: 21),
+                ),
+              if (onDelete == null)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: muted,
+                ),
             ],
           ),
         ),
