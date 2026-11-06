@@ -113,11 +113,20 @@ class CommunityAdminApi {
 
     _cookie = null;
     _csrf = null;
-    final response = await http.post(
-      Uri.parse(_base + '/bars-login'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'cookieHeader': cookieHeader}),
-    ).timeout(const Duration(seconds: 28));
+    http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse(_base + '/bars-login'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({'cookieHeader': cookieHeader}),
+      ).timeout(const Duration(seconds: 28));
+    } catch (_) {
+      throw Exception(
+        'Нет связи с бэкендом CampusApp. Запусти npm run start:dev '
+        'и выполни adb reverse tcp:8000 tcp:8000 для эмулятора '
+        'или подключённого телефона.',
+      );
+    }
 
     if (response.statusCode != 200) {
       throw Exception(_message(response));
