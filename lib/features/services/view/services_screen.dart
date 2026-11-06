@@ -223,6 +223,21 @@ class _ServicesScreenState extends State<ServicesScreen> {
       if (pendingMatch != null) {
         await _pendingStorage.removeById(community.id);
         await _loadPending();
+      } else {
+        // Remove it from the offline catalog after the server confirms
+        // deletion, so a temporary outage cannot resurrect the old entry.
+        if (mounted) {
+          setState(() {
+            _communities = _communities
+                .where((item) => item.id != community.id)
+                .toList();
+          });
+        }
+        try {
+          await _catalogCache.save(_communities);
+        } catch (_) {
+          // Successful server deletion takes priority over local caching.
+        }
       }
       await _loadCommunities();
       if (!mounted) return;
