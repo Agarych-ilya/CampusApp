@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../data/community_api.dart';
+import '../data/community_admin_api.dart';
 import '../widgets/community_avatar.dart';
 
 /// Uses Flutter's own image codec: no extra image/archive dependency.
@@ -228,6 +229,31 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
         iconBytes: iconBytes,
         extension: 'png',
       );
+      // Moderators who were verified through their existing BARS session
+      // may publish their own submission immediately. All ordinary students
+      // still submit for review; a failed approval leaves the request pending.
+      final moderator = CommunityAdminApi.instance;
+      if (moderator.isSignedIn) {
+        try {
+          await moderator.review(id, true);
+          if (!mounted) return;
+          Navigator.of(context).pop(CommunityData(
+            id: 'community-$id',
+            title: draft.title,
+            subtitle: draft.category,
+            description: draft.description,
+            category: draft.category,
+            iconKind: draft.iconKind,
+            telegramUrl: draft.telegramUrl,
+            vkUrl: draft.vkUrl,
+            iconUrl: '/services/groups/icons/$id',
+          ));
+          return;
+        } catch (_) {
+          // The submission is still available for moderation.
+        }
+      }
+
       final localPath = await _pendingStorage.saveIcon(
         id, iconBytes, 'png',
       );
