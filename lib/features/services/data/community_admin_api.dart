@@ -142,6 +142,9 @@ class CommunityAdminApi {
   }
 
   Future<bool>? _pendingBarsAuthorization;
+  String? _lastBarsAuthError;
+
+  String? get lastBarsAuthError => _lastBarsAuthError;
 
   /// Use the BARS login the student already completed in CampusApp.
   /// A concurrent caller shares the same authorization attempt.
@@ -162,6 +165,7 @@ class CommunityAdminApi {
   }
 
   Future<bool> _checkOrAuthorizeBars() async {
+    _lastBarsAuthError = null;
     if (_cookie != null) {
       try {
         await checkSession();
@@ -174,8 +178,9 @@ class CommunityAdminApi {
     try {
       await loginWithBars();
       return true;
-    } catch (_) {
-      // An ordinary student does not have moderation permissions.
+    } catch (error) {
+      // A cached BARS profile is never sufficient to authorize deletions.
+      _lastBarsAuthError = error.toString().replaceFirst('Exception: ', '');
       return false;
     }
   }
