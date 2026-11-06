@@ -105,6 +105,14 @@ class _ServicesScreenState extends State<ServicesScreen> {
     }
   }
 
+  Future<void> _refreshGroupsAndPermissions() async {
+    // Allow recovery if the local backend was started after the app.
+    await Future.wait([
+      _loadCommunities(),
+      _checkExistingBarsAdmin(),
+    ]);
+  }
+
   Future<void> _loadCachedCatalog() async {
     final cached = await _catalogCache.read();
     if (!mounted || !_offline && _communities.isNotEmpty) return;
@@ -211,8 +219,11 @@ class _ServicesScreenState extends State<ServicesScreen> {
     try {
       final admin = CommunityAdminApi.instance;
       if (!await admin.ensureBarsAdminSession()) {
-        throw Exception('Сессия БАРС истекла или нет прав администратора. '
-            'Открой управление группами для повторной проверки.');
+        throw Exception(
+          admin.lastBarsAuthError ??
+          'Не удалось подтвердить права. Проверь подключение к бэкенду '
+          'и обнови список групп.',
+        );
       }
       final pendingMatch = RegExp(r'^pending-([1-9][0-9]*)$')
           .firstMatch(community.id);
@@ -346,7 +357,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _loadCommunities,
+          onRefresh: _refreshGroupsAndPermissions,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
@@ -440,12 +451,14 @@ class _ServicesScreenState extends State<ServicesScreen> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: _openAdmin,
-                    tooltip: 'Управление сообществами',
-                    icon: const Icon(Icons.admin_panel_settings_outlined),
-                  ),
-                  const SizedBox(width: 5),
+                  if (_canManageCommunities) ...[
+                    IconButton(
+                      onPressed: _openAdmin,
+                      tooltip: 'Управление сообществами',
+                      icon: const Icon(Icons.admin_panel_settings_outlined),
+                    ),
+                    const SizedBox(width: 5),
+                  ],
                   FilledButton.tonalIcon(
                     onPressed: _addCommunity,
                     icon: const Icon(Icons.add_rounded, size: 19),
