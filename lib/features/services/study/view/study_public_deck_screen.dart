@@ -11,11 +11,13 @@ class StudyPublicDeckScreen extends StatefulWidget {
     required this.preview,
     required this.onSaveCopy,
     required this.onChanged,
+    this.existingCopyCount = 0,
   });
 
   final PublicStudyDeck preview;
   final Future<void> Function(StudyDeck) onSaveCopy;
   final Future<void> Function() onChanged;
+  final int existingCopyCount;
 
   @override
   State<StudyPublicDeckScreen> createState() => _StudyPublicDeckScreenState();
@@ -26,11 +28,12 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
   StudyDeck? _study;
   String? _error;
   bool _busy = false;
-  int _copiesSaved = 0;
+  late int _copiesSaved;
 
   @override
   void initState() {
     super.initState();
+    _copiesSaved = widget.existingCopyCount;
     _load();
   }
 
@@ -300,6 +303,15 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
                             ? 'Сохранить копию себе'
                             : 'Сохранить ещё одну копию'),
                       ),
+                      if (_copiesSaved > 0) ...[
+                        const SizedBox(height: 8),
+                        Center(
+                          child: Text(
+                            'В «Моих наборах» сохранено копий: $_copiesSaved',
+                            style: TextStyle(color: muted, fontSize: 12),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       Text('Термины',
                           style: theme.textTheme.titleLarge?.copyWith(

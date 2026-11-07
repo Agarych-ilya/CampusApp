@@ -142,6 +142,18 @@ class StudyDeckStore {
         .toList();
   }
 
+  /// Import a public deck as a *new* local copy, never an upsert.
+  /// Read from storage each time so a second import cannot overwrite the first.
+  Future<List<StudyDeck>> addNewCopy(StudyDeck copy) async {
+    final current = await load();
+    if (current.any((deck) => deck.id == copy.id)) {
+      throw const FormatException('Копия уже существует, попробуй ещё раз');
+    }
+    final updated = [copy, ...current];
+    await save(updated);
+    return updated;
+  }
+
   Future<void> save(List<StudyDeck> decks) async {
     final prefs = await SharedPreferences.getInstance();
     final result = await prefs.setString(

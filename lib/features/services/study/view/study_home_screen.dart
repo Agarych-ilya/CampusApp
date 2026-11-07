@@ -173,7 +173,10 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
       MaterialPageRoute<void>(
         builder: (_) => StudyPublicDeckScreen(
           preview: deck,
-          onSaveCopy: _saveDeck,
+          onSaveCopy: _savePublicCopy,
+          existingCopyCount: _decks
+              .where((saved) => saved.id.startsWith('copy-${deck.id}-'))
+              .length,
           onChanged: _loadPublic,
         ),
       ),
@@ -181,6 +184,13 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
     if (mounted) {
       setState(() => _activityFuture = _activityStore.loadByDay());
       _loadPublic();
+    }
+  }
+
+  Future<void> _savePublicCopy(StudyDeck copy) async {
+    final saved = await _store.addNewCopy(copy);
+    if (mounted) {
+      setState(() => _decks = saved);
     }
   }
 
