@@ -178,7 +178,11 @@ class _ServicesScreenState extends State<ServicesScreen> {
   void _openCommunity(CommunityData community) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => CommunityDetailScreen(community: community),
+        builder: (_) => CommunityDetailScreen(
+          community: community,
+          onEditAvatar: () => _editCommunityAvatar(community),
+          canEditAvatar: _canManageCommunities,
+        ),
       ),
     );
   }
@@ -198,8 +202,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
   /// Only verified moderators may replace existing group avatars.
   /// The backend also enforces admin permissions on PATCH .../icon.
-  Future<void> _editCommunityAvatar(CommunityData community) async {
-    if (_editingAvatarId != null || _deletingCommunityId != null) return;
+  Future<Uint8List?> _editCommunityAvatar(CommunityData community) async {
+    if (_editingAvatarId != null || _deletingCommunityId != null) return null;
 
     setState(() => _editingAvatarId = community.id);
     try {
@@ -207,7 +211,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       // hide editing from an administrator. Retry on explicit avatar tap.
       final admin = CommunityAdminApi.instance;
       final isAdmin = await admin.ensureBarsAdminSession();
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() => _canManageCommunities = isAdmin);
       if (!isAdmin) {
         await showDialog<void>(
@@ -226,11 +230,11 @@ class _ServicesScreenState extends State<ServicesScreen> {
             ],
           ),
         );
-        return;
+        return null;
       }
 
       final selected = await FilePicker.pickFile(type: FileType.image);
-      if (selected == null) return;
+      if (selected == null) return null;
 
       final length = await selected.length();
       if (length != null && length > 15 * 1024 * 1024) {
@@ -249,7 +253,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
         );
       }
 
-      if (!mounted) return;
+      if (!mounted) return null;
       final approved = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -286,7 +290,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
           ],
         ),
       );
-      if (approved != true || !mounted) return;
+      if (approved != true || !mounted) return null;
 
       // Require fresh proof again before upload. The backend independently
       // validates the moderator session and CSRF token on every PATCH.
@@ -320,15 +324,16 @@ class _ServicesScreenState extends State<ServicesScreen> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) return null;
       // Instant visual refresh, regardless of the network image cache.
       setState(() => _avatarPreviews[community.id] = processed);
       await _loadCommunities();
-      if (!mounted) return;
+      if (!mounted) return null;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Аватарка сообщества обновлена')),
       );
+      return processed;
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -341,6 +346,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
           ),
         );
       }
+      return null;
     } finally {
       if (mounted) setState(() => _editingAvatarId = null);
     }
