@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
@@ -83,6 +86,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
   bool _canManageCommunities = false;
   bool _checkingAdmin = false;
   String? _deletingCommunityId;
+  String? _editingAvatarId;
+  final Map<String, Uint8List> _avatarPreviews = {};
   String _activeCategory = 'Все';
 
   @override
@@ -191,6 +196,133 @@ class _ServicesScreenState extends State<ServicesScreen> {
     await _checkExistingBarsAdmin();
   }
 
+  /// Only verified moderators may replace existing group avatars.
+  /// The backend also enforces admin permissions on PATCH .../icon.
+  Future<void> _editCommunityAvatar(CommunityData community) async {
+    if (!_canManageCommunities ||
+        _editingAvatarId != null ||
+        _deletingCommunityId != null) {
+      return;
+    }
+
+    setState(() => _editingAvatarId = community.id);
+    try {
+      final selected = await FilePicker.pickFile(type: FileType.image);
+      if (selected == null) return;
+
+      final length = await selected.length();
+      if (length != null && length > 15 * 1024 * 1024) {
+        throw const FormatException('Выбери изображение размером до 15 МБ.');
+      }
+      final rawBytes = await selected.readAsBytes();
+      if (rawBytes.length > 15 * 1024 * 1024) {
+        throw const FormatException('Выбери изображение размером до 15 МБ.');
+      }
+
+      // Same 400x400 center crop used when adding new communities.
+      final processed = await prepareCommunityIcon(rawBytes);
+      if (processed.length < 12 || processed.length > 700 * 1024) {
+        throw const FormatException(
+          'После обработки фотография должна занимать не более 700 КБ.',
+        );
+      }
+
+      if (!mounted) return;
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Заменить аватарку?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.memory(
+                  processed,
+                  width: 130,
+                  height: 130,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Новая аватарка для «' + community.title + '». '
+                'Изменение будет видно всем студентам.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      );
+      if (approved != true || !mounted) return;
+
+      final admin = CommunityAdminApi.instance;
+      if (!await admin.ensureBarsAdminSession()) {
+        if (mounted) setState(() => _canManageCommunities = false);
+        throw Exception(
+          admin.lastBarsAuthError ??
+          'Не удалось подтвердить права администратора через БАРС.',
+        );
+      }
+
+      final pending = RegExp(r'^pending-([1-9][0-9]*)$')
+          .firstMatch(community.id);
+      final serverId = pending == null
+          ? community.id
+          : 'community-' + pending.group(1)!;
+
+      await admin.updateIcon(serverId, processed);
+
+      // Keep pending thumbnails in sync on the submitting device.
+      if (pending != null) {
+        try {
+          await _pendingStorage.saveIcon(
+            int.parse(pending.group(1)!),
+            processed,
+            'png',
+          );
+          await _loadPending();
+        } catch (_) {
+          // Successful server save must not be reported as a failure.
+        }
+      }
+
+      if (!mounted) return;
+      // Instant visual refresh, regardless of the network image cache.
+      setState(() => _avatarPreviews[community.id] = processed);
+      await _loadCommunities();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Аватарка сообщества обновлена')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error.toString()
+                  .replaceFirst('Exception: ', '')
+                  .replaceFirst('FormatException: ', ''),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _editingAvatarId = null);
+    }
+  }
+
   Future<void> _deleteCommunity(CommunityData community) async {
     if (_deletingCommunityId != null) return;
     final confirmed = await showDialog<bool>(
@@ -231,6 +363,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
           ? community.id
           : 'community-${pendingMatch.group(1)}';
       await admin.delete(targetId);
+      _avatarPreviews.remove(community.id);
       if (pendingMatch != null) {
         await _pendingStorage.removeById(community.id);
         await _loadPending();
@@ -578,6 +711,11 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     child: _CommunityTile(
                       community: community,
                       onTap: () => _openCommunity(community),
+                      onEditAvatar: _canManageCommunities
+                          ? () => _editCommunityAvatar(community)
+                          : null,
+                      avatarPreviewBytes: _avatarPreviews[community.id],
+                      avatarUploading: _editingAvatarId == community.id,
                       onDelete: _canManageCommunities
                           ? () => _deleteCommunity(community)
                           : null,
@@ -597,12 +735,18 @@ class _CommunityTile extends StatelessWidget {
     required this.community,
     required this.onTap,
     this.onDelete,
+    this.onEditAvatar,
+    this.avatarPreviewBytes,
+    this.avatarUploading = false,
     this.deleting = false,
   });
 
   final CommunityData community;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onEditAvatar;
+  final Uint8List? avatarPreviewBytes;
+  final bool avatarUploading;
   final bool deleting;
 
   @override
@@ -621,7 +765,50 @@ class _CommunityTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CommunityAvatar(community: community, size: 60),
+              SizedBox(
+                width: 60,
+                height: 60,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CommunityAvatar(
+                      community: community,
+                      size: 60,
+                      previewBytes: avatarPreviewBytes,
+                    ),
+                    if (onEditAvatar != null)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Material(
+                          color: theme.colorScheme.primary,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: avatarUploading ? null : onEditAvatar,
+                            child: SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: avatarUploading
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(7),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.camera_alt_rounded,
+                                      size: 15,
+                                      color: Colors.white,
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
