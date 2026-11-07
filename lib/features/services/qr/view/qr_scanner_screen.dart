@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '/features/services/style/service_palette.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '/core/theme/app_theme.dart';
 
 /// Scan QR codes locally using the camera. Scan contents are never
 /// automatically opened, uploaded, or passed to another service.
@@ -138,7 +139,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'QR-сканер',
@@ -195,7 +196,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                                       Icon(
                                         Icons.check_circle_outline,
                                         size: 58,
-                                        color: Color(0xFF4ADEB1),
+                                        color: ServicePalette.mint,
                                       ),
                                       SizedBox(height: 13),
                                       Text(
@@ -258,7 +259,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _unsupportedPanel(BuildContext context) {
@@ -324,7 +325,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         children: [
           const Icon(
             Icons.qr_code_2_outlined,
-            color: AppTheme.pink,
+            color: ServicePalette.accent,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -425,7 +426,7 @@ class _CameraAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: active
-          ? AppTheme.pink
+          ? ServicePalette.accent
           : Colors.black.withValues(alpha: 0.64),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(

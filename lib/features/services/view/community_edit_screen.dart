@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '/features/services/style/service_palette.dart';
+
 import '../data/community_admin_api.dart';
 import '../data/community_api.dart';
 
@@ -110,7 +112,7 @@ class _CommunityEditScreenState extends State<CommunityEditScreen> {
     final muted = theme.colorScheme.onSurfaceVariant;
     final current = widget.community;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Редактировать сообщество',
@@ -266,6 +268,6 @@ class _CommunityEditScreenState extends State<CommunityEditScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

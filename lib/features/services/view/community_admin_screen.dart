@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '/features/services/style/service_palette.dart';
+
 import '../data/community_admin_api.dart';
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
@@ -197,7 +199,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Управление группами',
@@ -313,7 +315,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
                 ),
               ),
       ),
-    );
+    ));
   }
 
   List<Widget> _buildItems(ThemeData theme) {
@@ -592,7 +594,7 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(title: const Text('Редактировать сообщество')),
       body: SafeArea(
         child: Form(
@@ -730,6 +732,6 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

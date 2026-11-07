@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+
+import '/features/services/style/service_palette.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '/core/theme/app_theme.dart';
 import '../data/listings_api.dart';
 import 'listing_editor_screen.dart';
 
@@ -255,7 +256,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final market = item.kind == 'market';
     final found = item.kind == 'found';
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: Text(market ? 'Объявление' : 'Бюро находок'),
         actions: [
@@ -306,7 +307,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 item.priceLabel,
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w900,
-                  color: item.isFree ? const Color(0xFFAFC7FF) : null,
+                  color: item.isFree ? ServicePalette.accent : null,
                 ),
               ),
               const SizedBox(height: 7),
@@ -424,7 +425,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 ),
               ),
             ),
-    );
+    ));
   }
 }
 
@@ -446,7 +447,7 @@ class _DetailRow extends StatelessWidget {
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: AppTheme.pink),
+      leading: Icon(icon, color: ServicePalette.accent),
       title: Text(name, style: TextStyle(color: muted, fontSize: 12)),
       subtitle: Text(
         value,

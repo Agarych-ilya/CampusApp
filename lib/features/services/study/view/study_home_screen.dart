@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '../data/study_deck.dart';
 import '../data/study_activity_storage.dart';
 import '../widgets/study_activity_heatmap.dart';
@@ -123,7 +124,7 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
       0, (total, deck) => total + deck.learnedCount,
     );
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Campus Cards',
@@ -162,8 +163,8 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              Color(0xFF3C1C55),
-                              Color(0xFF191F41),
+                              ServicePalette.headerStart,
+                              ServicePalette.headerEnd,
                             ],
                           ),
                           borderRadius: BorderRadius.circular(26),
@@ -198,7 +199,7 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
                               'Создавай карточки, повторяй термины '
                               'и проверяй себя перед зачётом.',
                               style: TextStyle(
-                                color: Color(0xFFDDD5E6),
+                                color: ServicePalette.headerSubtitle,
                                 height: 1.4,
                                 fontSize: 13,
                               ),
@@ -207,8 +208,8 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
                             FilledButton.icon(
                               onPressed: _create,
                               style: FilledButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF312049),
+                                backgroundColor: ServicePalette.accent,
+                                foregroundColor: ServicePalette.accentOnDark,
                               ),
                               icon: const Icon(Icons.add_rounded),
                               label: const Text('Создать набор'),
@@ -359,7 +360,7 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
                     ],
                   ),
       ),
-    );
+    ));
   }
 }
 
@@ -386,7 +387,7 @@ class _StudyStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: AppTheme.pink, size: 20),
+          Icon(icon, color: ServicePalette.accent, size: 20),
           const SizedBox(height: 10),
           Text(
             value,
@@ -427,7 +428,7 @@ class _StudyEmptyState extends StatelessWidget {
         children: [
           const Icon(
             Icons.auto_stories_outlined,
-            color: AppTheme.pink,
+            color: ServicePalette.accent,
             size: 46,
           ),
           const SizedBox(height: 14),
@@ -489,12 +490,12 @@ class _StudyDeckTile extends StatelessWidget {
                 width: 51,
                 height: 51,
                 decoration: BoxDecoration(
-                  color: AppTheme.pink.withOpacity(0.13),
+                  color: ServicePalette.accent.withOpacity(0.13),
                   borderRadius: BorderRadius.circular(15),
                 ),
                 child: const Icon(
                   Icons.style_outlined,
-                  color: AppTheme.pink,
+                  color: ServicePalette.accent,
                   size: 25,
                 ),
               ),
@@ -526,7 +527,7 @@ class _StudyDeckTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       child: LinearProgressIndicator(
                         value: progress,
-                        color: AppTheme.pink,
+                        color: ServicePalette.accent,
                         backgroundColor: theme.colorScheme.outlineVariant
                             .withOpacity(0.3),
                         minHeight: 5,
@@ -654,7 +655,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
     final total = _deck.cards.length;
     final known = _deck.learnedCount;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text('Учебный набор'),
         actions: [
@@ -692,7 +693,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
                 children: [
                   const Icon(
                     Icons.auto_stories_outlined,
-                    color: AppTheme.pink,
+                    color: ServicePalette.accent,
                     size: 30,
                   ),
                   const SizedBox(height: 18),
@@ -722,7 +723,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
                     borderRadius: BorderRadius.circular(12),
                     child: LinearProgressIndicator(
                       value: total == 0 ? 0 : known / total,
-                      color: AppTheme.pink,
+                      color: ServicePalette.accent,
                       backgroundColor: theme.colorScheme.outlineVariant
                           .withOpacity(0.4),
                       minHeight: 7,
@@ -739,7 +740,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
                     title: 'Карточки',
                     subtitle: 'Переворачивай и повторяй',
                     icon: Icons.style_outlined,
-                    color: AppTheme.pink,
+                    color: ServicePalette.accent,
                     onTap: total == 0 ? null : _openCards,
                   ),
                 ),
@@ -749,7 +750,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
                     title: 'Тест',
                     subtitle: 'Выбери верный ответ',
                     icon: Icons.quiz_outlined,
-                    color: const Color(0xFF8A68FA),
+                    color: ServicePalette.slate,
                     onTap: _deck.distinctAnswerCount < 2
                         ? null
                         : _openQuiz,
@@ -809,7 +810,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
                             const Icon(
                               Icons.check_circle_rounded,
                               size: 18,
-                              color: AppTheme.pink,
+                              color: ServicePalette.accent,
                             ),
                         ],
                       ),
@@ -829,7 +830,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

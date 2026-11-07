@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '/features/services/style/service_palette.dart';
+
 import '../data/community_api.dart';
 import '../data/community_admin_api.dart';
 import '../widgets/community_avatar.dart';
@@ -293,7 +295,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
       iconKind: _fallbackIconKind,
     );
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Добавить сообщество',
@@ -552,7 +554,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

@@ -2,7 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '../data/study_deck.dart';
 import '../data/study_activity_storage.dart';
 import 'study_results_screen.dart';
@@ -87,7 +88,7 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
         .where((card) => _knownIds.contains(card.id))
         .length;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text('Карточки'),
         actions: [
@@ -96,7 +97,7 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
             tooltip: _shuffled ? 'Исходный порядок' : 'Перемешать',
             icon: Icon(
               Icons.shuffle_rounded,
-              color: _shuffled ? AppTheme.pink : null,
+              color: _shuffled ? ServicePalette.accent : null,
             ),
           ),
         ],
@@ -105,43 +106,78 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: finished
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 88,
-                      height: 88,
-                      decoration: BoxDecoration(
-                        color: AppTheme.pink.withOpacity(0.12),
-                        shape: BoxShape.circle,
+              ? SingleChildScrollView(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainer,
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: ServicePalette.accent.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(17),
+                              ),
+                              child: const Icon(
+                                Icons.verified_rounded,
+                                color: ServicePalette.accent,
+                                size: 32,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              'Круг завершён!',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            Text(
+                              'Ты знаешь ' + learned.toString() + ' из ' +
+                                  _cards.length.toString() + ' карточек.',
+                              style: TextStyle(color: muted),
+                            ),
+                            const SizedBox(height: 16),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: LinearProgressIndicator(
+                                minHeight: 6,
+                                value: _cards.isEmpty
+                                    ? 0.0
+                                    : learned / _cards.length,
+                                backgroundColor:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                color: ServicePalette.accent,
+                              ),
+                            ),
+                            const SizedBox(height: 22),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _restart,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('Пройти ещё раз'),
+                                style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 15,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.verified_rounded,
-                        color: AppTheme.pink,
-                        size: 44,
-                      ),
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Круг завершён!',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Ты знаешь ' + learned.toString() + ' из ' +
-                          _cards.length.toString() + ' карточек.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: muted),
-                    ),
-                    const SizedBox(height: 25),
-                    FilledButton.icon(
-                      onPressed: _restart,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Пройти ещё раз'),
-                    ),
-                  ],
+                  ),
                 )
               : Column(
                   children: [
@@ -174,7 +210,7 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
                         value: _index / _cards.length,
                         minHeight: 5,
                         backgroundColor: theme.colorScheme.surfaceContainer,
-                        color: AppTheme.pink,
+                        color: ServicePalette.accent,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -205,7 +241,7 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
                               borderRadius: BorderRadius.circular(26),
                               border: Border.all(
                                 color: _revealed
-                                    ? AppTheme.pink.withOpacity(0.4)
+                                    ? ServicePalette.accent.withOpacity(0.4)
                                     : theme.colorScheme.outlineVariant
                                         .withOpacity(0.55),
                               ),
@@ -218,14 +254,14 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
                                       _revealed
                                           ? Icons.lightbulb_outline_rounded
                                           : Icons.style_outlined,
-                                      color: AppTheme.pink,
+                                      color: ServicePalette.accent,
                                       size: 19,
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
                                       _revealed ? 'ОПРЕДЕЛЕНИЕ' : 'ТЕРМИН',
                                       style: const TextStyle(
-                                        color: AppTheme.pink,
+                                        color: ServicePalette.accent,
                                         fontSize: 11,
                                         letterSpacing: 1.3,
                                         fontWeight: FontWeight.w900,
@@ -313,7 +349,7 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
                 ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -426,7 +462,7 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
     final muted = theme.colorScheme.onSurfaceVariant;
     final finished = _index >= _questions.length;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(title: const Text('Тест')),
       body: SafeArea(
         child: Padding(
@@ -448,7 +484,7 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
                           child: Text(
                             'ВЫБЕРИ ПРАВИЛЬНОЕ ОПРЕДЕЛЕНИЕ',
                             style: TextStyle(
-                              color: AppTheme.pink,
+                              color: ServicePalette.accent,
                               fontWeight: FontWeight.w900,
                               fontSize: 11,
                               letterSpacing: 0.9,
@@ -471,7 +507,7 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
                       child: LinearProgressIndicator(
                         value: _index / _questions.length,
                         backgroundColor: theme.colorScheme.surfaceContainer,
-                        color: AppTheme.pink,
+                        color: ServicePalette.accent,
                         minHeight: 5,
                       ),
                     ),
@@ -516,15 +552,15 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
                                   backgroundColor: _selected != null &&
                                           _options[i] ==
                                               _questions[_index].definition
-                                      ? Colors.green.withOpacity(0.14)
+                                      ? ServicePalette.mint.withOpacity(0.14)
                                       : _selected == _options[i]
-                                          ? Colors.red.withOpacity(0.12)
+                                          ? ServicePalette.amber.withOpacity(0.12)
                                           : theme.colorScheme.surfaceContainer,
                                   side: BorderSide(
                                     color: _selected != null &&
                                             _options[i] ==
                                                 _questions[_index].definition
-                                        ? Colors.green
+                                        ? ServicePalette.mint
                                         : theme.colorScheme.outlineVariant,
                                   ),
                                   padding: const EdgeInsets.all(16),
@@ -559,7 +595,7 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
                                             _questions[_index].definition)
                                       const Icon(
                                         Icons.check_circle_rounded,
-                                        color: Colors.green,
+                                        color: ServicePalette.mint,
                                       ),
                                   ],
                                 ),
@@ -598,6 +634,6 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
                 ),
         ),
       ),
-    );
+    ));
   }
 }

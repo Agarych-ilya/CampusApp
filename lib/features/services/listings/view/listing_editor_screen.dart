@@ -3,7 +3,8 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '/features/profile/data/student_profile_storage.dart';
 import '../data/listings_api.dart';
 
@@ -188,7 +189,7 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: Text(_editing ? 'Редактировать' : 'Новое объявление'),
       ),
@@ -435,6 +436,6 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

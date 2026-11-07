@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+
+import '/features/services/style/service_palette.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/community_api.dart';
@@ -122,7 +124,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     final muted = theme.colorScheme.onSurfaceVariant;
     final accent = CommunityAvatar.colorsFor(community.iconKind).first;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Сообщество',
@@ -423,6 +425,6 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }

@@ -1,9 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '/features/services/style/service_palette.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '/core/theme/app_theme.dart';
 import '../data/listings_api.dart';
 import 'listing_detail_screen.dart';
 import 'listing_editor_screen.dart';
@@ -207,7 +208,7 @@ class _ListingsScreenState extends State<ListingsScreen> {
                   _sort == option.$1
                       ? Icons.radio_button_checked_rounded
                       : Icons.radio_button_off_rounded,
-                  color: _sort == option.$1 ? AppTheme.pink : null,
+                  color: _sort == option.$1 ? ServicePalette.accent : null,
                 ),
                 onTap: () => Navigator.of(context).pop(option.$1),
               ),
@@ -229,7 +230,7 @@ class _ListingsScreenState extends State<ListingsScreen> {
         ? _items.where((item) => _favorites.contains(item.id)).toList()
         : _items;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: Text(
           widget.market ? 'Маркет' : 'Бюро находок',
@@ -243,8 +244,8 @@ class _ListingsScreenState extends State<ListingsScreen> {
             onPressed: _create,
             tooltip: 'Создать объявление',
             style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFFAAC6FF),
-              foregroundColor: const Color(0xFF172540),
+              backgroundColor: ServicePalette.accent,
+              foregroundColor: ServicePalette.accentOnDark,
             ),
             icon: const Icon(Icons.add_rounded, size: 25),
           ),
@@ -324,7 +325,7 @@ class _ListingsScreenState extends State<ListingsScreen> {
                         _favoritesOnly
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
-                        color: _favoritesOnly ? AppTheme.pink : null,
+                        color: _favoritesOnly ? ServicePalette.accent : null,
                       ),
                     ),
                     const SizedBox(width: 5),
@@ -430,7 +431,7 @@ class _ListingsScreenState extends State<ListingsScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -536,7 +537,7 @@ class _MarketTile extends StatelessWidget {
                         favorite
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
-                        color: favorite ? AppTheme.pink : Colors.white,
+                        color: favorite ? ServicePalette.accent : Colors.white,
                         size: 20,
                       ),
                     ),
@@ -555,7 +556,7 @@ class _MarketTile extends StatelessWidget {
                       maxLines: 1,
                       style: TextStyle(
                         color: listing.isFree
-                            ? const Color(0xFFAFC7FF)
+                            ? ServicePalette.accent
                             : theme.colorScheme.onSurface,
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
@@ -638,7 +639,7 @@ class _FoundTabs extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   decoration: BoxDecoration(
                     color: value == option.$1
-                        ? const Color(0xFFAAC6FF)
+                        ? ServicePalette.accent
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(26),
                   ),
@@ -648,7 +649,7 @@ class _FoundTabs extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       color: value == option.$1
-                          ? const Color(0xFF1B2336)
+                          ? ServicePalette.accentOnDark
                           : theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -715,8 +716,8 @@ class _FoundTile extends StatelessWidget {
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                           color: found
-                              ? const Color(0xFF69D0B4)
-                              : const Color(0xFFF6B77D),
+                              ? ServicePalette.mint
+                              : ServicePalette.amber,
                         ),
                       ),
                     ),
@@ -777,7 +778,7 @@ class _EmptyListings extends StatelessWidget {
                   ? Icons.storefront_outlined
                   : Icons.search_off_rounded,
               size: 56,
-              color: AppTheme.pink,
+              color: ServicePalette.accent,
             ),
             const SizedBox(height: 13),
             Text(

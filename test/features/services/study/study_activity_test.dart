@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/services/study/data/study_activity_storage.dart';
 import 'package:campusapp/features/services/study/view/study_results_screen.dart';
+import 'package:campusapp/features/services/study/widgets/study_activity_heatmap.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +89,26 @@ void main() {
       StudyActivityStorage().loadEntries(),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  testWidgets('activity displays exactly 17 calendar weeks', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: StudyActivityHeatmap(activity: {}),
+        ),
+      ),
+    );
+    expect(StudyActivityHeatmap.semesterWeeks, 17);
+    expect(find.byKey(const ValueKey('semester-week-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('semester-week-16')), findsOneWidget);
+    expect(find.byKey(const ValueKey('semester-week-17')), findsNothing);
+    expect(find.text('Активность · 17 недель'), findsOneWidget);
+    expect(find.text('7 дней'), findsNothing);
+    expect(find.text('30 дней'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('quiz results fit a narrow Android screen', (tester) async {

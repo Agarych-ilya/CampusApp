@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '../data/study_activity_storage.dart';
 import '../widgets/study_activity_heatmap.dart';
 
@@ -50,11 +51,11 @@ class StudyResultsContent extends StatelessWidget {
                       width: 58,
                       height: 58,
                       decoration: BoxDecoration(
-                        color: AppTheme.pink.withOpacity(0.13),
+                        color: ServicePalette.accent.withOpacity(0.13),
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: const Icon(Icons.emoji_events_outlined,
-                          color: AppTheme.pink, size: 34),
+                          color: ServicePalette.accent, size: 34),
                     ),
                     const SizedBox(height: 18),
                     Text(
@@ -67,7 +68,7 @@ class StudyResultsContent extends StatelessWidget {
                     Text(
                       '$correctAnswers из $totalAnswers верно',
                       style: theme.textTheme.titleLarge?.copyWith(
-                        color: AppTheme.pink,
+                        color: ServicePalette.accent,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -84,7 +85,7 @@ class StudyResultsContent extends StatelessWidget {
                             ? 0.0
                             : correctAnswers / totalAnswers,
                         minHeight: 7,
-                        color: AppTheme.pink,
+                        color: ServicePalette.accent,
                         backgroundColor:
                             theme.colorScheme.surfaceContainerHighest,
                       ),
@@ -98,8 +99,8 @@ class StudyResultsContent extends StatelessWidget {
                         label: const Text('Пройти ещё раз'),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          foregroundColor: Colors.white,
-                          backgroundColor: AppTheme.pink,
+                          foregroundColor: ServicePalette.accentOnDark,
+                          backgroundColor: ServicePalette.accent,
                         ),
                       ),
                     ),

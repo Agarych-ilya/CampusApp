@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '/features/services/style/service_palette.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager/nfc_manager_android.dart';
 
@@ -241,10 +243,10 @@ class _NfcPassScreenState extends State<NfcPassScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    const accent = Color(0xFF60A5FA);
-    const savedColor = Color(0xFF2DD4BF);
+    const accent = ServicePalette.slate;
+    const savedColor = ServicePalette.mint;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'NFC-пропуск',
@@ -500,7 +502,7 @@ class _NfcPassScreenState extends State<NfcPassScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.lock_outline, color: Color(0xFF8B8CF8)),
+                  const Icon(Icons.lock_outline, color: ServicePalette.slate),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -521,7 +523,7 @@ class _NfcPassScreenState extends State<NfcPassScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

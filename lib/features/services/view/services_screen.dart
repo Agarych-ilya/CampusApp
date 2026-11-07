@@ -3,7 +3,8 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '/features/services/cloud/view/cloud_screen.dart';
 import '/features/services/study/view/study_home_screen.dart';
 import '/features/services/listings/view/listings_screen.dart';
@@ -62,7 +63,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Файлы и материалы',
       searchTerms: 'облако документы хранение учебные',
       icon: Icons.cloud_outlined,
-      color: AppTheme.pink,
+      color: ServicePalette.accent,
     ),
     _ServiceInfo(
       type: _ServiceType.qr,
@@ -70,7 +71,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Сканирование QR-кодов',
       searchTerms: 'камера код ссылка qr',
       icon: Icons.qr_code_scanner,
-      color: Color(0xFF60A5FA),
+      color: ServicePalette.slate,
     ),
     _ServiceInfo(
       type: _ServiceType.nfc,
@@ -78,7 +79,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Сохранение информации о студенческом',
       searchTerms: 'студенческий билет пропуск турникет карта скуд nfc',
       icon: Icons.nfc,
-      color: Color(0xFF2DD4BF),
+      color: ServicePalette.mint,
     ),
     _ServiceInfo(
       type: _ServiceType.study,
@@ -86,7 +87,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Карточки и тесты',
       searchTerms: 'quizlet карточки обучение учёба запоминание термины тест',
       icon: Icons.style_outlined,
-      color: Color(0xFF9D7AFF),
+      color: ServicePalette.accent,
     ),
     _ServiceInfo(
       type: _ServiceType.market,
@@ -94,7 +95,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Покупка и продажа',
       searchTerms: 'барахолка объявления купить продать обмен даром товар',
       icon: Icons.shopping_bag_outlined,
-      color: Color(0xFF45C6A1),
+      color: ServicePalette.mint,
     ),
     _ServiceInfo(
       type: _ServiceType.found,
@@ -102,7 +103,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       subtitle: 'Потеряли и нашли',
       searchTerms: 'потерянные вещи находки потерял нашёл искать',
       icon: Icons.search_rounded,
-      color: Color(0xFF82B1FF),
+      color: ServicePalette.slate,
     ),
   ];
 
@@ -616,7 +617,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
     final searchResultCount =
         matchedServices.length + searchCommunities.length;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Сервисы',
@@ -642,7 +643,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   prefixIcon: Icon(
                     Icons.search_rounded,
                     color: query.isNotEmpty
-                        ? AppTheme.pink
+                        ? ServicePalette.accent
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                   suffixIcon: query.isEmpty
@@ -665,7 +666,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
                     borderSide: const BorderSide(
-                      color: AppTheme.pink,
+                      color: ServicePalette.accent,
                       width: 1.5,
                     ),
                   ),
@@ -900,7 +901,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   children: [
                     const Icon(
                       Icons.cloud_off_outlined,
-                      color: Color(0xFFFFB76E),
+                      color: ServicePalette.amber,
                       size: 17,
                     ),
                     const SizedBox(width: 8),
@@ -957,7 +958,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -1007,7 +1008,7 @@ class _ServicesPagerTabs extends StatelessWidget {
                   width: selected ? 68 : 34,
                   height: 3,
                   decoration: BoxDecoration(
-                    color: selected ? AppTheme.pink : Colors.transparent,
+                    color: selected ? ServicePalette.accent : Colors.transparent,
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -1056,10 +1057,10 @@ class _CatalogSectionTitle extends StatelessWidget {
           height: 34,
           width: 34,
           decoration: BoxDecoration(
-            color: AppTheme.pink.withOpacity(0.12),
+            color: ServicePalette.accent.withOpacity(0.12),
             borderRadius: BorderRadius.circular(11),
           ),
-          child: Icon(icon, color: AppTheme.pink, size: 19),
+          child: Icon(icon, color: ServicePalette.accent, size: 19),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1191,7 +1192,7 @@ class _CommunityTile extends StatelessWidget {
                         if (community.isPending)
                           const _SocialMiniLabel(
                             label: 'На проверке',
-                            color: Color(0xFFF0B45A),
+                            color: ServicePalette.amber,
                           ),
                       ],
                     ),

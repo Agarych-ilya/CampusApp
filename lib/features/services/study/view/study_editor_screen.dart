@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '../data/study_deck.dart';
 
 class StudyEditorScreen extends StatefulWidget {
@@ -140,13 +141,13 @@ class _StudyEditorScreenState extends State<StudyEditorScreen> {
                 height: 29,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppTheme.pink.withOpacity(0.12),
+                  color: ServicePalette.accent.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   (index + 1).toString(),
                   style: const TextStyle(
-                    color: AppTheme.pink,
+                    color: ServicePalette.accent,
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
                   ),
@@ -214,7 +215,7 @@ class _StudyEditorScreenState extends State<StudyEditorScreen> {
     final theme = Theme.of(context);
     final editing = widget.deck != null;
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: Text(editing ? 'Редактировать набор' : 'Новый набор'),
       ),
@@ -314,6 +315,6 @@ class _StudyEditorScreenState extends State<StudyEditorScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
