@@ -106,24 +106,23 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                     child: Stack(
                       children: [
                         GestureDetector(
-                          onTap: widget.onEditAvatar == null
-                              ? null
-                              : _changeAvatar,
+                          onTap: widget.canEditAvatar &&
+                                  widget.onEditAvatar != null
+                              ? _changeAvatar
+                              : null,
                           child: CommunityAvatar(
                             community: community,
                             size: 96,
                             previewBytes: _editedAvatar,
                           ),
                         ),
-                        if (widget.onEditAvatar != null)
+                        if (widget.canEditAvatar &&
+                            widget.onEditAvatar != null)
                           Positioned(
                             bottom: 0,
                             right: 0,
                             child: Material(
-                              color: (_editedAvatar != null ||
-                                      widget.canEditAvatar)
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.surfaceContainerHighest,
+                              color: theme.colorScheme.primary,
                               shape: const CircleBorder(),
                               child: InkWell(
                                 customBorder: const CircleBorder(),
@@ -139,10 +138,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                                           ),
                                         )
                                       : Icon(
-                                          (_editedAvatar != null ||
-                                                  widget.canEditAvatar)
-                                              ? Icons.camera_alt_rounded
-                                              : Icons.lock_outline_rounded,
+                                          Icons.camera_alt_rounded,
                                           size: 18,
                                         ),
                                 ),

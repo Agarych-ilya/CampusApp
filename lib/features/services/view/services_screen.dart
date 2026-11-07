@@ -85,6 +85,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
   bool _offline = false;
   bool _canManageCommunities = false;
   bool _checkingAdmin = false;
+  int _activePage = 0;
+  late final PageController _pageController;
   String? _deletingCommunityId;
   String? _editingAvatarId;
   final Map<String, Uint8List> _avatarPreviews = {};
@@ -93,6 +95,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: 0);
     _loadPending();
     _loadCachedCatalog();
     _loadCommunities();
@@ -160,7 +163,21 @@ class _ServicesScreenState extends State<ServicesScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _pageController.dispose();
     super.dispose();
+  }
+
+  void _switchPage(int index) {
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  void _onPageChanged(int index) {
+    _searchController.clear();
+    setState(() => _activePage = index);
   }
 
   void _openService(_ServiceType type) {
@@ -180,7 +197,9 @@ class _ServicesScreenState extends State<ServicesScreen> {
       MaterialPageRoute<void>(
         builder: (_) => CommunityDetailScreen(
           community: community,
-          onEditAvatar: () => _editCommunityAvatar(community),
+          onEditAvatar: _canManageCommunities
+              ? () => _editCommunityAvatar(community)
+              : null,
           canEditAvatar: _canManageCommunities,
         ),
       ),
@@ -518,18 +537,25 @@ class _ServicesScreenState extends State<ServicesScreen> {
         centerTitle: false,
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refreshGroupsAndPermissions,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-            children: [
-              TextField(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
+              child: _ServicesPagerTabs(
+                selectedPage: _activePage,
+                onSelected: _switchPage,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+              child: TextField(
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: 'Поиск сервисов и сообществ',
+                  hintText: _activePage == 0
+                      ? 'Поиск сервисов'
+                      : 'Поиск групп и сообществ',
                   hintStyle: TextStyle(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -559,6 +585,19 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   ),
                 ),
               ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: _onPageChanged,
+                children: [
+                  RefreshIndicator(
+                    onRefresh: _refreshGroupsAndPermissions,
+                    child: ListView(
+                      key: const PageStorageKey('catalog_services'),
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+                      children: [
               if (matchedServices.isNotEmpty) ...[
                 const SizedBox(height: 28),
                 Text(
@@ -568,27 +607,56 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  height: 160,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: matchedServices.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (context, index) {
-                      final service = matchedServices[index];
-
-                      return PopularServiceCard(
-                        title: service.title,
-                        subtitle: service.subtitle,
-                        icon: service.icon,
-                        iconColor: service.color,
-                        onTap: () => _openService(service.type),
-                      );
-                    },
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 660
+                        ? 4
+                        : constraints.maxWidth >= 440 ? 3 : 2;
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: matchedServices.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        mainAxisExtent: 172,
+                      ),
+                      itemBuilder: (context, index) {
+                        final service = matchedServices[index];
+                        return PopularServiceCard(
+                          title: service.title,
+                          subtitle: service.subtitle,
+                          icon: service.icon,
+                          iconColor: service.color,
+                          onTap: () => _openService(service.type),
+                        );
+                      },
+                    );
+                  },
                 ),
               ],
-              const SizedBox(height: 29),
+              if (matchedServices.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 46),
+                  child: Center(
+                    child: Text(
+                      'Сервисы не найдены',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                ),
+
+                      ],
+                    ),
+                  ),
+                  RefreshIndicator(
+                    onRefresh: _refreshGroupsAndPermissions,
+                    child: ListView(
+                      key: const PageStorageKey('catalog_groups'),
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+                      children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -641,46 +709,19 @@ class _ServicesScreenState extends State<ServicesScreen> {
                 ],
               ),
               const SizedBox(height: 18),
-              SizedBox(
-                height: 38,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: availableCategories.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final category = availableCategories[index];
-                    final active = _activeCategory == category;
-
-                    return InkWell(
-                      onTap: () => setState(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final category in availableCategories)
+                    ChoiceChip(
+                      label: Text(category),
+                      selected: _activeCategory == category,
+                      onSelected: (_) => setState(
                         () => _activeCategory = category,
                       ),
-                      borderRadius: BorderRadius.circular(15),
-                      child: Container(
-                        alignment: Alignment.center,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: active
-                              ? theme.colorScheme.primary
-                                  .withValues(alpha: 0.2)
-                              : theme.colorScheme.surfaceContainer,
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        child: Text(
-                          category,
-                          style: TextStyle(
-                            color: active
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontSize: 12,
-                            fontWeight: active
-                                ? FontWeight.w900 : FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                    ),
+                ],
               ),
               if (_offline) ...[
                 const SizedBox(height: 14),
@@ -740,7 +781,9 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     child: _CommunityTile(
                       community: community,
                       onTap: () => _openCommunity(community),
-                      onEditAvatar: () => _editCommunityAvatar(community),
+                      onEditAvatar: _canManageCommunities
+                          ? () => _editCommunityAvatar(community)
+                          : null,
                       canEditAvatar: _canManageCommunities,
                       avatarPreviewBytes: _avatarPreviews[community.id],
                       avatarUploading: _editingAvatarId == community.id,
@@ -750,9 +793,98 @@ class _ServicesScreenState extends State<ServicesScreen> {
                       deleting: _deletingCommunityId == community.id,
                     ),
                   ),
-            ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _ServicesPagerTabs extends StatelessWidget {
+  const _ServicesPagerTabs({
+    required this.selectedPage,
+    required this.onSelected,
+  });
+
+  final int selectedPage;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final background = dark
+        ? const Color(0xFF222630)
+        : const Color(0xFFE9EDF3);
+    final active = dark
+        ? const Color(0xFF343D50)
+        : const Color(0xFFFFFFFF);
+    final activeText = dark
+        ? const Color(0xFFB9D7FF)
+        : const Color(0xFF225D9D);
+
+    Widget tab(int index, IconData icon, String title) {
+      final selected = selectedPage == index;
+      return Expanded(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => onSelected(index),
+            borderRadius: BorderRadius.circular(13),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              decoration: BoxDecoration(
+                color: selected ? active : Colors.transparent,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 17,
+                    color: selected
+                        ? activeText
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected
+                          ? activeText
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          tab(0, Icons.apps_outlined, 'Сервисы'),
+          tab(1, Icons.groups_2_outlined, 'Группы'),
+        ],
       ),
     );
   }
@@ -803,26 +935,22 @@ class _CommunityTile extends StatelessWidget {
                   children: [
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: onEditAvatar,
+                      onTap: canEditAvatar ? onEditAvatar : null,
                       child: CommunityAvatar(
                         community: community,
                         size: 60,
                         previewBytes: avatarPreviewBytes,
                       ),
                     ),
-                    if (onEditAvatar != null)
+                    if (canEditAvatar && onEditAvatar != null)
                       Positioned(
                         right: 0,
                         bottom: 0,
                         child: Material(
-                          color: canEditAvatar
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.surfaceContainerHighest,
+                          color: theme.colorScheme.primary,
                           shape: const CircleBorder(),
                           child: Tooltip(
-                            message: canEditAvatar
-                                ? 'Изменить аватарку'
-                                : 'Проверить права на редактирование',
+                            message: 'Изменить аватарку',
                             child: InkWell(
                               customBorder: const CircleBorder(),
                               onTap: avatarUploading ? null : onEditAvatar,
@@ -838,13 +966,9 @@ class _CommunityTile extends StatelessWidget {
                                         ),
                                       )
                                     : Icon(
-                                        canEditAvatar
-                                            ? Icons.camera_alt_rounded
-                                            : Icons.lock_outline_rounded,
+                                        Icons.camera_alt_rounded,
                                         size: 15,
-                                        color: canEditAvatar
-                                            ? Colors.white
-                                            : theme.colorScheme.onSurfaceVariant,
+                                        color: Colors.white,
                                       ),
                               ),
                             ),

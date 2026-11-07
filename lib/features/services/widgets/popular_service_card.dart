@@ -24,7 +24,7 @@ class PopularServiceCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(24),
       onTap: onTap,
       child: Container(
-        width: 145,
+        width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
@@ -54,7 +54,7 @@ class PopularServiceCard extends StatelessWidget {
 
             Text(
               title,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w800,
