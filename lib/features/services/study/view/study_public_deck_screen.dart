@@ -11,13 +11,13 @@ class StudyPublicDeckScreen extends StatefulWidget {
     required this.preview,
     required this.onSaveCopy,
     required this.onChanged,
-    this.existingCopyCount = 0,
+    this.alreadySaved = false,
   });
 
   final PublicStudyDeck preview;
   final Future<void> Function(StudyDeck) onSaveCopy;
   final Future<void> Function() onChanged;
-  final int existingCopyCount;
+  final bool alreadySaved;
 
   @override
   State<StudyPublicDeckScreen> createState() => _StudyPublicDeckScreenState();
@@ -28,12 +28,12 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
   StudyDeck? _study;
   String? _error;
   bool _busy = false;
-  late int _copiesSaved;
+  late bool _saved;
 
   @override
   void initState() {
     super.initState();
-    _copiesSaved = widget.existingCopyCount;
+    _saved = widget.alreadySaved;
     _load();
   }
 
@@ -119,12 +119,12 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
   }
 
   Future<void> _saveCopy() async {
-    if (_study == null || _busy) return;
+    if (_study == null || _busy || _saved) return;
     setState(() => _busy = true);
     try {
       await widget.onSaveCopy(_deck!.asPersonalCopy());
       if (!mounted) return;
-      setState(() => _copiesSaved++);
+      setState(() => _saved = true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Копия сохранена в «Мои наборы»')),
       );
@@ -297,21 +297,14 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton.icon(
-                        onPressed: _busy ? null : _saveCopy,
-                        icon: const Icon(Icons.bookmark_add_outlined),
-                        label: Text(_copiesSaved == 0
-                            ? 'Сохранить копию себе'
-                            : 'Сохранить ещё одну копию'),
+                        onPressed: (_busy || _saved) ? null : _saveCopy,
+                        icon: Icon(_saved
+                            ? Icons.bookmark_added_rounded
+                            : Icons.bookmark_add_outlined),
+                        label: Text(_saved
+                            ? 'Уже сохранено в мои наборы'
+                            : 'Сохранить себе'),
                       ),
-                      if (_copiesSaved > 0) ...[
-                        const SizedBox(height: 8),
-                        Center(
-                          child: Text(
-                            'В «Моих наборах» сохранено копий: $_copiesSaved',
-                            style: TextStyle(color: muted, fontSize: 12),
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 24),
                       Text('Термины',
                           style: theme.textTheme.titleLarge?.copyWith(

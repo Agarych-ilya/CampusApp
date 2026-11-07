@@ -40,40 +40,61 @@ void main() {
     expect(preview.cards, isEmpty);
   });
 
-  test('two imports persist as two distinct local decks', () async {
+  test('one public deck can be saved only once, including after a reload', () async {
     SharedPreferences.setMockInitialValues({});
     final published = PublicStudyDeck.fromJson(data);
     final store = StudyDeckStore();
-
     final first = published.asPersonalCopy();
-    final afterFirst = await store.addNewCopy(first);
-    expect(afterFirst, hasLength(1));
+    final saved = await store.savePublicDeckOnce(
+      first,
+      publicDeckId: published.id,
+    );
+    expect(saved, hasLength(1));
+    expect(store.containsPublicDeck(saved, published.id), isTrue);
 
     final second = published.asPersonalCopy();
-    final afterSecond = await store.addNewCopy(second);
-    expect(afterSecond, hasLength(2));
-    expect(afterSecond.map((deck) => deck.id).toSet(), hasLength(2));
-
-    // Verify persistence rather than relying only on in-memory state.
-    final restored = await StudyDeckStore().load();
-    expect(restored, hasLength(2));
-    expect(restored[0].id, second.id);
-    expect(restored[1].id, first.id);
-  });
-
-  test('duplicate copy IDs never overwrite an existing deck', () async {
-    SharedPreferences.setMockInitialValues({});
-    final store = StudyDeckStore();
-    final first = PublicStudyDeck.fromJson(data).asPersonalCopy();
-    await store.addNewCopy(first);
-
     await expectLater(
-      store.addNewCopy(first),
+      StudyDeckStore().savePublicDeckOnce(
+        second,
+        publicDeckId: published.id,
+      ),
       throwsA(isA<FormatException>()),
     );
-    final remaining = await store.load();
-    expect(remaining, hasLength(1));
-    expect(remaining.single.id, first.id);
+    final after = await StudyDeckStore().load();
+    expect(after, hasLength(1));
+    expect(after.single.id, first.id);
+  });
+
+  test('different public decks can each be saved once', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = StudyDeckStore();
+    final first = PublicStudyDeck.fromJson(data);
+    final second = PublicStudyDeck.fromJson({...data, 'id': 35});
+    await store.savePublicDeckOnce(
+      first.asPersonalCopy(),
+      publicDeckId: first.id,
+    );
+    await store.savePublicDeckOnce(
+      second.asPersonalCopy(),
+      publicDeckId: second.id,
+    );
+    final saved = await store.load();
+    expect(saved, hasLength(2));
+    expect(store.containsPublicDeck(saved, first.id), isTrue);
+    expect(store.containsPublicDeck(saved, second.id), isTrue);
+  });
+
+  test('previously saved copies are recognized after upgrade', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = StudyDeckStore();
+    final item = PublicStudyDeck.fromJson(data);
+    final oldCopy = item.asPersonalCopy();
+    await store.save([oldCopy]);
+    expect(store.containsPublicDeck(await store.load(), item.id), isTrue);
+    await expectLater(
+      store.savePublicDeckOnce(item.asPersonalCopy(), publicDeckId: item.id),
+      throwsA(isA<FormatException>()),
+    );
   });
 
   test('saving a public deck creates a separate local copy', () {

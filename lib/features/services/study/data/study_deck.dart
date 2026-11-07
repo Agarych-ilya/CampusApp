@@ -142,12 +142,24 @@ class StudyDeckStore {
         .toList();
   }
 
-  /// Import a public deck as a *new* local copy, never an upsert.
-  /// Read from storage each time so a second import cannot overwrite the first.
-  Future<List<StudyDeck>> addNewCopy(StudyDeck copy) async {
+  /// A published deck can be saved to this device once.
+  /// Existing copies use the "copy-<public deck id>-" prefix, including
+  /// copies saved by older app versions.
+  bool containsPublicDeck(List<StudyDeck> decks, int publicDeckId) {
+    final prefix = 'copy-$publicDeckId-';
+    return decks.any((deck) => deck.id.startsWith(prefix));
+  }
+
+  Future<List<StudyDeck>> savePublicDeckOnce(
+    StudyDeck copy, {
+    required int publicDeckId,
+  }) async {
     final current = await load();
+    if (containsPublicDeck(current, publicDeckId)) {
+      throw const FormatException('Этот набор уже сохранён в «Мои наборы»');
+    }
     if (current.any((deck) => deck.id == copy.id)) {
-      throw const FormatException('Копия уже существует, попробуй ещё раз');
+      throw const FormatException('Набор с таким ID уже существует');
     }
     final updated = [copy, ...current];
     await save(updated);
