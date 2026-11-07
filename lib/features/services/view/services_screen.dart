@@ -176,8 +176,64 @@ class _ServicesScreenState extends State<ServicesScreen> {
   }
 
   void _onPageChanged(int index) {
-    _searchController.clear();
     setState(() => _activePage = index);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    FocusScope.of(context).unfocus();
+    setState(() {});
+  }
+
+  Widget _serviceGrid(List<_ServiceInfo> services) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 660
+            ? 4
+            : constraints.maxWidth >= 440 ? 3 : 2;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: services.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            mainAxisExtent: 172,
+          ),
+          itemBuilder: (context, index) {
+            final service = services[index];
+            return PopularServiceCard(
+              title: service.title,
+              subtitle: service.subtitle,
+              icon: service.icon,
+              iconColor: service.color,
+              onTap: () => _openService(service.type),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _communityTile(CommunityData community) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _CommunityTile(
+        community: community,
+        onTap: () => _openCommunity(community),
+        onEditAvatar: _canManageCommunities
+            ? () => _editCommunityAvatar(community)
+            : null,
+        canEditAvatar: _canManageCommunities,
+        avatarPreviewBytes: _avatarPreviews[community.id],
+        avatarUploading: _editingAvatarId == community.id,
+        onDelete: _canManageCommunities
+            ? () => _deleteCommunity(community)
+            : null,
+        deleting: _deletingCommunityId == community.id,
+      ),
+    );
   }
 
   void _openService(_ServiceType type) {
@@ -528,6 +584,13 @@ class _ServicesScreenState extends State<ServicesScreen> {
               community.category == _activeCategory);
     }).toList();
 
+    // One global search; the group-only category filter does not hide hits.
+    final searchCommunities = all
+        .where((community) => community.matches(query))
+        .toList();
+    final searchResultCount =
+        matchedServices.length + searchCommunities.length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -540,123 +603,191 @@ class _ServicesScreenState extends State<ServicesScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
-              child: _ServicesPagerTabs(
-                selectedPage: _activePage,
-                onSelected: _switchPage,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
               child: TextField(
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => FocusScope.of(context).unfocus(),
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: _activePage == 0
-                      ? 'Поиск сервисов'
-                      : 'Поиск групп и сообществ',
+                  hintText: 'Поиск сервисов и групп',
                   hintStyle: TextStyle(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: query.isNotEmpty
+                        ? AppTheme.pink
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
                   suffixIcon: query.isEmpty
                       ? null
                       : IconButton(
                           tooltip: 'Очистить поиск',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {});
-                          },
+                          onPressed: _clearSearch,
                           icon: const Icon(Icons.close_rounded),
                         ),
                   filled: true,
                   fillColor: theme.colorScheme.surfaceContainer,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 15),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.outlineVariant,
+                      width: 0.65,
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide(
-                      color: theme.colorScheme.primary,
-                      width: 1.3,
+                    borderSide: const BorderSide(
+                      color: AppTheme.pink,
+                      width: 1.5,
                     ),
                   ),
                 ),
               ),
             ),
+            if (query.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _ServicesPagerTabs(
+                  selectedPage: _activePage,
+                  onSelected: _switchPage,
+                ),
+              ),
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: _onPageChanged,
-                children: [
-                  RefreshIndicator(
-                    onRefresh: _refreshGroupsAndPermissions,
-                    child: ListView(
-                      key: const PageStorageKey('catalog_services'),
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-                      children: [
-              if (matchedServices.isNotEmpty) ...[
-                const SizedBox(height: 28),
-                Text(
-                  'Популярные сервисы',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final columns = constraints.maxWidth >= 660
-                        ? 4
-                        : constraints.maxWidth >= 440 ? 3 : 2;
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: matchedServices.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        mainAxisExtent: 172,
+              child: query.isNotEmpty
+                  ? RefreshIndicator(
+                      onRefresh: _refreshGroupsAndPermissions,
+                      child: ListView(
+                        key: const ValueKey('services_groups_global_search'),
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 20),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Результаты поиска',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  'Найдено: $searchResultCount',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (matchedServices.isNotEmpty) ...[
+                            _CatalogSectionTitle(
+                              title: 'Сервисы',
+                              count: matchedServices.length,
+                              icon: Icons.apps_rounded,
+                            ),
+                            const SizedBox(height: 14),
+                            _serviceGrid(matchedServices),
+                            const SizedBox(height: 26),
+                          ],
+                          if (searchCommunities.isNotEmpty) ...[
+                            _CatalogSectionTitle(
+                              title: 'Группы и сообщества',
+                              count: searchCommunities.length,
+                              icon: Icons.groups_2_rounded,
+                            ),
+                            const SizedBox(height: 14),
+                            for (final community in searchCommunities)
+                              _communityTile(community),
+                          ],
+                          if (searchResultCount == 0)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 38, 16, 0),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 76,
+                                    height: 76,
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.surfaceContainer,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.manage_search_rounded,
+                                      size: 34,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 18),
+                                  Text(
+                                    'Ничего не найдено',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 7),
+                                  Text(
+                                    'Попробуй название, ключевое слово или категорию.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextButton.icon(
+                                    onPressed: _clearSearch,
+                                    icon: const Icon(Icons.close_rounded),
+                                    label: const Text('Сбросить поиск'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
-                      itemBuilder: (context, index) {
-                        final service = matchedServices[index];
-                        return PopularServiceCard(
-                          title: service.title,
-                          subtitle: service.subtitle,
-                          icon: service.icon,
-                          iconColor: service.color,
-                          onTap: () => _openService(service.type),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
-              if (matchedServices.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 46),
-                  child: Center(
-                    child: Text(
-                      'Сервисы не найдены',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                ),
-
-                      ],
-                    ),
-                  ),
-                  RefreshIndicator(
-                    onRefresh: _refreshGroupsAndPermissions,
-                    child: ListView(
-                      key: const PageStorageKey('catalog_groups'),
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+                    )
+                  : PageView(
+                      controller: _pageController,
+                      onPageChanged: _onPageChanged,
                       children: [
+                        RefreshIndicator(
+                          onRefresh: _refreshGroupsAndPermissions,
+                          child: ListView(
+                            key: const PageStorageKey('catalog_services'),
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(20, 18, 20, 36),
+                            children: [
+                              _CatalogSectionTitle(
+                                title: 'Сервисы кампуса',
+                                count: _services.length,
+                                icon: Icons.apps_rounded,
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                'Полезные инструменты всегда под рукой',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              _serviceGrid(_services),
+                            ],
+                          ),
+                        ),
+                        RefreshIndicator(
+                          onRefresh: _refreshGroupsAndPermissions,
+                          child: ListView(
+                            key: const PageStorageKey('catalog_groups'),
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(20, 18, 20, 36),
+                            children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -776,28 +907,12 @@ class _ServicesScreenState extends State<ServicesScreen> {
                 )
               else
                 for (final community in matchedCommunities)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _CommunityTile(
-                      community: community,
-                      onTap: () => _openCommunity(community),
-                      onEditAvatar: _canManageCommunities
-                          ? () => _editCommunityAvatar(community)
-                          : null,
-                      canEditAvatar: _canManageCommunities,
-                      avatarPreviewBytes: _avatarPreviews[community.id],
-                      avatarUploading: _editingAvatarId == community.id,
-                      onDelete: _canManageCommunities
-                          ? () => _deleteCommunity(community)
-                          : null,
-                      deleting: _deletingCommunityId == community.id,
-                    ),
-                  ),
+                  _communityTile(community),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -819,55 +934,44 @@ class _ServicesPagerTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
-    final background = dark
-        ? const Color(0xFF222630)
-        : const Color(0xFFE9EDF3);
-    final active = dark
-        ? const Color(0xFF343D50)
-        : const Color(0xFFFFFFFF);
-    final activeText = dark
-        ? const Color(0xFFB9D7FF)
-        : const Color(0xFF225D9D);
+    final activeColor = theme.colorScheme.onSurface;
+    final inactiveColor = theme.colorScheme.onSurfaceVariant;
 
-    Widget tab(int index, IconData icon, String title) {
+    Widget tab(int index, String label) {
       final selected = selectedPage == index;
       return Expanded(
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => onSelected(index),
-            borderRadius: BorderRadius.circular(13),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              decoration: BoxDecoration(
-                color: selected ? active : Colors.transparent,
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    icon,
-                    size: 17,
-                    color: selected
-                        ? activeText
-                        : theme.colorScheme.onSurfaceVariant,
+        child: InkWell(
+          onTap: () => onSelected(index),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 180),
+                  style: TextStyle(
+                    fontSize: 13,
+                    letterSpacing: 0.9,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected ? activeColor : inactiveColor,
                   ),
-                  const SizedBox(width: 7),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                      color: selected
-                          ? activeText
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
+                  child: Text(label),
+                ),
+                const SizedBox(height: 12),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  width: selected ? 68 : 34,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: selected ? AppTheme.pink : Colors.transparent,
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -875,17 +979,73 @@ class _ServicesPagerTabs extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(16),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withOpacity(0.45),
+          ),
+        ),
       ),
       child: Row(
         children: [
-          tab(0, Icons.apps_outlined, 'Сервисы'),
-          tab(1, Icons.groups_2_outlined, 'Группы'),
+          tab(0, 'СЕРВИСЫ'),
+          tab(1, 'ГРУППЫ'),
         ],
       ),
+    );
+  }
+}
+
+class _CatalogSectionTitle extends StatelessWidget {
+  const _CatalogSectionTitle({
+    required this.title,
+    required this.count,
+    required this.icon,
+  });
+
+  final String title;
+  final int count;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Container(
+          height: 34,
+          width: 34,
+          decoration: BoxDecoration(
+            color: AppTheme.pink.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(icon, color: AppTheme.pink, size: 19),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
