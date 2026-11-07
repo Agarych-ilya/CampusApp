@@ -199,14 +199,24 @@ class _ServicesScreenState extends State<ServicesScreen> {
   /// Only verified moderators may replace existing group avatars.
   /// The backend also enforces admin permissions on PATCH .../icon.
   Future<void> _editCommunityAvatar(CommunityData community) async {
-    if (!_canManageCommunities ||
-        _editingAvatarId != null ||
-        _deletingCommunityId != null) {
-      return;
-    }
+    if (_editingAvatarId != null || _deletingCommunityId != null) return;
 
     setState(() => _editingAvatarId = community.id);
     try {
+      // A failed check during initial screen load must never permanently
+      // hide editing from an administrator. Retry on explicit avatar tap.
+      final admin = CommunityAdminApi.instance;
+      final isAdmin = await admin.ensureBarsAdminSession();
+      if (!mounted) return;
+      setState(() => _canManageCommunities = isAdmin);
+      if (!isAdmin) {
+        throw Exception(
+          admin.lastBarsAuthError ??
+          'Только администратор может редактировать аватарку. '
+              'Проверь подключение к бэкенду и авторизацию БАРС.',
+        );
+      }
+
       final selected = await FilePicker.pickFile(type: FileType.image);
       if (selected == null) return;
 
@@ -266,7 +276,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
       );
       if (approved != true || !mounted) return;
 
-      final admin = CommunityAdminApi.instance;
+      // Require fresh proof again before upload. The backend independently
+      // validates the moderator session and CSRF token on every PATCH.
       if (!await admin.ensureBarsAdminSession()) {
         if (mounted) setState(() => _canManageCommunities = false);
         throw Exception(
@@ -711,9 +722,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     child: _CommunityTile(
                       community: community,
                       onTap: () => _openCommunity(community),
-                      onEditAvatar: _canManageCommunities
-                          ? () => _editCommunityAvatar(community)
-                          : null,
+                      onEditAvatar: () => _editCommunityAvatar(community),
+                      canEditAvatar: _canManageCommunities,
                       avatarPreviewBytes: _avatarPreviews[community.id],
                       avatarUploading: _editingAvatarId == community.id,
                       onDelete: _canManageCommunities
@@ -736,6 +746,7 @@ class _CommunityTile extends StatelessWidget {
     required this.onTap,
     this.onDelete,
     this.onEditAvatar,
+    this.canEditAvatar = false,
     this.avatarPreviewBytes,
     this.avatarUploading = false,
     this.deleting = false,
@@ -745,6 +756,7 @@ class _CommunityTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onDelete;
   final VoidCallback? onEditAvatar;
+  final bool canEditAvatar;
   final Uint8List? avatarPreviewBytes;
   final bool avatarUploading;
   final bool deleting;
@@ -771,21 +783,31 @@ class _CommunityTile extends StatelessWidget {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    CommunityAvatar(
-                      community: community,
-                      size: 60,
-                      previewBytes: avatarPreviewBytes,
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onEditAvatar,
+                      child: CommunityAvatar(
+                        community: community,
+                        size: 60,
+                        previewBytes: avatarPreviewBytes,
+                      ),
                     ),
                     if (onEditAvatar != null)
                       Positioned(
                         right: 0,
                         bottom: 0,
                         child: Material(
-                          color: theme.colorScheme.primary,
+                          color: canEditAvatar
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.surfaceContainerHighest,
                           shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: avatarUploading ? null : onEditAvatar,
+                          child: Tooltip(
+                            message: canEditAvatar
+                                ? 'Изменить аватарку'
+                                : 'Проверить права на редактирование',
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: avatarUploading ? null : onEditAvatar,
                             child: SizedBox(
                               width: 28,
                               height: 28,
@@ -797,11 +819,16 @@ class _CommunityTile extends StatelessWidget {
                                         color: Colors.white,
                                       ),
                                     )
-                                  : const Icon(
-                                      Icons.camera_alt_rounded,
+                                  : Icon(
+                                      canEditAvatar
+                                          ? Icons.camera_alt_rounded
+                                          : Icons.lock_outline_rounded,
                                       size: 15,
-                                      color: Colors.white,
+                                      color: canEditAvatar
+                                          ? Colors.white
+                                          : theme.colorScheme.onSurfaceVariant,
                                     ),
+                              ),
                             ),
                           ),
                         ),
