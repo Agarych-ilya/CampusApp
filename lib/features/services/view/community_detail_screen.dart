@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -5,10 +7,39 @@ import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
 
 /// Public community information; tapping social links never auto-joins.
-class CommunityDetailScreen extends StatelessWidget {
-  const CommunityDetailScreen({super.key, required this.community});
+class CommunityDetailScreen extends StatefulWidget {
+  const CommunityDetailScreen({
+    super.key,
+    required this.community,
+    this.onEditAvatar,
+    this.canEditAvatar = false,
+  });
 
   final CommunityData community;
+  final Future<Uint8List?> Function()? onEditAvatar;
+  final bool canEditAvatar;
+
+  @override
+  State<CommunityDetailScreen> createState() => _CommunityDetailScreenState();
+}
+
+class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
+  CommunityData get community => widget.community;
+  Uint8List? _editedAvatar;
+  bool _editingAvatar = false;
+
+  Future<void> _changeAvatar() async {
+    if (_editingAvatar || widget.onEditAvatar == null) return;
+    setState(() => _editingAvatar = true);
+    try {
+      final bytes = await widget.onEditAvatar!();
+      if (bytes != null && mounted) {
+        setState(() => _editedAvatar = bytes);
+      }
+    } finally {
+      if (mounted) setState(() => _editingAvatar = false);
+    }
+  }
 
   Future<void> _openSocial(
     BuildContext context,
@@ -69,9 +100,57 @@ class CommunityDetailScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  CommunityAvatar(
-                    community: community,
-                    size: 96,
+                  SizedBox(
+                    width: 96,
+                    height: 96,
+                    child: Stack(
+                      children: [
+                        GestureDetector(
+                          onTap: widget.onEditAvatar == null
+                              ? null
+                              : _changeAvatar,
+                          child: CommunityAvatar(
+                            community: community,
+                            size: 96,
+                            previewBytes: _editedAvatar,
+                          ),
+                        ),
+                        if (widget.onEditAvatar != null)
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Material(
+                              color: (_editedAvatar != null ||
+                                      widget.canEditAvatar)
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.surfaceContainerHighest,
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: _editingAvatar ? null : _changeAvatar,
+                                child: SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: _editingAvatar
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(8),
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : Icon(
+                                          (_editedAvatar != null ||
+                                                  widget.canEditAvatar)
+                                              ? Icons.camera_alt_rounded
+                                              : Icons.lock_outline_rounded,
+                                          size: 18,
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 19),
                   Text(
