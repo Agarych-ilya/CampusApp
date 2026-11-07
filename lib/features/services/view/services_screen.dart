@@ -846,7 +846,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     ),
                     const SizedBox(width: 5),
                   ],
-                  FilledButton.tonalIcon(
+                  FilledButton.icon(
                     onPressed: _addCommunity,
                     icon: const Icon(Icons.add_rounded, size: 19),
                     label: const Text(
@@ -854,6 +854,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                     style: FilledButton.styleFrom(
+                      backgroundColor: ServicePalette.accent,
+                      foregroundColor: ServicePalette.accentOnDark,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 12,

@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 class ServicePalette {
   ServicePalette._();
 
-  // Graphite, mist blue and muted mint. Neutral surfaces, soft sage controls, GitHub-green activity intensity.
-  static const Color accent = Color(0xFFE0E7DE);
-  static const Color accentOnDark = Color(0xFF1F2A22);
-  static const Color accentLightTheme = Color(0xFF3E654D);
-  static const Color slate = Color(0xFFABB8A8);
-  static const Color mint = Color(0xFF82CBA3);
-  static const Color amber = Color(0xFFE7BD70);
-  static const Color headerStart = Color(0xFF2C312C);
-  static const Color headerEnd = Color(0xFF1B201C);
-  static const Color headerSubtitle = Color(0xFFC7D0C6);
+  // Graphite and mist-blue UI; the activity heatmap uses GitHub greens.
+  static const Color accent = Color(0xFFAFCBFA);
+  static const Color accentOnDark = Color(0xFF192A41);
+  static const Color accentLightTheme = Color(0xFF365E92);
+  static const Color slate = Color(0xFF91ABC9);
+  static const Color mint = Color(0xFF77C5B5);
+  static const Color amber = Color(0xFFE6BA7F);
+  static const Color headerStart = Color(0xFF26354A);
+  static const Color headerEnd = Color(0xFF172330);
+  static const Color headerSubtitle = Color(0xFFCBD8EA);
 
   static const Color heat1 = Color(0xFF0E4429);
   static const Color heat2 = Color(0xFF006D32);
@@ -28,32 +28,32 @@ class ServicePalette {
       primary: primary,
       onPrimary: onPrimary,
       primaryContainer:
-          light ? const Color(0xFFE2EFE1) : const Color(0xFF293A2D),
+          light ? const Color(0xFFDDEAFF) : const Color(0xFF27364B),
       onPrimaryContainer:
-          light ? const Color(0xFF2C5334) : const Color(0xFFE2F0E2),
-      secondary: light ? const Color(0xFF397B55) : mint,
-      onSecondary: light ? Colors.white : const Color(0xFF183322),
-      surface: light ? const Color(0xFFFFFFFF) : const Color(0xFF121512),
+          light ? const Color(0xFF233F62) : const Color(0xFFDCE9FF),
+      secondary: light ? const Color(0xFF357D70) : mint,
+      onSecondary: light ? Colors.white : const Color(0xFF132C27),
+      surface: light ? const Color(0xFFFFFFFF) : const Color(0xFF111418),
       surfaceContainerLow:
-          light ? const Color(0xFFF5F8F4) : const Color(0xFF191D19),
+          light ? const Color(0xFFF7F9FC) : const Color(0xFF171C23),
       surfaceContainer:
-          light ? const Color(0xFFF0F5EE) : const Color(0xFF202520),
+          light ? const Color(0xFFF1F5FA) : const Color(0xFF1D232C),
       surfaceContainerHigh:
-          light ? const Color(0xFFEAF1E8) : const Color(0xFF282E29),
+          light ? const Color(0xFFEAF0F7) : const Color(0xFF242B35),
       surfaceContainerHighest:
-          light ? const Color(0xFFDFE9DE) : const Color(0xFF333A34),
+          light ? const Color(0xFFDFE8F2) : const Color(0xFF303946),
       outlineVariant:
-          light ? const Color(0xFFD4DFD2) : const Color(0xFF434A44),
+          light ? const Color(0xFFD2DAE6) : const Color(0xFF3C4653),
       onSurface:
-          light ? const Color(0xFF233026) : const Color(0xFFF0F4EF),
+          light ? const Color(0xFF1F2C3A) : const Color(0xFFF0F3F9),
       onSurfaceVariant:
-          light ? const Color(0xFF5B6B5E) : const Color(0xFFB8C2B6),
+          light ? const Color(0xFF566779) : const Color(0xFFB5C0CE),
       surfaceTint: primary,
     );
     return base.copyWith(
       colorScheme: scheme,
       scaffoldBackgroundColor:
-          light ? const Color(0xFFFAFCF9) : const Color(0xFF121512),
+          light ? const Color(0xFFFAFCFF) : const Color(0xFF111418),
       chipTheme: base.chipTheme.copyWith(
         selectedColor: primary.withOpacity(0.19),
         backgroundColor: scheme.surfaceContainer,
