@@ -222,12 +222,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       child: _CommunityTile(
         community: community,
         onTap: () => _openCommunity(community),
-        onEditAvatar: _canManageCommunities
-            ? () => _editCommunityAvatar(community)
-            : null,
-        canEditAvatar: _canManageCommunities,
         avatarPreviewBytes: _avatarPreviews[community.id],
-        avatarUploading: _editingAvatarId == community.id,
         onDelete: _canManageCommunities
             ? () => _deleteCommunity(community)
             : null,
@@ -257,6 +252,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
               ? () => _editCommunityAvatar(community)
               : null,
           canEditAvatar: _canManageCommunities,
+          onChanged: _loadCommunities,
         ),
       ),
     );
@@ -839,14 +835,29 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 13),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 7,
                 children: [
                   for (final category in availableCategories)
                     ChoiceChip(
-                      label: Text(category),
+                      label: Text(
+                        category,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      visualDensity: const VisualDensity(
+                        horizontal: -2,
+                        vertical: -3,
+                      ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(11),
+                      ),
                       selected: _activeCategory == category,
                       onSelected: (_) => setState(
                         () => _activeCategory = category,
@@ -1055,20 +1066,14 @@ class _CommunityTile extends StatelessWidget {
     required this.community,
     required this.onTap,
     this.onDelete,
-    this.onEditAvatar,
-    this.canEditAvatar = false,
     this.avatarPreviewBytes,
-    this.avatarUploading = false,
     this.deleting = false,
   });
 
   final CommunityData community;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
-  final VoidCallback? onEditAvatar;
-  final bool canEditAvatar;
   final Uint8List? avatarPreviewBytes;
-  final bool avatarUploading;
   final bool deleting;
 
   @override
@@ -1078,67 +1083,21 @@ class _CommunityTile extends StatelessWidget {
 
     return Material(
       color: theme.colorScheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(11),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 60,
-                height: 60,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: canEditAvatar ? onEditAvatar : null,
-                      child: CommunityAvatar(
-                        community: community,
-                        size: 60,
-                        previewBytes: avatarPreviewBytes,
-                      ),
-                    ),
-                    if (canEditAvatar && onEditAvatar != null)
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Material(
-                          color: theme.colorScheme.primary,
-                          shape: const CircleBorder(),
-                          child: Tooltip(
-                            message: 'Изменить аватарку',
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: avatarUploading ? null : onEditAvatar,
-                              child: SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: avatarUploading
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(7),
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : Icon(
-                                        Icons.camera_alt_rounded,
-                                        size: 15,
-                                        color: Colors.white,
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+              CommunityAvatar(
+                community: community,
+                size: 48,
+                previewBytes: avatarPreviewBytes,
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1148,25 +1107,25 @@ class _CommunityTile extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       community.subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: muted,
-                        height: 1.35,
+                        height: 1.25,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 7),
                     Wrap(
-                      spacing: 9,
-                      runSpacing: 7,
+                      spacing: 7,
+                      runSpacing: 5,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Row(
@@ -1174,7 +1133,7 @@ class _CommunityTile extends StatelessWidget {
                           children: [
                             Icon(
                               Icons.people_alt_outlined,
-                              size: 14,
+                              size: 13,
                               color: muted,
                             ),
                             const SizedBox(width: 4),
@@ -1185,7 +1144,7 @@ class _CommunityTile extends StatelessWidget {
                               style: TextStyle(
                                 color: muted,
                                 fontWeight: FontWeight.w600,
-                                fontSize: 11,
+                                fontSize: 10,
                               ),
                             ),
                           ],
@@ -1214,13 +1173,14 @@ class _CommunityTile extends StatelessWidget {
                 IconButton(
                   onPressed: deleting ? null : onDelete,
                   tooltip: 'Удалить сообщество',
+                  visualDensity: VisualDensity.compact,
                   icon: deleting
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.delete_outline_rounded, size: 21),
+                      : const Icon(Icons.delete_outline_rounded, size: 19),
                 ),
               if (onDelete == null)
                 Icon(

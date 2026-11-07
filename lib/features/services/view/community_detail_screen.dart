@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/community_api.dart';
 import '../widgets/community_avatar.dart';
+import 'community_edit_screen.dart';
 
 /// Public community information; tapping social links never auto-joins.
 class CommunityDetailScreen extends StatefulWidget {
@@ -13,20 +14,61 @@ class CommunityDetailScreen extends StatefulWidget {
     required this.community,
     this.onEditAvatar,
     this.canEditAvatar = false,
+    this.onChanged,
   });
 
   final CommunityData community;
   final Future<Uint8List?> Function()? onEditAvatar;
   final bool canEditAvatar;
+  final Future<void> Function()? onChanged;
 
   @override
   State<CommunityDetailScreen> createState() => _CommunityDetailScreenState();
 }
 
 class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
-  CommunityData get community => widget.community;
+  late CommunityData _currentCommunity;
+  CommunityData get community => _currentCommunity;
   Uint8List? _editedAvatar;
   bool _editingAvatar = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentCommunity = widget.community;
+  }
+
+  Future<void> _editInfo() async {
+    if (!widget.canEditAvatar || community.isPending) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CommunityEditScreen(community: community),
+      ),
+    );
+    if (changed != true || !mounted) return;
+    try {
+      final updated = await const CommunityApi().getGroups();
+      if (!mounted) return;
+      final matches = updated.where((group) => group.id == community.id);
+      if (matches.isNotEmpty) {
+        setState(() => _currentCommunity = matches.first);
+      }
+      await widget.onChanged?.call();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Данные сообщества обновлены')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(
+            'Изменения сохранены. Обнови страницу, чтобы увидеть новые данные.',
+          )),
+        );
+      }
+    }
+  }
 
   Future<void> _changeAvatar() async {
     if (_editingAvatar || widget.onEditAvatar == null) return;
@@ -86,6 +128,14 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
           'Сообщество',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          if (widget.canEditAvatar && !community.isPending)
+            IconButton(
+              onPressed: _editInfo,
+              tooltip: 'Редактировать информацию',
+              icon: const Icon(Icons.edit_outlined),
+            ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -93,132 +143,145 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 29, 20, 29),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Column(
                 children: [
-                  SizedBox(
-                    width: 96,
-                    height: 96,
-                    child: Stack(
-                      children: [
-                        GestureDetector(
-                          onTap: widget.canEditAvatar &&
-                                  widget.onEditAvatar != null
-                              ? _changeAvatar
-                              : null,
-                          child: CommunityAvatar(
-                            community: community,
-                            size: 96,
-                            previewBytes: _editedAvatar,
-                          ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 74,
+                        height: 74,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            GestureDetector(
+                              onTap: widget.canEditAvatar &&
+                                      widget.onEditAvatar != null
+                                  ? _changeAvatar
+                                  : null,
+                              child: CommunityAvatar(
+                                community: community,
+                                size: 74,
+                                previewBytes: _editedAvatar,
+                              ),
+                            ),
+                            if (widget.canEditAvatar &&
+                                widget.onEditAvatar != null)
+                              Positioned(
+                                right: -3,
+                                bottom: -3,
+                                child: Material(
+                                  color: theme.colorScheme.primary,
+                                  shape: const CircleBorder(),
+                                  child: InkWell(
+                                    customBorder: const CircleBorder(),
+                                    onTap: _editingAvatar ? null : _changeAvatar,
+                                    child: SizedBox(
+                                      width: 27,
+                                      height: 27,
+                                      child: _editingAvatar
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(7),
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.camera_alt_rounded,
+                                              size: 14,
+                                              color: Colors.white,
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        if (widget.canEditAvatar &&
-                            widget.onEditAvatar != null)
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Material(
-                              color: theme.colorScheme.primary,
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: _editingAvatar ? null : _changeAvatar,
-                                child: SizedBox(
-                                  width: 32,
-                                  height: 32,
-                                  child: _editingAvatar
-                                      ? const Padding(
-                                          padding: EdgeInsets.all(8),
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : Icon(
-                                          Icons.camera_alt_rounded,
-                                          size: 18,
-                                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              community.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              community.subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: muted,
+                                fontSize: 12,
+                                height: 1.3,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: Text(
+                                community.category,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: accent,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 10,
                                 ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 19),
-                  Text(
-                    community.title,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    community.subtitle,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: muted, fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                    child: Text(
-                      community.category,
-                      style: TextStyle(
-                        color: accent,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                   if (community.isPending) ...[
-                    const SizedBox(height: 14),
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.hourglass_top_rounded, size: 17),
-                        SizedBox(width: 7),
-                        Flexible(
-                          child: Text(
-                            'Ожидает модерации · видно только тебе',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Ожидает модерации · видно только тебе',
+                      style: TextStyle(fontSize: 11),
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(height: 23),
+            const SizedBox(height: 16),
             Container(
-              padding: const EdgeInsets.all(19),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(18),
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(11),
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
                       color: accent.withValues(alpha: 0.13),
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Icon(Icons.groups_rounded, color: accent, size: 24),
                   ),
-                  const SizedBox(width: 15),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +297,13 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        if (community.memberCountSource != null) ...[
+                        if (community.memberCountSource == 'manual') ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Указано администратором · не проверено автоматически',
+                            style: TextStyle(fontSize: 11, color: muted),
+                          ),
+                        ] else if (community.memberCountSource != null) ...[
                           const SizedBox(height: 4),
                           Text(
                             'Источник: ' +
@@ -264,7 +333,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 25),
+            const SizedBox(height: 20),
             Text(
               'О сообществе',
               style: theme.textTheme.titleLarge?.copyWith(
@@ -279,7 +348,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                 color: muted,
               ),
             ),
-            const SizedBox(height: 26),
+            const SizedBox(height: 20),
             Text(
               'Социальные сети',
               style: theme.textTheme.titleLarge?.copyWith(

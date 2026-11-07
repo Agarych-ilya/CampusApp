@@ -254,6 +254,8 @@ class CommunityAdminApi {
     String? telegramUrl,
     String? vkUrl,
     bool? hidden,
+    int? memberCount,
+    bool updateMemberCount = false,
   }) async {
     await _request(
       'PATCH',
@@ -266,6 +268,7 @@ class CommunityAdminApi {
         'telegramUrl': telegramUrl?.trim() ?? '',
         'vkUrl': vkUrl?.trim() ?? '',
         if (hidden != null) 'hidden': hidden,
+        if (updateMemberCount) 'memberCount': memberCount,
       },
     );
   }

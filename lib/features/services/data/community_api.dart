@@ -163,9 +163,10 @@ class CommunityData {
     if (telegram == null && vk == null) return null;
 
     final count = value['memberCount'];
-    // User-supplied numbers and old snapshots are no longer treated as counts.
+    // Counts are accepted only from the backend's source-labelled responses.
     final source = value['memberCountSource'];
-    final verifiedSource = (source == 'telegram' || source == 'vk')
+    final verifiedSource = (source == 'telegram' || source == 'vk' ||
+            source == 'manual')
         ? source as String : null;
     final isPending = value['isPending'] == true;
     final members = !isPending &&
