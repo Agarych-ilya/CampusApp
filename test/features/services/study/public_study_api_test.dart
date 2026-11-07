@@ -41,9 +41,11 @@ void main() {
   test('saving a public deck creates a separate local copy', () {
     final original = PublicStudyDeck.fromJson(data);
     final copy = original.asPersonalCopy();
+    final another = original.asPersonalCopy();
     expect(copy.title, original.title);
     expect(copy.cards.length, 2);
     expect(copy.id, isNot(original.id.toString()));
+    expect(another.id, isNot(copy.id));
     expect(copy.knownCardIds, isEmpty);
   });
 }

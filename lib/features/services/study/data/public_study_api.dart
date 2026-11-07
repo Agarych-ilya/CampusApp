@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
@@ -64,7 +65,8 @@ class PublicStudyDeck {
   );
 
   StudyDeck asPersonalCopy() {
-    final unique = DateTime.now().microsecondsSinceEpoch.toString();
+    final unique = DateTime.now().microsecondsSinceEpoch.toString() +
+        '-' + Random().nextInt(1 << 30).toString();
     return StudyDeck(
       id: 'copy-$id-$unique',
       title: title,

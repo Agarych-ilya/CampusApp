@@ -120,7 +120,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final accent = CommunityAvatar.colorsFor(community.iconKind).first;
 

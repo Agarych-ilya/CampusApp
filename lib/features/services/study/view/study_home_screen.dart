@@ -602,7 +602,7 @@ class _StudyStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
       decoration: BoxDecoration(
@@ -642,7 +642,7 @@ class _StudyEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 28, 18, 29),
       decoration: BoxDecoration(
@@ -696,7 +696,7 @@ class _StudyDeckTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final progress = deck.cards.isEmpty
         ? 0.0
         : deck.learnedCount / deck.cards.length;
@@ -1187,7 +1187,7 @@ class _StudyModeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     return Material(
       color: theme.colorScheme.surfaceContainer,
       borderRadius: BorderRadius.circular(21),

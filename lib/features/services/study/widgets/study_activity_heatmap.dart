@@ -41,7 +41,8 @@ class StudyActivityHeatmap extends StatelessWidget {
         behavior: SnackBarBehavior.floating,
         content: Text(
           _date(date) + ': ' + info.correctAnswers.toString() +
-          ' правильных ответов, ' + info.tests.toString() + ' тестов',
+          ' правильных ответов, ' + info.tests.toString() + ' тестов, ' +
+          info.flashcardRounds.toString() + ' кругов карточек',
         ),
       ));
   }
@@ -63,12 +64,14 @@ class StudyActivityHeatmap extends StatelessWidget {
 
     var correct = 0;
     var tests = 0;
+    var rounds = 0;
     for (var i = 0; i < semesterWeeks * 7; i++) {
       final date = DateTime(monday.year, monday.month, monday.day + i);
       if (date.isAfter(today)) break;
       final entry = activity[date];
       correct += entry?.correctAnswers ?? 0;
       tests += entry?.tests ?? 0;
+      rounds += entry?.flashcardRounds ?? 0;
     }
     final streak = studyCurrentStreak(activity, today: today);
 
@@ -198,7 +201,7 @@ class StudyActivityHeatmap extends StatelessWidget {
           }),
           const SizedBox(height: 14),
           Text(
-            '$correct верно · $tests тестов за семестр',
+            '$correct верно · $tests тестов · $rounds кругов карточек',
             style: TextStyle(color: muted, fontSize: 11,
                 fontWeight: FontWeight.w700),
           ),

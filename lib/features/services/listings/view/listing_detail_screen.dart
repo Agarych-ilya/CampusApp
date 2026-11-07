@@ -192,7 +192,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   }
 
   Widget _photos(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final urls = _listing.photoUrls;
     return ClipRRect(
       borderRadius: BorderRadius.circular(23),
@@ -250,7 +250,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final item = _listing;
     final market = item.kind == 'market';

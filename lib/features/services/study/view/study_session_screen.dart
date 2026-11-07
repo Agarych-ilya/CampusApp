@@ -29,18 +29,28 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
   bool _revealed = false;
   bool _saving = false;
   bool _shuffled = false;
+  final StudyActivityStorage _activityStore = StudyActivityStorage();
+  int _roundCorrect = 0;
+  late String _roundId;
+
+  String _newRoundId() => 'flashcards-' +
+      DateTime.now().microsecondsSinceEpoch.toString() + '-' +
+      Random().nextInt(1 << 30).toString();
 
   @override
   void initState() {
     super.initState();
     _cards = List.of(widget.deck.cards);
     _knownIds = Set.of(widget.deck.knownCardIds);
+    _roundId = _newRoundId();
   }
 
   void _restart() {
     setState(() {
       _index = 0;
       _revealed = false;
+      _roundCorrect = 0;
+      _roundId = _newRoundId();
       _cards = List.of(widget.deck.cards);
       if (_shuffled) _cards.shuffle(Random());
     });
@@ -60,19 +70,36 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
     } else {
       updated.remove(id);
     }
+
+    final nextCorrect = _roundCorrect + (known ? 1 : 0);
+    final completed = _index + 1 == _cards.length;
     setState(() => _saving = true);
     try {
       await widget.onChanged(widget.deck.copyWith(knownCardIds: updated));
+      if (completed) {
+        // Record the full round BEFORE showing the completion screen.
+        // The attempt ID makes retry after a storage error idempotent.
+        await _activityStore.recordAttempt(StudyActivityEntry(
+          attemptId: _roundId,
+          completedAt: DateTime.now(),
+          correctAnswers: nextCorrect,
+          totalAnswers: _cards.length,
+          kind: 'flashcards',
+        ));
+      }
       if (!mounted) return;
       setState(() {
         _knownIds = updated;
+        _roundCorrect = nextCorrect;
         _index++;
         _revealed = false;
       });
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось сохранить прогресс')),
+        const SnackBar(
+          content: Text('Не удалось сохранить прогресс. Повтори действие.'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -81,12 +108,11 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final finished = _index >= _cards.length;
-    final learned = _cards
-        .where((card) => _knownIds.contains(card.id))
-        .length;
+    // Only answers marked in this round count for daily activity.
+    final learned = _roundCorrect;
 
     return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
@@ -142,8 +168,8 @@ class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
                             ),
                             const SizedBox(height: 7),
                             Text(
-                              'Ты знаешь ' + learned.toString() + ' из ' +
-                                  _cards.length.toString() + ' карточек.',
+                              'За этот круг: ' + learned.toString() + ' из ' +
+                                  _cards.length.toString() + ' отмечено «Знаю».',
                               style: TextStyle(color: muted),
                             ),
                             const SizedBox(height: 16),
@@ -458,7 +484,7 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final finished = _index >= _questions.length;
 

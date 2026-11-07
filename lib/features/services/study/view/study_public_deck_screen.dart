@@ -26,7 +26,7 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
   StudyDeck? _study;
   String? _error;
   bool _busy = false;
-  bool _copied = false;
+  int _copiesSaved = 0;
 
   @override
   void initState() {
@@ -116,12 +116,12 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
   }
 
   Future<void> _saveCopy() async {
-    if (_study == null || _busy || _copied) return;
+    if (_study == null || _busy) return;
     setState(() => _busy = true);
     try {
       await widget.onSaveCopy(_deck!.asPersonalCopy());
       if (!mounted) return;
-      setState(() => _copied = true);
+      setState(() => _copiesSaved++);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Копия сохранена в «Мои наборы»')),
       );
@@ -294,11 +294,11 @@ class _StudyPublicDeckScreenState extends State<StudyPublicDeckScreen> {
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton.icon(
-                        onPressed: _copied || _busy ? null : _saveCopy,
+                        onPressed: _busy ? null : _saveCopy,
                         icon: const Icon(Icons.bookmark_add_outlined),
-                        label: Text(_copied
-                            ? 'Сохранено в мои наборы'
-                            : 'Сохранить копию себе'),
+                        label: Text(_copiesSaved == 0
+                            ? 'Сохранить копию себе'
+                            : 'Сохранить ещё одну копию'),
                       ),
                       const SizedBox(height: 24),
                       Text('Термины',

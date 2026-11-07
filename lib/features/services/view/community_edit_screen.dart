@@ -108,7 +108,7 @@ class _CommunityEditScreenState extends State<CommunityEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final current = widget.community;
 

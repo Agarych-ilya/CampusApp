@@ -224,7 +224,7 @@ class _ListingsScreenState extends State<ListingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final visibleItems = widget.market && _favoritesOnly
         ? _items.where((item) => _favorites.contains(item.id)).toList()
@@ -492,7 +492,7 @@ class _MarketTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     return Material(
       color: theme.colorScheme.surfaceContainer,
@@ -618,7 +618,7 @@ class _FoundTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
@@ -674,7 +674,7 @@ class _FoundTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final found = listing.kind == 'found';
 
@@ -766,7 +766,7 @@ class _EmptyListings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(25),

@@ -247,7 +247,7 @@ class _CloudScreenState extends State<CloudScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
@@ -387,7 +387,7 @@ class _FileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return Material(
       color: theme.colorScheme.surface,
@@ -505,7 +505,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return Padding(
       padding: const EdgeInsets.only(top: 70),
@@ -569,7 +569,7 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return Padding(
       padding: const EdgeInsets.only(top: 60),

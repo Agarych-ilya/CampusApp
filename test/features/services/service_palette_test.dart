@@ -20,6 +20,10 @@ void main() {
     expect(theme.colorScheme.surface, const Color(0xFF0F0F10));
     expect(theme.colorScheme.surfaceContainer, const Color(0xFF1B1B1E));
     expect(theme.colorScheme.primary, const Color(0xFFAAC8FF));
+    expect(theme.inputDecorationTheme.fillColor,
+        const Color(0xFF1B1B1E));
+    expect(theme.colorScheme.surfaceContainer,
+        isNot(const Color(0xFF291F23)));
     expect(theme.colorScheme.surfaceTint, Colors.transparent);
     expect(theme.appBarTheme.backgroundColor, const Color(0xFF0F0F10));
     expect(ServicePalette.headerStart, const Color(0xFF222225));

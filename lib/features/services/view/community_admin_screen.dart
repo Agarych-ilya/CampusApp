@@ -196,7 +196,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
 
     return ServicePalette.wrap(context, Scaffold(
@@ -379,7 +379,7 @@ class _AdminCommunityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
 
     return Container(
@@ -592,7 +592,7 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(title: const Text('Редактировать сообщество')),

@@ -241,7 +241,7 @@ class _NfcPassScreenState extends State<NfcPassScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     const accent = ServicePalette.slate;
     const savedColor = ServicePalette.mint;

@@ -212,7 +212,7 @@ class _StudyEditorScreenState extends State<StudyEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final editing = widget.deck != null;
 
     return ServicePalette.wrap(context, Scaffold(

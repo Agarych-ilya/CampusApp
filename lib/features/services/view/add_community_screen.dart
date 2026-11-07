@@ -282,7 +282,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final example = CommunityData(
       id: 'preview',

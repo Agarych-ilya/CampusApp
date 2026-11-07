@@ -2,25 +2,29 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// One completed quiz attempt; its ID prevents double counting on retries.
+/// One completed learning attempt; its ID prevents double counting.
 class StudyActivityEntry {
   const StudyActivityEntry({
     required this.attemptId,
     required this.completedAt,
     required this.correctAnswers,
     required this.totalAnswers,
+    this.kind = 'quiz',
   });
 
   final String attemptId;
   final DateTime completedAt;
   final int correctAnswers;
   final int totalAnswers;
+  /// Quiz answers are checked; flashcard answers are marked 'Знаю'.
+  final String kind;
 
   Map<String, dynamic> toJson() => {
         'attemptId': attemptId,
         'completedAt': completedAt.toIso8601String(),
         'correctAnswers': correctAnswers,
         'totalAnswers': totalAnswers,
+        'kind': kind,
       };
 
   static StudyActivityEntry? fromJson(Object? raw) {
@@ -29,6 +33,8 @@ class StudyActivityEntry {
     final timestamp = raw['completedAt'];
     final correct = raw['correctAnswers'];
     final total = raw['totalAnswers'];
+    // History from previous versions contained only quiz attempts.
+    final kind = raw['kind'] ?? 'quiz';
     final completed = timestamp is String ? DateTime.tryParse(timestamp) : null;
     if (id is! String ||
         id.isEmpty ||
@@ -38,7 +44,8 @@ class StudyActivityEntry {
         total < 1 ||
         total > 1000 ||
         correct < 0 ||
-        correct > total) {
+        correct > total ||
+        (kind != 'quiz' && kind != 'flashcards')) {
       return null;
     }
     return StudyActivityEntry(
@@ -46,6 +53,7 @@ class StudyActivityEntry {
       completedAt: completed.toLocal(),
       correctAnswers: correct,
       totalAnswers: total,
+      kind: kind as String,
     );
   }
 }
@@ -55,16 +63,22 @@ class StudyDayActivity {
     this.correctAnswers = 0,
     this.totalAnswers = 0,
     this.tests = 0,
+    this.flashcardRounds = 0,
   });
 
   final int correctAnswers;
   final int totalAnswers;
   final int tests;
+  final int flashcardRounds;
+
+  int get sessions => tests + flashcardRounds;
 
   StudyDayActivity add(StudyActivityEntry entry) => StudyDayActivity(
         correctAnswers: correctAnswers + entry.correctAnswers,
         totalAnswers: totalAnswers + entry.totalAnswers,
-        tests: tests + 1,
+        tests: tests + (entry.kind == 'quiz' ? 1 : 0),
+        flashcardRounds:
+            flashcardRounds + (entry.kind == 'flashcards' ? 1 : 0),
       );
 }
 
@@ -89,18 +103,18 @@ int studyCurrentStreak(
   DateTime? today,
 }) {
   var date = studyCalendarDay(today ?? DateTime.now());
-  if ((byDay[date]?.tests ?? 0) == 0) {
+  if ((byDay[date]?.sessions ?? 0) == 0) {
     date = DateTime(date.year, date.month, date.day - 1);
   }
   var streak = 0;
-  while ((byDay[date]?.tests ?? 0) > 0) {
+  while ((byDay[date]?.sessions ?? 0) > 0) {
     streak++;
     date = DateTime(date.year, date.month, date.day - 1);
   }
   return streak;
 }
 
-/// Device-only quiz history. Data is not uploaded to the server.
+/// Device-only study history. Data is not uploaded to the server.
 class StudyActivityStorage {
   static const _key = 'campus_study_activity_v1';
 

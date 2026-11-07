@@ -24,7 +24,7 @@ class StudyResultsContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final percentage = totalAnswers == 0
         ? 0
@@ -122,9 +122,9 @@ class StudyResultsContent extends StatelessWidget {
               StudyActivityHeatmap(activity: activity),
               const SizedBox(height: 13),
               Text(
-                'Суммируются правильные ответы за каждый день, '
-                'включая повторные тесты. Нажми на клетку, чтобы '
-                'узнать результат за дату.',
+                'Суммируются правильные ответы из тестов и карточки, '
+                'отмеченные «Знаю». Повторные прохождения тоже учитываются. '
+                'Нажми на клетку, чтобы узнать результат за день.',
                 style: TextStyle(
                   color: muted,
                   fontSize: 12,
