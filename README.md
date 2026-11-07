@@ -1,189 +1,186 @@
-# CampusApp
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/images/logo/logo_main_dark.png">
+    <img src="assets/images/logo/logo_main.png" width="112" alt="CampusApp">
+  </picture>
+</p>
 
-Flutter student app for MPEI.
+<h1 align="center">CampusApp</h1>
+<p align="center">
+  <strong>Твой кампус. Твоё расписание. Твои люди.</strong><br>
+  Мобильное приложение для студентов НИУ «МЭИ» — учёба, сообщества и полезные сервисы в одном месте.
+</p>
 
-## Local backend and schedule (Windows / PowerShell)
+<p align="center">
+  <a href="https://flutter.dev/"><img alt="Flutter" src="https://img.shields.io/badge/Flutter-mobile-02569B?style=for-the-badge&amp;logo=flutter&amp;logoColor=white"></a>
+  <a href="https://dart.dev/"><img alt="Dart 3.9+" src="https://img.shields.io/badge/Dart-3.9%2B-0175C2?style=for-the-badge&amp;logo=dart&amp;logoColor=white"></a>
+  <a href="https://developer.android.com/"><img alt="Android" src="https://img.shields.io/badge/Android-supported-3DDC84?style=for-the-badge&amp;logo=android&amp;logoColor=white"></a>
+  <a href="https://github.com/Agarych-ilya/Campus-backend"><img alt="NestJS API" src="https://img.shields.io/badge/API-NestJS-E0234E?style=for-the-badge&amp;logo=nestjs&amp;logoColor=white"></a>
+</p>
 
-The schedule is served by the separate NestJS repository
-`Agarych-ilya/Campus-backend` (branch `feature/cloud`).
-Start that backend in a separate terminal before launching the app:
+<p align="center">
+  <a href="#возможности">Возможности</a> ·
+  <a href="#быстрый-старт">Быстрый старт</a> ·
+  <a href="#архитектура">Архитектура</a> ·
+  <a href="#тестирование">Тесты</a> ·
+  <a href="https://github.com/Agarych-ilya/Campus-backend">Backend ↗</a>
+</p>
+
+---
+
+> [!NOTE]
+> Проект находится в активной разработке. Актуальная рабочая ветка клиента — **[features/services-screen](https://github.com/Agarych-ilya/CampusApp/tree/features/services-screen)**, сервера — **[feature/cloud](https://github.com/Agarych-ilya/Campus-backend/tree/feature/cloud)**. Описанные ниже новые сервисы и команды ориентированы на эти ветки; они могут отсутствовать в текущем коде main.
+
+<a id="возможности"></a>
+## ✨ Возможности
+
+| Раздел | Что уже есть |
+|:--|:--|
+| 📅 **Расписание** | Занятия по группе, переключение недель, получение через backend и локальный кеш. |
+| 🗺️ **Карта кампуса** | Интерактивная карта МЭИ на OpenStreetMap, поиск корпусов и выбранных объектов. |
+| 👤 **Профиль** | Данные студента, оценки и учебная статистика. |
+| 👥 **Сообщества** | Каталог, категории и поиск, Telegram/VK, заявки на новые группы и модерация. |
+| 🛍️ **Маркет** | Продажа и бесплатная передача вещей, фотографии, фильтры, избранное и контакты. |
+| 🔎 **Бюро находок** | Объявления «Нашли» / «Ищут», место и фотографии, связь с автором. |
+| 🧠 **Campus Cards** | Свои и публичные наборы, карточки, тесты, поиск, рейтинг ★, активность на 17 недель. |
+| ☁️ **Cloud Campus** | Загрузка, просмотр списка и получение файлов через API. |
+| 📷 **QR-сканер** | Сканирование камерой; ссылки открываются только по действию пользователя. |
+| 📳 **NFC** | Чтение доступных данных NFC-карты и сохранение локальной записи. |
+
+**В разработке:** встроенные чаты — текущая вкладка пока заглушка. NFC-модуль **не копирует пропуск и не открывает турникеты**.
+
+<a id="быстрый-старт"></a>
+## 🚀 Быстрый старт
+
+### Требования
+
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) с Dart, совместимым с sdk: ^3.9.2.
+- Git, Android SDK и эмулятор или Android-телефон с USB-отладкой.
+- Для серверных функций — [Campus-backend](https://github.com/Agarych-ilya/Campus-backend) на порту **8000**.
+
+<details>
+<summary><b>Шаг 1 · Запустить backend</b></summary>
+
+В отдельном PowerShell:
 
 ```powershell
-# In the Campus-backend directory:
+git clone https://github.com/Agarych-ilya/Campus-backend.git
+cd Campus-backend
 git switch feature/cloud
-git pull --ff-only origin feature/cloud
-npm install
+npm ci
+Copy-Item .env.example .env
+# Настрой MySQL и секреты в .env
 npm run start:dev
+
+# В другом терминале
+curl.exe http://127.0.0.1:8000/health
 ```
 
-Check the backend from Windows:
+Перед запуском создай БД MySQL. Подробности — [README backend](https://github.com/Agarych-ilya/Campus-backend/blob/feature/cloud/README.md#быстрый-старт).
+
+</details>
+
+### Шаг 2 · Запустить Flutter
 
 ```powershell
-curl.exe http://localhost:8000/health
+git clone https://github.com/Agarych-ilya/CampusApp.git
+cd CampusApp
+git switch features/services-screen
+flutter pub get
+flutter devices
 ```
 
-For Android Emulator the PC is accessible as **10.0.2.2**.
-Run Flutter from the CampusApp directory:
-
-```powershell
-flutter run -d emulator-5554 --dart-define=CAMPUS_API_BASE_URL=http://10.0.2.2:8000
-```
-
-For a physical phone use the PC's actual IPv4 address on the same Wi-Fi
-network, e.g.:
-
-```powershell
-ipconfig
-flutter run -d <phone_id> --dart-define=CAMPUS_API_BASE_URL=http://192.168.1.5:8000
-```
-
-Replace `192.168.1.5` with your PC's current IPv4 address.
-Without `CAMPUS_API_BASE_URL`, the schedule screen checks the former LAN
-address first, then the Android Emulator bridge (`10.0.2.2`).
-Other services use the explicitly configured URL or the LAN default.
-
-The schedule calls `GET /schedule?group=<group>&date=YYYY-MM-DD`.
-The group is provided by the BARS login flow. A fake demo group is no
-longer inserted when no BARS group is available. The mobile app caches
-successful weekly results and displays cached lessons with an offline
-warning if the server is down.
-
-If the API responds but the MPEI schedule cannot be fetched, check the
-backend logs and the upstream RUZ service. The mobile app cannot load
-live schedules until the backend is reachable.
-
-
-## Сообщества студентов
-
-Экран **Сервисы → Группы** получает каталог из
-`GET /services/groups` и показывает карточки, описания, ссылки на
-Telegram/ВКонтакте, поиск и фильтры. Если связь с бэкендом пропала,
-остаются встроенные группы, но счётчик будет недоступен.
-
-**Добавить сообщество:** название, описание, категория, ссылки TG/VK,
-а также **собственное изображение, выбираемое из галереи**. Фото
-автоматически обрезается до квадрата 400×400 и сжимается в JPEG
-перед загрузкой через `multipart/form-data`. Картинка сохраняется на
-бэкенде; после проверки сообщество показывается всем студентам
-с выбранной иконкой. Пока заявка `pending`, её изображение и
-карточка сохраняются локально на устройстве автора.
-
-**Количество участников пользователь не вводит.** Сервер пытается
-считать его с публичной страницы Telegram (или через Bot API, если
-настроен `TELEGRAM_BOT_TOKEN`). Для ВКонтакте сервер использует
-`VK_ACCESS_TOKEN` в локальном `.env`; токен Flutter не получает.
-Численность кешируется на сервере на 15 минут, источник и время
-проверки указываются в карточке. Если сервис не отдал число,
-показывается «Нет данных об участниках». У сокращённых
-счётчиков Telegram (`12.1K`) ставится знак приблизительности `≈`.
-
-Для работы этих функций **обязательно** обнови и запусти бэкенд
-`Agarych-ilya/Campus-backend` из ветки `feature/cloud`.
-На реальном телефоне по USB на Windows используется ADB Reverse:
-
-```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s AM5HJV5A09H00643 reverse tcp:8000 tcp:8000
-flutter run -d AM5HJV5A09H00643 --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000
-```
-
-Тесты модели:
-
-```powershell
-flutter test test/features/services/community_data_test.dart
-```
-
-## Управление группами без повторного входа
-
-В разделе **Сервисы → Группы** приложение автоматически использует
-WebView-сессию БАРС, если она ещё действительна. Бэкенд проверяет
-номер зачётной книжки и список администраторов из локального .env.
-
-- **Добавить** — для обычных студентов создаёт заявку на модерацию;
-  для уже подтверждённого администратора сразу публикует группу.
-- **Аватарка** — при подтверждённом входе администратора появляется
-  значок камеры — **как в каталоге, так и на странице сообщества**.
-  Если первоначальная проверка БАРС не прошла, вместо него виден
-  замок: нажатие на замок или саму аватарку повторяет
-  проверку существующей сессии **без отдельной формы входа** и выводит
-  точную причину отказа. Неавторизованный пользователь не может
-  выбрать или отправить изображение.
-  Администратор выбирает JPG/PNG/WebP, видит квадратный предпросмотр
-  (400×400) и подтверждает замену. Сохранение выполняется через
-  защищённый PATCH /services/admin/groups/:id/icon (CSRF + серверная
-  проверка прав).
-- **Удалить** — у подтверждённого администратора иконка удаления
-  появляется прямо на карточке каждой группы, включая ожидающие заявки
-  этого устройства.
-  Удаление подтверждается диалогом, а сервер повторно проверяет
-  права. Для встроенных сообществ действие скрывает их из каталога.
-- Значок управления показывается **только после успешной проверки
-  прав через БАРС**. Он открывает редактирование, восстановление
-  встроенных групп и рассмотрение чужих заявок **без второго экрана входа**.
-- Повторный ввод пароля администратора **не требуется**. Если истекла
-  сама сессия БАРС, студент должен повторно подтвердить вход через
-  БАРС — права не выдаются по одному сохранённому ФИО.
-
-Чтобы проверить эти функции на **Android-эмуляторе** через
-защищённый локальный ADB Reverse:
+**На Android-эмуляторе через ADB Reverse (рекомендуется):**
 
 ```powershell
 & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s emulator-5554 reverse tcp:8000 tcp:8000
+
 flutter run -d emulator-5554 --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-Администраторские cookie БАРС не передаются через обычный HTTP
-по адресу 10.0.2.2; для реальной сети необходимо HTTPS.
-Настройка сервера: COMMUNITY_ADMIN_BARS_RECORD_BOOKS в .env,
-SESSION_SECRET от 32 символов и работающий бэкенд.
+**На физическом Android-телефоне по USB:**
 
-## Администрирование сообществ
+```powershell
+flutter devices
+# Замени <DEVICE_ID> на идентификатор своего устройства
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s <DEVICE_ID> reverse tcp:8000 tcp:8000
 
-В разделе **Сервисы → Группы** значок администратора появляется
-**только после успешной серверной проверки БАРС** и открывает панель
-модерации без отдельной авторизации.
-
-- **На проверке**: подтверждение, отклонение и удаление заявки.
-- **Опубликованы**: изменение текста, категории, ссылок Telegram/VK,
-  собственной фотографии и резервного значка; удаление.
-- **Скрытые**: стартовые сообщества после удаления скрываются
-  на сервере, их можно восстановить.
-- **Отклонены**: просмотр, редактирование и окончательное удаление.
-
-**Администратор входит через БАРС МЭИ.** Повторный логин или
-пароль аккаунта Campus-backend не нужен. Когда открываешь панель,
-приложение пытается использовать уже действующую авторизацию БАРС
-через WebViewCookieManager. **Отдельное окно входа удалено**:
-если сессия истекла или сервер недоступен, появляется сообщение
-о проблеме и кнопка повторной проверки. Права при этом не выдаются.
-
-Бэкенд сам запрашивает страницы студента в БАРС и сверяет номер
-зачётки с локальным разрешённым списком. **Локально сохранённый
-профиль, ФИО или логин OgarkovIA сами по себе прав не дают.**
-
-Для разового назначения открой Campus-backend/.env и добавь:
-
-```dotenv
-COMMUNITY_ADMIN_BARS_RECORD_BOOKS=ТВОЙ_НОМЕР_ЗАЧЁТКИ_ИЗ_БАРС
-SESSION_SECRET=ДЛИННАЯ_СЛУЧАЙНАЯ_СТРОКА_ОТ_32_СИМВОЛОВ
-COOKIE_SECURE=false
+flutter run -d <DEVICE_ID> --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-Номер зачётки можно посмотреть в профиле CampusApp или на странице
-БАРС (№ЗК). Пароль БАРС нигде в .env указывать не нужно.
-Подробности серверной проверки и ограничения описаны в README
-бэкенда, ветка feature/cloud.
+Разблокируй телефон и разреши USB-отладку. Если `flutter devices` показывает `unauthorized`, подтверди доверие к компьютеру на устройстве.
 
-Для безопасности пересылка cookie БАРС разрешена только по
-HTTPS либо через локальный USB ADB Reverse.
-Вход через обычный HTTP по Wi-Fi намеренно запрещён.
+> [!IMPORTANT]
+> Для обычных API-запросов Android-эмулятор может использовать `10.0.2.2:8000`. Но для передачи **cookie БАРС** при подтверждении прав сервер требует HTTPS либо локальное подключение (`127.0.0.1` + ADB Reverse). Не отправляй сессионные cookie по открытому HTTP через Wi-Fi.
 
-Для Android по USB проверь `adb reverse tcp:8000 tcp:8000`
-и запускай Flutter с параметром
-`--dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000`.
+### Шаг 3 · Проверить соединение
 
-Когда бэкенд временно недоступен, показывается последний сохранённый
-публичный каталог (а не старый жёстко заданный список групп),
-чтобы скрытые администратором сообщества не появлялись повторно.
-Заявки текущего устройства по-прежнему сохраняются локально, пока
-их не рассмотрели или не удалили через админ-панель.
+1. `curl.exe http://127.0.0.1:8000/health` должен вернуть `{"status":"ok"}`.
+2. Backend должен быть запущен, а MySQL доступна.
+3. Проверь проброс: `adb reverse --list` для нужного устройства.
+4. Проверь `CAMPUS_API_BASE_URL`; явно заданный адрес отключает автоматический перебор других адресов для расписания.
 
+<a id="архитектура"></a>
+## 🧩 Архитектура
+
+```mermaid
+flowchart LR
+    A["Flutter · CampusApp"] -->|"HTTP + сессия"| B["NestJS · Campus-backend"]
+    B --> C[("MySQL")]
+    B --> D["БАРС / расписание МЭИ"]
+    A --> E["Локальные данные и кеш"]
+    A --> F["OpenStreetMap"]
+```
+
+```text
+lib/
+├── app/                  # Навигация
+├── core/                 # Конфигурация API и темы
+└── features/
+    ├── auth/             # Вход и БАРС
+    ├── bars/             # Информация о студенте
+    ├── schedule/         # Расписание и кеш
+    ├── map/              # Карта
+    ├── profile/          # Профиль, оценки, статистика
+    └── services/
+        ├── cloud/        # Файлы
+        ├── listings/     # Маркет и бюро находок
+        ├── study/        # Campus Cards
+        ├── nfc/          # NFC-карты
+        ├── qr/           # QR-сканер
+        └── view/         # Сообщества и каталог
+```
+
+| Локально на устройстве | На сервере |
+|:--|:--|
+| Кеш расписания, личные наборы Campus Cards, история занятий и часть настроек | Общие учебные наборы и рейтинги, объявления, сообщества, файлы |
+
+<a id="тестирование"></a>
+## 🧪 Тестирование
+
+```powershell
+flutter analyze
+flutter test
+
+# Отдельные тесты учебных сервисов
+flutter test test/features/services/study/study_activity_test.dart
+flutter test test/features/services/study/public_study_api_test.dart
+flutter test test/features/services/study/study_deck_test.dart
+```
+
+**Стек:** `Flutter` · `Dart` · `http` · `shared_preferences` · `flutter_map` · `mobile_scanner` · `nfc_manager` · `webview_flutter`.
+
+## 🔐 Безопасность и ограничения
+
+- Административные действия подтверждаются **сервером** по существующей сессии БАРС и разрешённому списку; одного имени из профиля недостаточно.
+- Не коммить `.env`, реальные данные студентов, пароли, ключи API и cookie БАРС.
+- Публичный набор Campus Cards становится доступен другим студентам вместе с выбранным именем автора.
+- Тайлы OpenStreetMap требуют доступа к сети.
+- Это развивающийся студенческий проект, а не официальный клиент БАРС или пропускная система МЭИ.
+
+---
+
+<div align="center">
+  <b>CampusApp</b> — всё, что нужно студенту, в одном приложении.<br>
+  <sub><a href="https://github.com/Agarych-ilya/CampusApp">Flutter</a> · <a href="https://github.com/Agarych-ilya/Campus-backend">Backend</a></sub>
+</div>
