@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
 import '../data/study_deck.dart';
+import '../data/study_activity_storage.dart';
+import '../widgets/study_activity_heatmap.dart';
 import 'study_editor_screen.dart';
 import 'study_session_screen.dart';
 
@@ -14,6 +16,8 @@ class StudyHomeScreen extends StatefulWidget {
 
 class _StudyHomeScreenState extends State<StudyHomeScreen> {
   final _store = StudyDeckStore();
+  final _activityStore = StudyActivityStorage();
+  late Future<Map<DateTime, StudyDayActivity>> _activityFuture;
   final _search = TextEditingController();
   List<StudyDeck> _decks = [];
   bool _loading = true;
@@ -22,6 +26,7 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _activityFuture = _activityStore.loadByDay();
     _load();
   }
 
@@ -87,8 +92,8 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
     }
   }
 
-  void _openDeck(StudyDeck deck) {
-    Navigator.of(context).push(
+  Future<void> _openDeck(StudyDeck deck) async {
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => StudyDeckScreen(
           deck: deck,
@@ -97,6 +102,9 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
         ),
       ),
     );
+    if (mounted) {
+      setState(() => _activityFuture = _activityStore.loadByDay());
+    }
   }
 
   @override
@@ -235,6 +243,39 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 20),
+                      FutureBuilder<Map<DateTime, StudyDayActivity>>(
+                        future: _activityFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Row(
+                              children: [
+                                const Expanded(
+                                  child: Text('История тестов недоступна'),
+                                ),
+                                TextButton(
+                                  onPressed: () => setState(
+                                    () => _activityFuture =
+                                        _activityStore.loadByDay(),
+                                  ),
+                                  child: const Text('Повторить'),
+                                ),
+                              ],
+                            );
+                          }
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(18),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+                          return StudyActivityHeatmap(
+                            activity: snapshot.data!,
+                          );
+                        },
                       ),
                       const SizedBox(height: 26),
                       Row(

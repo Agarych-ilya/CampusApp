@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
 import '../data/study_deck.dart';
+import '../data/study_activity_storage.dart';
+import 'study_results_screen.dart';
 
 class StudyFlashcardsScreen extends StatefulWidget {
   const StudyFlashcardsScreen({
@@ -330,6 +332,12 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
   int _index = 0;
   int _correct = 0;
   String? _selected;
+  final StudyActivityStorage _activityStore = StudyActivityStorage();
+  Map<DateTime, StudyDayActivity> _activity = {};
+  String? _activityError;
+  String _attemptId = '';
+  bool _attemptSaved = false;
+  bool _finishing = false;
 
   @override
   void initState() {
@@ -342,6 +350,11 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
     _index = 0;
     _correct = 0;
     _selected = null;
+    _attemptId = DateTime.now().microsecondsSinceEpoch.toString() +
+        '-' + Random().nextInt(1 << 30).toString();
+    _attemptSaved = false;
+    _finishing = false;
+    _activityError = null;
     _options = _optionsFor(_questions.first);
   }
 
@@ -357,14 +370,54 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
     return [card.definition, ...distractors]..shuffle(Random());
   }
 
-  void _next() {
-    setState(() {
-      _index++;
-      _selected = null;
-      if (_index < _questions.length) {
+  Future<void> _next() async {
+    if (_finishing) return;
+    if (_index + 1 < _questions.length) {
+      setState(() {
+        _index++;
+        _selected = null;
         _options = _optionsFor(_questions[_index]);
+      });
+      return;
+    }
+
+    setState(() => _finishing = true);
+    try {
+      // The last answer is recorded once, never on a widget rebuild.
+      if (!_attemptSaved) {
+        await _activityStore.recordAttempt(StudyActivityEntry(
+          attemptId: _attemptId,
+          completedAt: DateTime.now(),
+          correctAnswers: _correct,
+          totalAnswers: _questions.length,
+        ));
+        _attemptSaved = true;
       }
-    });
+
+      Map<DateTime, StudyDayActivity> days = {};
+      String? activityError;
+      try {
+        days = await _activityStore.loadByDay();
+      } catch (_) {
+        activityError = 'Результат сохранён, но историю не удалось показать.';
+      }
+      if (!mounted) return;
+      setState(() {
+        _activity = days;
+        _activityError = activityError;
+        _selected = null;
+        _index = _questions.length;
+        _finishing = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _finishing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось сохранить результат. Повтори попытку.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -379,37 +432,12 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
           child: finished
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.emoji_events_outlined,
-                      color: AppTheme.pink,
-                      size: 78,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Тест завершён',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    Text(
-                      _correct.toString() + ' из ' +
-                          _questions.length.toString() + ' верно',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: AppTheme.pink,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    FilledButton.icon(
-                      onPressed: () => setState(_startQuiz),
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Пройти ещё раз'),
-                    ),
-                  ],
+              ? StudyResultsContent(
+                  correctAnswers: _correct,
+                  totalAnswers: _questions.length,
+                  activity: _activity,
+                  activityError: _activityError,
+                  onRetry: () => setState(_startQuiz),
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -544,13 +572,17 @@ class _StudyQuizScreenState extends State<StudyQuizScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
-                          onPressed: _next,
+                          onPressed: _finishing ? null : _next,
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 15),
                           ),
-                          child: Text(_index == _questions.length - 1
-                              ? 'Результаты'
-                              : 'Следующий вопрос'),
+                          child: Text(
+                            _finishing
+                                ? 'Сохраняем результат...'
+                                : _index == _questions.length - 1
+                                    ? 'Результаты'
+                                    : 'Следующий вопрос',
+                          ),
                         ),
                       )
                     else
