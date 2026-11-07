@@ -590,7 +590,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final query = _searchController.text.trim().toLowerCase();
     final matchedServices = _services
         .where((service) => service.matches(query))

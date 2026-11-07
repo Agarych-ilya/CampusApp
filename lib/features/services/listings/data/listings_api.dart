@@ -268,6 +268,19 @@ class ListingsApi {
     _csrf = csrf;
   }
 
+  /// Reuse the already verified BARS identity for publishing and rating
+  /// study decks. No second password or separate administrator role.
+  Future<Map<String, String>> studyAuthHeaders() async {
+    await ensureSession();
+    return {
+      'Cookie': _cookie!,
+      'X-Listing-CSRF': _csrf!,
+    };
+  }
+
+  Map<String, String> get studyReadHeaders =>
+      _cookie == null ? const {} : {'Cookie': _cookie!};
+
   Future<CampusListing> create(
     ListingDraft draft,
     List<Uint8List> photos,

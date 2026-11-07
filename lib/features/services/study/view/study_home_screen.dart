@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '/features/profile/data/student_profile_storage.dart';
 
 import '/features/services/style/service_palette.dart';
 
 import '../data/study_deck.dart';
+import '../data/public_study_api.dart';
+import 'study_public_deck_screen.dart';
 import '../data/study_activity_storage.dart';
 import '../widgets/study_activity_heatmap.dart';
 import 'study_editor_screen.dart';
@@ -18,6 +24,13 @@ class StudyHomeScreen extends StatefulWidget {
 class _StudyHomeScreenState extends State<StudyHomeScreen> {
   final _store = StudyDeckStore();
   final _activityStore = StudyActivityStorage();
+  final _publicApi = PublicStudyApi.instance;
+  final _publicDecks = <PublicStudyDeck>[];
+  Timer? _searchTimer;
+  bool _publicLoading = true;
+  String? _publicError;
+  int _searchGeneration = 0;
+  String _filter = 'all';
   late Future<Map<DateTime, StudyDayActivity>> _activityFuture;
   final _search = TextEditingController();
   List<StudyDeck> _decks = [];
@@ -29,10 +42,12 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
     super.initState();
     _activityFuture = _activityStore.loadByDay();
     _load();
+    _loadPublic();
   }
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -52,6 +67,120 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
         _loading = false;
         _error = 'Не удалось прочитать сохранённые наборы.';
       });
+    }
+  }
+
+  Future<void> _loadPublic() async {
+    final generation = ++_searchGeneration;
+    if (mounted) setState(() => _publicLoading = true);
+    try {
+      final results = await _publicApi.search(
+        query: _search.text.trim(),
+        sort: _filter == 'popular' ? 'popular' : 'recent',
+      );
+      if (!mounted || generation != _searchGeneration) return;
+      setState(() {
+        _publicDecks
+          ..clear()
+          ..addAll(results);
+        _publicLoading = false;
+        _publicError = null;
+      });
+    } catch (_) {
+      if (!mounted || generation != _searchGeneration) return;
+      setState(() {
+        _publicLoading = false;
+        _publicError = 'Не удалось загрузить общие наборы.';
+      });
+    }
+  }
+
+  void _searchChanged(String value) {
+    setState(() {});
+    _searchTimer?.cancel();
+    _searchTimer = Timer(
+      const Duration(milliseconds: 350),
+      _loadPublic,
+    );
+  }
+
+  void _chooseFilter(String value) {
+    if (_filter == value) return;
+    setState(() => _filter = value);
+    if (value != 'mine') _loadPublic();
+  }
+
+  Future<void> _publishDeck(StudyDeck deck) async {
+    final profile = await StudentProfileStorage().getProfile();
+    if (!mounted) return;
+    final full = profile?.fullName.trim() ?? '';
+    final parts = full.split(RegExp(r'\s+'));
+    final defaultName = parts.length > 1
+        ? '${parts.first} ${parts[1][0]}.'
+        : (full.isEmpty ? 'Студент МЭИ' : full);
+    var authorName = defaultName;
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Опубликовать набор'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Карточки станут доступны всем студентам. '
+              'Публикуются только название, описание, термины, '
+              'определения и указанное имя автора.',
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              initialValue: defaultName,
+              maxLength: 60,
+              onChanged: (value) => authorName = value,
+              decoration: const InputDecoration(labelText: 'Имя автора'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = authorName.trim();
+              if (value.length >= 2 && value.length <= 60) {
+                Navigator.pop(dialog, value);
+              }
+            },
+            child: const Text('Опубликовать'),
+          ),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _publicApi.publish(deck, authorName: chosen);
+    await _loadPublic();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Набор опубликован или обновлён для всех студентов'),
+      ),
+    );
+  }
+
+  Future<void> _openPublicDeck(PublicStudyDeck deck) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => StudyPublicDeckScreen(
+          preview: deck,
+          onSaveCopy: _saveDeck,
+          onChanged: _loadPublic,
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() => _activityFuture = _activityStore.loadByDay());
+      _loadPublic();
     }
   }
 
@@ -100,6 +229,7 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
           deck: deck,
           onSaved: _saveDeck,
           onDelete: _deleteDeck,
+          onPublish: _publishDeck,
         ),
       ),
     );
@@ -110,13 +240,20 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final query = _search.text.trim().toLowerCase();
-    final decks = _decks.where((deck) =>
-        (deck.title + ' ' + deck.description).toLowerCase().contains(query))
-        .toList()
+    final decks = _decks.where((deck) {
+      final content = [
+        deck.title,
+        deck.description,
+        ...deck.cards.expand((card) => [card.term, card.definition]),
+      ].join(' ').toLowerCase();
+      return content.contains(query);
+    }).toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final showLocal = _filter == 'all' || _filter == 'mine';
+    final showPublic = _filter != 'mine';
     final totalCards = _decks.fold<int>(
       0, (total, deck) => total + deck.cards.length,
     );
@@ -278,83 +415,171 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
                           );
                         },
                       ),
-                      const SizedBox(height: 26),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Мои наборы',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          if (_decks.isNotEmpty)
-                            IconButton.filledTonal(
-                              tooltip: 'Создать набор',
-                              onPressed: _create,
-                              icon: const Icon(Icons.add_rounded),
-                            ),
-                        ],
+                      const SizedBox(height: 24),
+                      Text(
+                        'Наборы для учёбы',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                      if (_decks.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _search,
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            hintText: 'Поиск по моим наборам',
-                            prefixIcon: const Icon(Icons.search_rounded),
-                            suffixIcon: query.isEmpty
-                                ? null
-                                : IconButton(
-                                    tooltip: 'Очистить поиск',
-                                    onPressed: () => setState(_search.clear),
-                                    icon: const Icon(Icons.close_rounded),
-                                  ),
-                            filled: true,
-                            fillColor: theme.colorScheme.surfaceContainer,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(17),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(17),
-                              borderSide: BorderSide.none,
-                            ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _search,
+                        onChanged: _searchChanged,
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
+                          hintText: 'Поиск наборов, терминов и авторов',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: query.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Очистить',
+                                  icon: const Icon(Icons.close_rounded),
+                                  onPressed: () {
+                                    _search.clear();
+                                    _searchChanged('');
+                                  },
+                                ),
+                          filled: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 11),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final option in const [
+                              ('all', 'Все'),
+                              ('mine', 'Мои'),
+                              ('popular', 'Популярные'),
+                              ('new', 'Новые'),
+                            ]) ...[
+                              ChoiceChip(
+                                label: Text(option.$2),
+                                selected: _filter == option.$1,
+                                showCheckmark: false,
+                                onSelected: (_) => _chooseFilter(option.$1),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (showLocal) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Личные наборы',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Text('${decks.length}',
+                                style: TextStyle(color: muted)),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        if (decks.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 18),
+                            child: Text(
+                              _decks.isEmpty
+                                  ? 'Создай первый набор, чтобы начать учиться.'
+                                  : 'В личных наборах ничего не найдено.',
+                              style: TextStyle(color: muted),
+                            ),
+                          )
+                        else
+                          for (final deck in decks)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 11),
+                              child: _StudyDeckTile(
+                                deck: deck,
+                                onTap: () => _openDeck(deck),
+                              ),
+                            ),
+                      ],
+                      if (showPublic) ...[
+                        const SizedBox(height: 13),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _filter == 'popular'
+                                    ? 'Лучшие наборы'
+                                    : _filter == 'new'
+                                        ? 'Новые публикации'
+                                        : 'Общие наборы',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Обновить каталог',
+                              onPressed: _loadPublic,
+                              icon: const Icon(Icons.refresh_rounded, size: 21),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (_publicLoading)
+                          const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else if (_publicError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_publicError!,
+                                    style: TextStyle(color: muted)),
+                                TextButton(
+                                  onPressed: _loadPublic,
+                                  child: const Text('Повторить'),
+                                ),
+                              ],
+                            ),
+                          )
+                        else if (_publicDecks.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 18),
+                            child: Text(
+                              'Публичных наборов пока нет. '
+                              'Открой личный набор и опубликуй его.',
+                              style: TextStyle(color: muted),
+                            ),
+                          )
+                        else
+                          for (final deck in _publicDecks)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 11),
+                              child: _PublicStudyDeckTile(
+                                deck: deck,
+                                onTap: () => _openPublicDeck(deck),
+                              ),
+                            ),
                       ],
                       const SizedBox(height: 14),
-                      if (_decks.isEmpty)
-                        _StudyEmptyState(onCreate: _create)
-                      else if (decks.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 30),
-                          child: Text(
-                            'Наборы не найдены',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: muted),
-                          ),
-                        )
-                      else
-                        for (final deck in decks)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _StudyDeckTile(
-                              deck: deck,
-                              onTap: () => _openDeck(deck),
-                            ),
-                          ),
-                      const SizedBox(height: 14),
                       Text(
-                        'Наборы и прогресс сохраняются только на этом '
-                        'устройстве. Синхронизации с облаком пока нет.',
+                        'Личные наборы хранятся на устройстве. '
+                        'Публичные доступны студентам через сервер CampusApp.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: muted,
                           fontSize: 11,
-                          height: 1.4,
+                          height: 1.45,
                         ),
                       ),
                     ],
@@ -546,17 +771,105 @@ class _StudyDeckTile extends StatelessWidget {
   }
 }
 
+class _PublicStudyDeckTile extends StatelessWidget {
+  const _PublicStudyDeckTile({
+    required this.deck,
+    required this.onTap,
+  });
+
+  final PublicStudyDeck deck;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ServicePalette.theme(Theme.of(context));
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(19),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(19),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 45,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: ServicePalette.accent.withOpacity(0.11),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.public_rounded,
+                  color: ServicePalette.accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      deck.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Автор: ${deck.authorName} · ${deck.cardCount} карточек',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: muted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 7),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded,
+                            size: 17, color: ServicePalette.amber),
+                        const SizedBox(width: 5),
+                        Text(
+                          deck.ratingCount == 0
+                              ? 'Без оценок'
+                              : '${deck.rating.toStringAsFixed(1)} '
+                                  '(${deck.ratingCount})',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class StudyDeckScreen extends StatefulWidget {
   const StudyDeckScreen({
     super.key,
     required this.deck,
     required this.onSaved,
     required this.onDelete,
+    this.onPublish,
   });
 
   final StudyDeck deck;
   final Future<void> Function(StudyDeck) onSaved;
   final Future<void> Function(StudyDeck) onDelete;
+  final Future<void> Function(StudyDeck)? onPublish;
 
   @override
   State<StudyDeckScreen> createState() => _StudyDeckScreenState();
@@ -564,6 +877,7 @@ class StudyDeckScreen extends StatefulWidget {
 
 class _StudyDeckScreenState extends State<StudyDeckScreen> {
   late StudyDeck _deck;
+  bool _publishing = false;
 
   @override
   void initState() {
@@ -581,6 +895,22 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Не удалось сохранить изменения')),
     );
+  }
+
+  Future<void> _publish() async {
+    if (_publishing || widget.onPublish == null) return;
+    setState(() => _publishing = true);
+    try {
+      await widget.onPublish!(_deck);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _publishing = false);
+    }
   }
 
   Future<void> _edit() async {
@@ -650,7 +980,7 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
     final muted = theme.colorScheme.onSurfaceVariant;
     final total = _deck.cards.length;
     final known = _deck.learnedCount;
@@ -659,6 +989,12 @@ class _StudyDeckScreenState extends State<StudyDeckScreen> {
       appBar: AppBar(
         title: const Text('Учебный набор'),
         actions: [
+          if (widget.onPublish != null)
+            IconButton(
+              tooltip: 'Опубликовать для студентов',
+              onPressed: _publishing ? null : _publish,
+              icon: const Icon(Icons.public_rounded),
+            ),
           IconButton(
             onPressed: _edit,
             tooltip: 'Редактировать набор',
