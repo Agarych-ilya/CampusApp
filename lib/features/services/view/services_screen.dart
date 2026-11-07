@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '/core/theme/app_theme.dart';
 import '/features/services/cloud/view/cloud_screen.dart';
 import '/features/services/study/view/study_home_screen.dart';
+import '/features/services/listings/view/listings_screen.dart';
 import '../data/community_api.dart';
 import '../data/community_admin_api.dart';
 import '../nfc/view/nfc_pass_screen.dart';
@@ -16,7 +17,7 @@ import 'add_community_screen.dart';
 import 'community_detail_screen.dart';
 import 'community_admin_screen.dart';
 
-enum _ServiceType { cloud, qr, nfc, study }
+enum _ServiceType { cloud, qr, nfc, study, market, found }
 
 class _ServiceInfo {
   const _ServiceInfo({
@@ -86,6 +87,22 @@ class _ServicesScreenState extends State<ServicesScreen> {
       searchTerms: 'quizlet карточки обучение учёба запоминание термины тест',
       icon: Icons.style_outlined,
       color: Color(0xFF9D7AFF),
+    ),
+    _ServiceInfo(
+      type: _ServiceType.market,
+      title: 'Маркет',
+      subtitle: 'Покупка и продажа',
+      searchTerms: 'барахолка объявления купить продать обмен даром товар',
+      icon: Icons.shopping_bag_outlined,
+      color: Color(0xFF45C6A1),
+    ),
+    _ServiceInfo(
+      type: _ServiceType.found,
+      title: 'Бюро находок',
+      subtitle: 'Потеряли и нашли',
+      searchTerms: 'потерянные вещи находки потерял нашёл искать',
+      icon: Icons.search_rounded,
+      color: Color(0xFF82B1FF),
     ),
   ];
 
@@ -246,6 +263,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
       _ServiceType.qr => const QrScannerScreen(),
       _ServiceType.nfc => const NfcPassScreen(),
       _ServiceType.study => const StudyHomeScreen(),
+      _ServiceType.market => const ListingsScreen(market: true),
+      _ServiceType.found => const ListingsScreen(market: false),
     };
 
     Navigator.of(context).push(
