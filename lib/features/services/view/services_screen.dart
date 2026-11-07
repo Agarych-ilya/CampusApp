@@ -210,11 +210,23 @@ class _ServicesScreenState extends State<ServicesScreen> {
       if (!mounted) return;
       setState(() => _canManageCommunities = isAdmin);
       if (!isAdmin) {
-        throw Exception(
-          admin.lastBarsAuthError ??
-          'Только администратор может редактировать аватарку. '
-              'Проверь подключение к бэкенду и авторизацию БАРС.',
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Редактирование недоступно'),
+            content: Text(
+              'Сервер не подтвердил права администратора.\n\n'
+              '${admin.lastBarsAuthError ?? "Проверь подключение к бэкенду и действующую сессию БАРС."}',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Понятно'),
+              ),
+            ],
+          ),
         );
+        return;
       }
 
       final selected = await FilePicker.pickFile(type: FileType.image);
@@ -808,26 +820,26 @@ class _CommunityTile extends StatelessWidget {
                             child: InkWell(
                               customBorder: const CircleBorder(),
                               onTap: avatarUploading ? null : onEditAvatar,
-                            child: SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: avatarUploading
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(7),
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
+                              child: SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: avatarUploading
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(7),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Icon(
+                                        canEditAvatar
+                                            ? Icons.camera_alt_rounded
+                                            : Icons.lock_outline_rounded,
+                                        size: 15,
+                                        color: canEditAvatar
+                                            ? Colors.white
+                                            : theme.colorScheme.onSurfaceVariant,
                                       ),
-                                    )
-                                  : Icon(
-                                      canEditAvatar
-                                          ? Icons.camera_alt_rounded
-                                          : Icons.lock_outline_rounded,
-                                      size: 15,
-                                      color: canEditAvatar
-                                          ? Colors.white
-                                          : theme.colorScheme.onSurfaceVariant,
-                                    ),
                               ),
                             ),
                           ),
