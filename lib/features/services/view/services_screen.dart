@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '/core/theme/app_theme.dart';
 import '/features/services/cloud/view/cloud_screen.dart';
+import '/features/services/study/view/study_home_screen.dart';
 import '../data/community_api.dart';
 import '../data/community_admin_api.dart';
 import '../nfc/view/nfc_pass_screen.dart';
@@ -15,7 +16,7 @@ import 'add_community_screen.dart';
 import 'community_detail_screen.dart';
 import 'community_admin_screen.dart';
 
-enum _ServiceType { cloud, qr, nfc }
+enum _ServiceType { cloud, qr, nfc, study }
 
 class _ServiceInfo {
   const _ServiceInfo({
@@ -77,6 +78,14 @@ class _ServicesScreenState extends State<ServicesScreen> {
       searchTerms: 'студенческий билет пропуск турникет карта скуд nfc',
       icon: Icons.nfc,
       color: Color(0xFF2DD4BF),
+    ),
+    _ServiceInfo(
+      type: _ServiceType.study,
+      title: 'Campus Cards',
+      subtitle: 'Карточки и тесты',
+      searchTerms: 'quizlet карточки обучение учёба запоминание термины тест',
+      icon: Icons.style_outlined,
+      color: Color(0xFF9D7AFF),
     ),
   ];
 
@@ -236,6 +245,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       _ServiceType.cloud => const CloudScreen(),
       _ServiceType.qr => const QrScannerScreen(),
       _ServiceType.nfc => const NfcPassScreen(),
+      _ServiceType.study => const StudyHomeScreen(),
     };
 
     Navigator.of(context).push(
