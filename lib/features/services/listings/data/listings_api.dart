@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -272,7 +270,7 @@ class ListingsApi {
 
   Future<CampusListing> create(
     ListingDraft draft,
-    List<PlatformFile> photos,
+    List<Uint8List> photos,
   ) async {
     await ensureSession();
     final request = http.MultipartRequest('POST', Uri.parse(_base));
@@ -280,22 +278,18 @@ class ListingsApi {
     for (final entry in draft.toJson().entries) {
       request.fields[entry.key] = entry.value.toString();
     }
-    for (final file in photos.take(3)) {
-      final Uint8List data;
-      if (file.bytes != null) {
-        data = file.bytes!;
-      } else if (file.path != null) {
-        data = await File(file.path!).readAsBytes();
-      } else {
-        throw Exception('Не удалось прочитать выбранную фотографию');
-      }
+    if (photos.length > 3) {
+      throw Exception('Можно загрузить не больше трёх фотографий');
+    }
+    for (var index = 0; index < photos.length; index++) {
+      final data = photos[index];
       if (data.length > 5 * 1024 * 1024 || data.length < 12) {
-        throw Exception('Каждое фото должно быть меньше 5 МБ');
+        throw Exception('Каждое фото должно быть размером до 5 МБ');
       }
       request.files.add(http.MultipartFile.fromBytes(
         'photos',
         data,
-        filename: file.name,
+        filename: 'listing_photo_${index + 1}',
       ));
     }
     final response = await http.Response.fromStream(

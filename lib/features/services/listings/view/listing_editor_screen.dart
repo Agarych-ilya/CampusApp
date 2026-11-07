@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +35,7 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
   late String _kind;
   late String _category;
   String _condition = 'good';
-  List<PlatformFile> _photos = [];
+  List<Uint8List> _photos = [];
   bool _saving = false;
   String? _error;
 
@@ -93,21 +93,28 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
   Future<void> _choosePhotos() async {
     if (_editing) return;
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: true,
-        withData: true,
-      );
-      if (!mounted || result == null) return;
-      if (result.files.length > 3) {
+      // file_picker 12.x returns files directly, not FilePickerResult.
+      final files = await FilePicker.pickFiles(type: FileType.image);
+      if (!mounted || files.isEmpty) return;
+      if (files.length > 3) {
         throw Exception('Можно выбрать не больше трёх фотографий');
       }
-      for (final file in result.files) {
-        if (file.size > 5 * 1024 * 1024 || file.size < 12) {
+
+      final previews = <Uint8List>[];
+      for (final file in files) {
+        final size = file.lengthSync() ?? await file.length();
+        if (size > 5 * 1024 * 1024 || size < 12) {
           throw Exception('Каждое фото должно быть размером до 5 МБ');
         }
+        // The native picker can return an Android content URI instead of
+        // a file-system path. Read the bytes using the plugin API.
+        final bytes = await file.readAsBytes();
+        if (bytes.length > 5 * 1024 * 1024 || bytes.length < 12) {
+          throw Exception('Каждое фото должно быть размером до 5 МБ');
+        }
+        previews.add(bytes);
       }
-      setState(() => _photos = result.files);
+      if (mounted) setState(() => _photos = previews);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -116,15 +123,14 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
     }
   }
 
-  Widget _photoTile(PlatformFile photo) {
-    final image = photo.bytes != null
-        ? Image.memory(photo.bytes!, fit: BoxFit.cover)
-        : photo.path != null
-            ? Image.file(File(photo.path!), fit: BoxFit.cover)
-            : const Icon(Icons.image_outlined);
+  Widget _photoTile(Uint8List photo) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(15),
-      child: SizedBox(width: 95, height: 95, child: image),
+      child: SizedBox(
+        width: 95,
+        height: 95,
+        child: Image.memory(photo, fit: BoxFit.cover),
+      ),
     );
   }
 
