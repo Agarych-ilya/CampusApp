@@ -1,16 +1,189 @@
-# campusapp
+# CampusApp
 
-A new Flutter project.
+Flutter student app for MPEI.
 
-## Getting Started
+## Local backend and schedule (Windows / PowerShell)
 
-This project is a starting point for a Flutter application.
+The schedule is served by the separate NestJS repository
+`Agarych-ilya/Campus-backend` (branch `feature/cloud`).
+Start that backend in a separate terminal before launching the app:
 
-A few resources to get you started if this is your first Flutter project:
+```powershell
+# In the Campus-backend directory:
+git switch feature/cloud
+git pull --ff-only origin feature/cloud
+npm install
+npm run start:dev
+```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Check the backend from Windows:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```powershell
+curl.exe http://localhost:8000/health
+```
+
+For Android Emulator the PC is accessible as **10.0.2.2**.
+Run Flutter from the CampusApp directory:
+
+```powershell
+flutter run -d emulator-5554 --dart-define=CAMPUS_API_BASE_URL=http://10.0.2.2:8000
+```
+
+For a physical phone use the PC's actual IPv4 address on the same Wi-Fi
+network, e.g.:
+
+```powershell
+ipconfig
+flutter run -d <phone_id> --dart-define=CAMPUS_API_BASE_URL=http://192.168.1.5:8000
+```
+
+Replace `192.168.1.5` with your PC's current IPv4 address.
+Without `CAMPUS_API_BASE_URL`, the schedule screen checks the former LAN
+address first, then the Android Emulator bridge (`10.0.2.2`).
+Other services use the explicitly configured URL or the LAN default.
+
+The schedule calls `GET /schedule?group=<group>&date=YYYY-MM-DD`.
+The group is provided by the BARS login flow. A fake demo group is no
+longer inserted when no BARS group is available. The mobile app caches
+successful weekly results and displays cached lessons with an offline
+warning if the server is down.
+
+If the API responds but the MPEI schedule cannot be fetched, check the
+backend logs and the upstream RUZ service. The mobile app cannot load
+live schedules until the backend is reachable.
+
+
+## Сообщества студентов
+
+Экран **Сервисы → Группы** получает каталог из
+`GET /services/groups` и показывает карточки, описания, ссылки на
+Telegram/ВКонтакте, поиск и фильтры. Если связь с бэкендом пропала,
+остаются встроенные группы, но счётчик будет недоступен.
+
+**Добавить сообщество:** название, описание, категория, ссылки TG/VK,
+а также **собственное изображение, выбираемое из галереи**. Фото
+автоматически обрезается до квадрата 400×400 и сжимается в JPEG
+перед загрузкой через `multipart/form-data`. Картинка сохраняется на
+бэкенде; после проверки сообщество показывается всем студентам
+с выбранной иконкой. Пока заявка `pending`, её изображение и
+карточка сохраняются локально на устройстве автора.
+
+**Количество участников пользователь не вводит.** Сервер пытается
+считать его с публичной страницы Telegram (или через Bot API, если
+настроен `TELEGRAM_BOT_TOKEN`). Для ВКонтакте сервер использует
+`VK_ACCESS_TOKEN` в локальном `.env`; токен Flutter не получает.
+Численность кешируется на сервере на 15 минут, источник и время
+проверки указываются в карточке. Если сервис не отдал число,
+показывается «Нет данных об участниках». У сокращённых
+счётчиков Telegram (`12.1K`) ставится знак приблизительности `≈`.
+
+Для работы этих функций **обязательно** обнови и запусти бэкенд
+`Agarych-ilya/Campus-backend` из ветки `feature/cloud`.
+На реальном телефоне по USB на Windows используется ADB Reverse:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s AM5HJV5A09H00643 reverse tcp:8000 tcp:8000
+flutter run -d AM5HJV5A09H00643 --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Тесты модели:
+
+```powershell
+flutter test test/features/services/community_data_test.dart
+```
+
+## Управление группами без повторного входа
+
+В разделе **Сервисы → Группы** приложение автоматически использует
+WebView-сессию БАРС, если она ещё действительна. Бэкенд проверяет
+номер зачётной книжки и список администраторов из локального .env.
+
+- **Добавить** — для обычных студентов создаёт заявку на модерацию;
+  для уже подтверждённого администратора сразу публикует группу.
+- **Аватарка** — при подтверждённом входе администратора появляется
+  значок камеры — **как в каталоге, так и на странице сообщества**.
+  Если первоначальная проверка БАРС не прошла, вместо него виден
+  замок: нажатие на замок или саму аватарку повторяет
+  проверку существующей сессии **без отдельной формы входа** и выводит
+  точную причину отказа. Неавторизованный пользователь не может
+  выбрать или отправить изображение.
+  Администратор выбирает JPG/PNG/WebP, видит квадратный предпросмотр
+  (400×400) и подтверждает замену. Сохранение выполняется через
+  защищённый PATCH /services/admin/groups/:id/icon (CSRF + серверная
+  проверка прав).
+- **Удалить** — у подтверждённого администратора иконка удаления
+  появляется прямо на карточке каждой группы, включая ожидающие заявки
+  этого устройства.
+  Удаление подтверждается диалогом, а сервер повторно проверяет
+  права. Для встроенных сообществ действие скрывает их из каталога.
+- Значок управления показывается **только после успешной проверки
+  прав через БАРС**. Он открывает редактирование, восстановление
+  встроенных групп и рассмотрение чужих заявок **без второго экрана входа**.
+- Повторный ввод пароля администратора **не требуется**. Если истекла
+  сама сессия БАРС, студент должен повторно подтвердить вход через
+  БАРС — права не выдаются по одному сохранённому ФИО.
+
+Чтобы проверить эти функции на **Android-эмуляторе** через
+защищённый локальный ADB Reverse:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s emulator-5554 reverse tcp:8000 tcp:8000
+flutter run -d emulator-5554 --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Администраторские cookie БАРС не передаются через обычный HTTP
+по адресу 10.0.2.2; для реальной сети необходимо HTTPS.
+Настройка сервера: COMMUNITY_ADMIN_BARS_RECORD_BOOKS в .env,
+SESSION_SECRET от 32 символов и работающий бэкенд.
+
+## Администрирование сообществ
+
+В разделе **Сервисы → Группы** значок администратора появляется
+**только после успешной серверной проверки БАРС** и открывает панель
+модерации без отдельной авторизации.
+
+- **На проверке**: подтверждение, отклонение и удаление заявки.
+- **Опубликованы**: изменение текста, категории, ссылок Telegram/VK,
+  собственной фотографии и резервного значка; удаление.
+- **Скрытые**: стартовые сообщества после удаления скрываются
+  на сервере, их можно восстановить.
+- **Отклонены**: просмотр, редактирование и окончательное удаление.
+
+**Администратор входит через БАРС МЭИ.** Повторный логин или
+пароль аккаунта Campus-backend не нужен. Когда открываешь панель,
+приложение пытается использовать уже действующую авторизацию БАРС
+через WebViewCookieManager. **Отдельное окно входа удалено**:
+если сессия истекла или сервер недоступен, появляется сообщение
+о проблеме и кнопка повторной проверки. Права при этом не выдаются.
+
+Бэкенд сам запрашивает страницы студента в БАРС и сверяет номер
+зачётки с локальным разрешённым списком. **Локально сохранённый
+профиль, ФИО или логин OgarkovIA сами по себе прав не дают.**
+
+Для разового назначения открой Campus-backend/.env и добавь:
+
+```dotenv
+COMMUNITY_ADMIN_BARS_RECORD_BOOKS=ТВОЙ_НОМЕР_ЗАЧЁТКИ_ИЗ_БАРС
+SESSION_SECRET=ДЛИННАЯ_СЛУЧАЙНАЯ_СТРОКА_ОТ_32_СИМВОЛОВ
+COOKIE_SECURE=false
+```
+
+Номер зачётки можно посмотреть в профиле CampusApp или на странице
+БАРС (№ЗК). Пароль БАРС нигде в .env указывать не нужно.
+Подробности серверной проверки и ограничения описаны в README
+бэкенда, ветка feature/cloud.
+
+Для безопасности пересылка cookie БАРС разрешена только по
+HTTPS либо через локальный USB ADB Reverse.
+Вход через обычный HTTP по Wi-Fi намеренно запрещён.
+
+Для Android по USB проверь `adb reverse tcp:8000 tcp:8000`
+и запускай Flutter с параметром
+`--dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000`.
+
+Когда бэкенд временно недоступен, показывается последний сохранённый
+публичный каталог (а не старый жёстко заданный список групп),
+чтобы скрытые администратором сообщества не появлялись повторно.
+Заявки текущего устройства по-прежнему сохраняются локально, пока
+их не рассмотрели или не удалили через админ-панель.
+

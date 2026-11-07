@@ -1,0 +1,665 @@
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '/features/services/style/service_palette.dart';
+
+import '../data/study_deck.dart';
+import '../data/study_activity_storage.dart';
+import 'study_results_screen.dart';
+
+class StudyFlashcardsScreen extends StatefulWidget {
+  const StudyFlashcardsScreen({
+    super.key,
+    required this.deck,
+    required this.onChanged,
+  });
+
+  final StudyDeck deck;
+  final Future<void> Function(StudyDeck) onChanged;
+
+  @override
+  State<StudyFlashcardsScreen> createState() => _StudyFlashcardsScreenState();
+}
+
+class _StudyFlashcardsScreenState extends State<StudyFlashcardsScreen> {
+  late List<StudyCard> _cards;
+  late Set<String> _knownIds;
+  int _index = 0;
+  bool _revealed = false;
+  bool _saving = false;
+  bool _shuffled = false;
+  final StudyActivityStorage _activityStore = StudyActivityStorage();
+  int _roundCorrect = 0;
+  late String _roundId;
+
+  String _newRoundId() => 'flashcards-' +
+      DateTime.now().microsecondsSinceEpoch.toString() + '-' +
+      Random().nextInt(1 << 30).toString();
+
+  @override
+  void initState() {
+    super.initState();
+    _cards = List.of(widget.deck.cards);
+    _knownIds = Set.of(widget.deck.knownCardIds);
+    _roundId = _newRoundId();
+  }
+
+  void _restart() {
+    setState(() {
+      _index = 0;
+      _revealed = false;
+      _roundCorrect = 0;
+      _roundId = _newRoundId();
+      _cards = List.of(widget.deck.cards);
+      if (_shuffled) _cards.shuffle(Random());
+    });
+  }
+
+  void _shuffle() {
+    setState(() => _shuffled = !_shuffled);
+    _restart();
+  }
+
+  Future<void> _mark({required bool known}) async {
+    if (_saving || _index >= _cards.length) return;
+    final updated = Set<String>.of(_knownIds);
+    final id = _cards[_index].id;
+    if (known) {
+      updated.add(id);
+    } else {
+      updated.remove(id);
+    }
+
+    final nextCorrect = _roundCorrect + (known ? 1 : 0);
+    final completed = _index + 1 == _cards.length;
+    setState(() => _saving = true);
+    try {
+      await widget.onChanged(widget.deck.copyWith(knownCardIds: updated));
+      if (completed) {
+        // Record the full round BEFORE showing the completion screen.
+        // The attempt ID makes retry after a storage error idempotent.
+        await _activityStore.recordAttempt(StudyActivityEntry(
+          attemptId: _roundId,
+          completedAt: DateTime.now(),
+          correctAnswers: nextCorrect,
+          totalAnswers: _cards.length,
+          kind: 'flashcards',
+        ));
+      }
+      if (!mounted) return;
+      setState(() {
+        _knownIds = updated;
+        _roundCorrect = nextCorrect;
+        _index++;
+        _revealed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось сохранить прогресс. Повтори действие.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ServicePalette.theme(Theme.of(context));
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final finished = _index >= _cards.length;
+    // Only answers marked in this round count for daily activity.
+    final learned = _roundCorrect;
+
+    return ServicePalette.wrap(context, Scaffold(
+      appBar: AppBar(
+        title: const Text('Карточки'),
+        actions: [
+          IconButton(
+            onPressed: _saving ? null : _shuffle,
+            tooltip: _shuffled ? 'Исходный порядок' : 'Перемешать',
+            icon: Icon(
+              Icons.shuffle_rounded,
+              color: _shuffled ? ServicePalette.accent : null,
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: finished
+              ? SingleChildScrollView(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainer,
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: ServicePalette.accent.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(17),
+                              ),
+                              child: const Icon(
+                                Icons.verified_rounded,
+                                color: ServicePalette.accent,
+                                size: 32,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              'Круг завершён!',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            Text(
+                              'За этот круг: ' + learned.toString() + ' из ' +
+                                  _cards.length.toString() + ' отмечено «Знаю».',
+                              style: TextStyle(color: muted),
+                            ),
+                            const SizedBox(height: 16),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: LinearProgressIndicator(
+                                minHeight: 6,
+                                value: _cards.isEmpty
+                                    ? 0.0
+                                    : learned / _cards.length,
+                                backgroundColor:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                color: ServicePalette.accent,
+                              ),
+                            ),
+                            const SizedBox(height: 22),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _restart,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('Пройти ещё раз'),
+                                style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 15,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.deck.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          (_index + 1).toString() + ' / ' +
+                              _cards.length.toString(),
+                          style: TextStyle(
+                            color: muted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 13),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(30),
+                      child: LinearProgressIndicator(
+                        value: _index / _cards.length,
+                        minHeight: 5,
+                        backgroundColor: theme.colorScheme.surfaceContainer,
+                        color: ServicePalette.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => _revealed = !_revealed),
+                        borderRadius: BorderRadius.circular(26),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 240),
+                          layoutBuilder: (currentChild, previousChildren) {
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ...previousChildren,
+                                if (currentChild != null) currentChild,
+                              ],
+                            );
+                          },
+                          child: Container(
+                            key: ValueKey(_cards[_index].id +
+                                (_revealed ? '-back' : '-front')),
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(26),
+                            decoration: BoxDecoration(
+                              color: _revealed
+                                  ? theme.colorScheme.primaryContainer
+                                  : theme.colorScheme.surfaceContainer,
+                              borderRadius: BorderRadius.circular(26),
+                              border: Border.all(
+                                color: _revealed
+                                    ? ServicePalette.accent.withOpacity(0.4)
+                                    : theme.colorScheme.outlineVariant
+                                        .withOpacity(0.55),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      _revealed
+                                          ? Icons.lightbulb_outline_rounded
+                                          : Icons.style_outlined,
+                                      color: ServicePalette.accent,
+                                      size: 19,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _revealed ? 'ОПРЕДЕЛЕНИЕ' : 'ТЕРМИН',
+                                      style: const TextStyle(
+                                        color: ServicePalette.accent,
+                                        fontSize: 11,
+                                        letterSpacing: 1.3,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Expanded(
+                                  child: Center(
+                                    child: SingleChildScrollView(
+                                      child: Text(
+                                        _revealed
+                                            ? _cards[_index].definition
+                                            : _cards[_index].term,
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.headlineSmall
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  'Нажми, чтобы ' +
+                                      (_revealed
+                                          ? 'увидеть термин'
+                                          : 'открыть ответ'),
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    if (!_revealed)
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonalIcon(
+                          onPressed: () => setState(() => _revealed = true),
+                          icon: const Icon(Icons.flip_rounded),
+                          label: const Text('Показать ответ'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                          ),
+                        ),
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _saving
+                                  ? null
+                                  : () => _mark(known: false),
+                              icon: const Icon(Icons.refresh_rounded, size: 19),
+                              label: const Text('Повторить'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _saving
+                                  ? null
+                                  : () => _mark(known: true),
+                              icon: const Icon(Icons.check_rounded, size: 19),
+                              label: const Text('Знаю'),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+        ),
+      ),
+    ));
+  }
+}
+
+class StudyQuizScreen extends StatefulWidget {
+  const StudyQuizScreen({super.key, required this.deck});
+
+  final StudyDeck deck;
+
+  @override
+  State<StudyQuizScreen> createState() => _StudyQuizScreenState();
+}
+
+class _StudyQuizScreenState extends State<StudyQuizScreen> {
+  late List<StudyCard> _questions;
+  late List<String> _options;
+  int _index = 0;
+  int _correct = 0;
+  String? _selected;
+  final StudyActivityStorage _activityStore = StudyActivityStorage();
+  Map<DateTime, StudyDayActivity> _activity = {};
+  String? _activityError;
+  String _attemptId = '';
+  bool _attemptSaved = false;
+  bool _finishing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startQuiz();
+  }
+
+  void _startQuiz() {
+    _questions = List.of(widget.deck.cards)..shuffle(Random());
+    _index = 0;
+    _correct = 0;
+    _selected = null;
+    _attemptId = DateTime.now().microsecondsSinceEpoch.toString() +
+        '-' + Random().nextInt(1 << 30).toString();
+    _attemptSaved = false;
+    _finishing = false;
+    _activityError = null;
+    _options = _optionsFor(_questions.first);
+  }
+
+  List<String> _optionsFor(StudyCard card) {
+    final seen = <String>{card.definition.trim().toLowerCase()};
+    final distractors = <String>[];
+    final others = List.of(widget.deck.cards)..shuffle(Random());
+    for (final other in others) {
+      final key = other.definition.trim().toLowerCase();
+      if (seen.add(key)) distractors.add(other.definition);
+      if (distractors.length == 3) break;
+    }
+    return [card.definition, ...distractors]..shuffle(Random());
+  }
+
+  Future<void> _next() async {
+    if (_finishing) return;
+    if (_index + 1 < _questions.length) {
+      setState(() {
+        _index++;
+        _selected = null;
+        _options = _optionsFor(_questions[_index]);
+      });
+      return;
+    }
+
+    setState(() => _finishing = true);
+    try {
+      // The last answer is recorded once, never on a widget rebuild.
+      if (!_attemptSaved) {
+        await _activityStore.recordAttempt(StudyActivityEntry(
+          attemptId: _attemptId,
+          completedAt: DateTime.now(),
+          correctAnswers: _correct,
+          totalAnswers: _questions.length,
+        ));
+        _attemptSaved = true;
+      }
+
+      Map<DateTime, StudyDayActivity> days = {};
+      String? activityError;
+      try {
+        days = await _activityStore.loadByDay();
+      } catch (_) {
+        activityError = 'Результат сохранён, но историю не удалось показать.';
+      }
+      if (!mounted) return;
+      setState(() {
+        _activity = days;
+        _activityError = activityError;
+        _selected = null;
+        _index = _questions.length;
+        _finishing = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _finishing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось сохранить результат. Повтори попытку.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ServicePalette.theme(Theme.of(context));
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final finished = _index >= _questions.length;
+
+    return ServicePalette.wrap(context, Scaffold(
+      appBar: AppBar(title: const Text('Тест')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
+          child: finished
+              ? StudyResultsContent(
+                  correctAnswers: _correct,
+                  totalAnswers: _questions.length,
+                  activity: _activity,
+                  activityError: _activityError,
+                  onRetry: () => setState(_startQuiz),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'ВЫБЕРИ ПРАВИЛЬНОЕ ОПРЕДЕЛЕНИЕ',
+                            style: TextStyle(
+                              color: ServicePalette.accent,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
+                              letterSpacing: 0.9,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          (_index + 1).toString() + '/' +
+                              _questions.length.toString(),
+                          style: TextStyle(
+                            color: muted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(30),
+                      child: LinearProgressIndicator(
+                        value: _index / _questions.length,
+                        backgroundColor: theme.colorScheme.surfaceContainer,
+                        color: ServicePalette.accent,
+                        minHeight: 5,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainer,
+                        borderRadius: BorderRadius.circular(23),
+                      ),
+                      child: Text(
+                        _questions[_index].term,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          for (var i = 0; i < _options.length; i++)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 11),
+                              child: OutlinedButton(
+                                onPressed: _selected == null
+                                    ? () => setState(() {
+                                        _selected = _options[i];
+                                        if (_selected ==
+                                            _questions[_index].definition) {
+                                          _correct++;
+                                        }
+                                      })
+                                    : null,
+                                style: OutlinedButton.styleFrom(
+                                  alignment: Alignment.centerLeft,
+                                  disabledForegroundColor:
+                                      theme.colorScheme.onSurface,
+                                  backgroundColor: _selected != null &&
+                                          _options[i] ==
+                                              _questions[_index].definition
+                                      ? ServicePalette.mint.withOpacity(0.14)
+                                      : _selected == _options[i]
+                                          ? ServicePalette.amber.withOpacity(0.12)
+                                          : theme.colorScheme.surfaceContainer,
+                                  side: BorderSide(
+                                    color: _selected != null &&
+                                            _options[i] ==
+                                                _questions[_index].definition
+                                        ? ServicePalette.mint
+                                        : theme.colorScheme.outlineVariant,
+                                  ),
+                                  padding: const EdgeInsets.all(16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(17),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.surface,
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                      child: Text(
+                                        String.fromCharCode(65 + i),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(_options[i]),
+                                    ),
+                                    if (_selected != null &&
+                                        _options[i] ==
+                                            _questions[_index].definition)
+                                      const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: ServicePalette.mint,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_selected != null)
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: _finishing ? null : _next,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                          ),
+                          child: Text(
+                            _finishing
+                                ? 'Сохраняем результат...'
+                                : _index == _questions.length - 1
+                                    ? 'Результаты'
+                                    : 'Следующий вопрос',
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        'Выбери один вариант ответа',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+      ),
+    ));
+  }
+}

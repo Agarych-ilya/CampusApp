@@ -1,7 +1,8 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '/features/services/style/service_palette.dart';
+
 import '../data/cloud_api.dart';
 
 class CloudScreen extends StatefulWidget {
@@ -246,9 +247,9 @@ class _CloudScreenState extends State<CloudScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
-    return Scaffold(
+    return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
         title: const Text(
           'Cloud Campus',
@@ -259,7 +260,7 @@ class _CloudScreenState extends State<CloudScreen> {
 
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isUploading ? null : _pickAndUploadFile,
-        backgroundColor: AppTheme.pink,
+        backgroundColor: ServicePalette.accent,
         foregroundColor: Colors.white,
         icon: _isUploading
             ? const SizedBox(
@@ -342,7 +343,7 @@ class _CloudScreenState extends State<CloudScreen> {
               const Padding(
                 padding: EdgeInsets.only(top: 70),
                 child: Center(
-                  child: CircularProgressIndicator(color: AppTheme.pink),
+                  child: CircularProgressIndicator(color: ServicePalette.accent),
                 ),
               )
             else if (_error != null)
@@ -367,7 +368,7 @@ class _CloudScreenState extends State<CloudScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -386,7 +387,7 @@ class _FileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return Material(
       color: theme.colorScheme.surface,
@@ -402,10 +403,10 @@ class _FileCard extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: AppTheme.pink.withOpacity(0.11),
+                  color: ServicePalette.accent.withOpacity(0.11),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: AppTheme.pink, size: 27),
+                child: Icon(icon, color: ServicePalette.accent, size: 27),
               ),
 
               const SizedBox(width: 14),
@@ -504,7 +505,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return Padding(
       padding: const EdgeInsets.only(top: 70),
@@ -514,13 +515,13 @@ class _EmptyState extends StatelessWidget {
             width: 84,
             height: 84,
             decoration: BoxDecoration(
-              color: AppTheme.pink.withOpacity(0.10),
+              color: ServicePalette.accent.withOpacity(0.10),
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.cloud_outlined,
               size: 40,
-              color: AppTheme.pink,
+              color: ServicePalette.accent,
             ),
           ),
 
@@ -568,7 +569,7 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ServicePalette.theme(Theme.of(context));
 
     return Padding(
       padding: const EdgeInsets.only(top: 60),
