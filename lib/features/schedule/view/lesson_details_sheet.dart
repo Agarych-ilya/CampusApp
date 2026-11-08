@@ -93,12 +93,16 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
   }
 
   Future<void> _openBooking() async {
+    final lessonDate = widget.lesson.parsedDate;
+    if (lessonDate == null) {
+      _error('У этой пары не указана корректная дата бронирования');
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ClassroomBookingScreen(
           api: widget.bookingApi,
-          initialDate: widget.lesson.parsedDate,
-          initialSlot: classroomSlotForLessonTime(widget.lesson.time),
+          lessonDate: lessonDate,
           lessonTime: widget.lesson.time,
         ),
       ),

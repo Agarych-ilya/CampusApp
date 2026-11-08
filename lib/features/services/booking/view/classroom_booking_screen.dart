@@ -9,15 +9,14 @@ class ClassroomBookingScreen extends StatefulWidget {
   const ClassroomBookingScreen({
     super.key,
     this.api,
-    this.initialDate,
-    this.initialSlot,
-    this.lessonTime,
+    required this.lessonDate,
+    required this.lessonTime,
   });
 
   final ClassroomBookingApi? api;
-  final DateTime? initialDate;
-  final String? initialSlot;
-  final String? lessonTime;
+  /// Date and time are fixed by the lesson opened from the schedule.
+  final DateTime lessonDate;
+  final String lessonTime;
 
   @override
   State<ClassroomBookingScreen> createState() => _ClassroomBookingScreenState();
@@ -25,9 +24,9 @@ class ClassroomBookingScreen extends StatefulWidget {
 
 class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   late final ClassroomBookingApi _api;
-  late DateTime _date;
-  late String _slot;
-  bool _dateAdjusted = false;
+  late final DateTime _date;
+  late final String? _slot;
+  String? _unavailableReason;
   ClassroomAvailability? _availability;
   ClassroomSeat? _selected;
   String? _error;
@@ -41,17 +40,41 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
     _api = widget.api ?? ClassroomBookingApi();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final lessonDate = widget.initialDate;
-    final normalized = lessonDate == null
-        ? today
-        : DateTime(lessonDate.year, lessonDate.month, lessonDate.day);
+    _date = DateTime(
+      widget.lessonDate.year,
+      widget.lessonDate.month,
+      widget.lessonDate.day,
+    );
+    _slot = classroomSlotForLessonTime(widget.lessonTime);
     final last = today.add(const Duration(days: 60));
-    _dateAdjusted = normalized.isBefore(today) || normalized.isAfter(last);
-    _date = _dateAdjusted ? today : normalized;
-    _slot = classroomDemoSlots.any((slot) => slot.id == widget.initialSlot)
-        ? widget.initialSlot!
-        : '1';
-    _load();
+    if (_date.isBefore(today)) {
+      _unavailableReason = 'Эта пара уже прошла. Места можно бронировать '
+          'только на будущие занятия.';
+    } else if (_date.isAfter(last)) {
+      _unavailableReason = 'Бронирование доступно не более чем '
+          'за 60 дней до занятия.';
+    } else if (_slot == null) {
+      _unavailableReason = 'Время этой пары не поддерживается тестовой '
+          'системой бронирования М-307.';
+    } else {
+      // The chosen lesson is today: don't reserve a seat on a finished lesson.
+      final parts = RegExp(r'\d{1,2}:\d{2}')
+          .allMatches(widget.lessonTime)
+          .map((match) => match.group(0)!)
+          .toList();
+      if (parts.length >= 2) {
+        final finish = parts[1].split(':');
+        final ends = DateTime(
+          _date.year, _date.month, _date.day,
+          int.parse(finish[0]), int.parse(finish[1]),
+        );
+        if (!ends.isAfter(now)) {
+          _unavailableReason = 'Эта пара уже закончилась. '
+              'Бронирование недоступно.';
+        }
+      }
+    }
+    if (_unavailableReason == null) _load();
   }
 
   @override
@@ -62,9 +85,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   }
 
   Future<void> _load() async {
+    if (_unavailableReason != null || _slot == null) return;
     final id = ++_requestId;
     final date = _date;
-    final slot = _slot;
+    final slot = _slot!;
     setState(() {
       _loading = true;
       _error = null;
@@ -85,31 +109,6 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         _loading = false;
       });
     }
-  }
-
-  Future<void> _chooseDate() async {
-    if (_working) return;
-    final today = DateTime.now();
-    final start = DateTime(today.year, today.month, today.day);
-    final last = start.add(const Duration(days: 60));
-    final chosen = await showDatePicker(
-      context: context,
-      initialDate: _date.isBefore(start) ? start : _date,
-      firstDate: start,
-      lastDate: last,
-      helpText: 'Дата бронирования М-307',
-    );
-    if (!mounted || chosen == null) return;
-    if (ClassroomBookingApi.dateKey(chosen) ==
-        ClassroomBookingApi.dateKey(_date)) return;
-    setState(() => _date = chosen);
-    await _load();
-  }
-
-  void _chooseSlot(String slot) {
-    if (_working || slot == _slot) return;
-    setState(() => _slot = slot);
-    _load();
   }
 
   Future<bool> _confirm(String title, String message, String action) async {
@@ -142,9 +141,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
 
   Future<void> _book() async {
     final seat = _selected;
-    if (_working || seat == null || _availability?.mine != null) return;
+    if (_working || _unavailableReason != null || _slot == null ||
+        seat == null || _availability?.mine != null) return;
     final date = _date;
-    final slot = _slot;
+    final slot = _slot!;
     final accepted = await _confirm(
       'Подтвердить место?',
       '${seat.label}\nАудитория М-307 · ${_formatDate(date)}\n'
@@ -172,9 +172,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   }
 
   Future<void> _cancel() async {
-    if (_working || _availability?.mine == null) return;
+    if (_working || _unavailableReason != null || _slot == null ||
+        _availability?.mine == null) return;
     final date = _date;
-    final slot = _slot;
+    final slot = _slot!;
     final accepted = await _confirm(
       'Отменить бронирование?',
       'Твоё место снова станет доступно другим студентам.',
@@ -281,60 +282,72 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (_dateAdjusted || (widget.lessonTime != null &&
-                    classroomSlotForLessonTime(widget.lessonTime!) == null)) ...[
-                  Text(
-                    _dateAdjusted
-                        ? 'Дата выбранной пары вне периода бронирования. '
-                          'Установлена сегодняшняя дата — проверь её перед подтверждением.'
-                        : 'Время выбранной пары не совпадает с тестовыми интервалами. '
-                          'Выбери нужный интервал вручную.',
-                    style: TextStyle(
-                      color: theme.colorScheme.error,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
                 Text(
                   'Тестовое бронирование внутри CampusApp. '
                   'Оно не подтверждает реальную доступность аудитории '
                   'и не является разрешением МЭИ на её использование.',
                   style: TextStyle(color: muted, fontSize: 12, height: 1.35),
                 ),
-                const SizedBox(height: 22),
-                Text('Дата', style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                )),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  key: const ValueKey('booking-date'),
-                  onPressed: _working ? null : _chooseDate,
-                  icon: const Icon(Icons.calendar_month_outlined),
-                  label: Text(_formatDate(_date)),
-                ),
-                const SizedBox(height: 18),
-                Text('Учебный интервал', style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                )),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 7,
-                  children: [
-                    for (final slot in snapshot?.slots ?? classroomDemoSlots)
-                      ChoiceChip(
-                        key: ValueKey('booking-slot-${slot.id}'),
-                        label: Text(slot.time),
-                        selected: _slot == slot.id,
-                        onSelected: _working
-                            ? null
-                            : (_) => _chooseSlot(slot.id),
+                const SizedBox(height: 20),
+                Container(
+                  key: const ValueKey('booking-fixed-lesson'),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Выбранная пара',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          )),
+                      const SizedBox(height: 9),
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today_outlined, size: 17),
+                          const SizedBox(width: 9),
+                          Text(_formatDate(_date)),
+                        ],
                       ),
-                  ],
+                      const SizedBox(height: 9),
+                      Row(
+                        children: [
+                          const Icon(Icons.schedule_outlined, size: 17),
+                          const SizedBox(width: 9),
+                          Text(widget.lessonTime),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 22),
-                if (_loading)
+                const SizedBox(height: 20),
+                if (_unavailableReason != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Column(
+                      children: [
+                        Icon(Icons.event_busy_outlined,
+                            color: theme.colorScheme.error, size: 31),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Бронирование недоступно',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          _unavailableReason!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: muted),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_loading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 46),
                     child: Center(child: CircularProgressIndicator()),
@@ -427,8 +440,9 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                   ],
                   const SizedBox(height: 15),
                   Text(
-                    'Одно место на студента для выбранной даты и интервала. '
-                    'Для другой пары или даты можно выбрать другое место. '
+                    'Одно место на студента для этой пары. '
+                    'Чтобы забронировать место на другое занятие, '
+                    'открой его в расписании. '
                     'Занятость обновляется с сервера.',
                     style: TextStyle(fontSize: 12, color: muted),
                   ),

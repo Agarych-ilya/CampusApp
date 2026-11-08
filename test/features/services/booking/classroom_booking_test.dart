@@ -148,7 +148,11 @@ void main() {
       (tester) async {
     final api = _FakeBookingApi();
     await tester.pumpWidget(MaterialApp(
-      home: ClassroomBookingScreen(api: api),
+      home: ClassroomBookingScreen(
+          api: api,
+          lessonDate: DateTime.now().add(const Duration(days: 2)),
+          lessonTime: '09:20 - 10:55',
+        ),
     ));
     await tester.pumpAndSettle();
 
@@ -183,18 +187,53 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: ClassroomBookingScreen(
         api: api,
-        initialDate: lessonDate,
-        initialSlot: '3',
+        lessonDate: lessonDate,
         lessonTime: '13:45 - 15:20',
       ),
     ));
     await tester.pumpAndSettle();
-    final slot = tester.widget<ChoiceChip>(
-        find.byKey(const ValueKey('booking-slot-3')));
-    expect(slot.selected, isTrue);
+    expect(find.byKey(const ValueKey('booking-fixed-lesson')), findsOneWidget);
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.byKey(const ValueKey('booking-date')), findsNothing);
+    expect(find.text('13:45 - 15:20'), findsOneWidget);
     expect(api.lastSlot, '3');
     expect(ClassroomBookingApi.dateKey(api.lastDate!),
         ClassroomBookingApi.dateKey(lessonDate));
+  });
+
+  testWidgets('past lesson never silently changes to today or loads seats',
+      (tester) async {
+    final api = _FakeBookingApi();
+    final past = DateTime.now().subtract(const Duration(days: 3));
+    await tester.pumpWidget(MaterialApp(
+      home: ClassroomBookingScreen(
+        api: api,
+        lessonDate: past,
+        lessonTime: '09:20 - 10:55',
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование недоступно'), findsOneWidget);
+    expect(find.byKey(const ValueKey('booking-confirm')), findsNothing);
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.byKey(const ValueKey('booking-date')), findsNothing);
+    expect(api.lastDate, isNull);
+  });
+
+  testWidgets('unknown lesson time cannot fall back to another slot',
+      (tester) async {
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: ClassroomBookingScreen(
+        api: api,
+        lessonDate: DateTime.now().add(const Duration(days: 3)),
+        lessonTime: '08:00 - 09:00',
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование недоступно'), findsOneWidget);
+    expect(api.lastSlot, isNull);
+    expect(find.byKey(const ValueKey('booking-confirm')), findsNothing);
   });
 
   testWidgets('booking screen shows test warning and a 54-seat layout',
@@ -202,7 +241,11 @@ void main() {
     final api = _FakeBookingApi();
     await tester.pumpWidget(
       MaterialApp(
-        home: ClassroomBookingScreen(api: api),
+        home: ClassroomBookingScreen(
+          api: api,
+          lessonDate: DateTime.now().add(const Duration(days: 2)),
+          lessonTime: '09:20 - 10:55',
+        ),
       ),
     );
     await tester.pumpAndSettle();

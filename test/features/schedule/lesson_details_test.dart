@@ -164,6 +164,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Бронирование аудиторий'), findsOneWidget);
     expect(find.text('М-307'), findsOneWidget);
+    expect(find.byKey(const ValueKey('booking-fixed-lesson')), findsOneWidget);
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.byKey(const ValueKey('booking-date')), findsNothing);
+    expect(find.text('13:45 - 15:20'), findsOneWidget);
     expect(booking.lastSlot, '3');
     expect(ClassroomBookingApi.dateKey(booking.lastDate!),
         ClassroomBookingApi.dateKey(when));
