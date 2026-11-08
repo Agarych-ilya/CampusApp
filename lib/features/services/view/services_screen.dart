@@ -7,7 +7,6 @@ import '/features/services/style/service_palette.dart';
 
 import '/features/services/cloud/view/cloud_screen.dart';
 import '/features/services/study/view/study_home_screen.dart';
-import '/features/services/booking/view/classroom_booking_screen.dart';
 import '/features/services/listings/view/listings_screen.dart';
 import '../data/community_api.dart';
 import '../data/community_admin_api.dart';
@@ -19,7 +18,7 @@ import 'add_community_screen.dart';
 import 'community_detail_screen.dart';
 import 'community_admin_screen.dart';
 
-enum _ServiceType { cloud, qr, nfc, study, market, found, booking }
+enum _ServiceType { cloud, qr, nfc, study, market, found }
 
 class _ServiceInfo {
   const _ServiceInfo({
@@ -105,14 +104,6 @@ class _ServicesScreenState extends State<ServicesScreen> {
       searchTerms: 'потерянные вещи находки потерял нашёл искать',
       icon: Icons.search_rounded,
       color: ServicePalette.slate,
-    ),
-    _ServiceInfo(
-      type: _ServiceType.booking,
-      title: 'Бронирование аудиторий',
-      subtitle: 'М-307 · выбор места',
-      searchTerms: 'аудитория бронирование парта место места м-307 кинотеатр',
-      icon: Icons.event_seat_outlined,
-      color: ServicePalette.accent,
     ),
   ];
 
@@ -275,7 +266,6 @@ class _ServicesScreenState extends State<ServicesScreen> {
       _ServiceType.study => const StudyHomeScreen(),
       _ServiceType.market => const ListingsScreen(market: true),
       _ServiceType.found => const ListingsScreen(market: false),
-      _ServiceType.booking => const ClassroomBookingScreen(),
     };
 
     Navigator.of(context).push(

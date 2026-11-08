@@ -68,35 +68,36 @@ class ClassroomSeatMap extends StatelessWidget {
   }
 
   Widget _desk(int row, int desk) {
-    return SizedBox(
-      width: 52,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _seat(ClassroomSeat(row: row, desk: desk, seat: 1)),
-              const SizedBox(width: 3),
-              _seat(ClassroomSeat(row: row, desk: desk, seat: 2)),
-            ],
+    return Column(
+      key: ValueKey('room-desk-$row-$desk'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _seat(ClassroomSeat(row: row, desk: desk, seat: 1)),
+            const SizedBox(width: 3),
+            _seat(ClassroomSeat(row: row, desk: desk, seat: 2)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Container(
+          height: 6,
+          width: 47,
+          decoration: BoxDecoration(
+            color: const Color(0xFF777781).withOpacity(0.45),
+            borderRadius: BorderRadius.circular(3),
           ),
-          const SizedBox(height: 4),
-          Container(
-            height: 7,
-            width: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFF777781).withOpacity(0.45),
-              borderRadius: BorderRadius.circular(3),
-            ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          'Парта $desk',
+          style: const TextStyle(
+            fontSize: 10,
+            color: Color(0xFF9F9FA8),
           ),
-          const SizedBox(height: 3),
-          Text(
-            '$desk',
-            style: const TextStyle(fontSize: 10, color: Color(0xFF9F9FA8)),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -104,7 +105,7 @@ class ClassroomSeatMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final textColor = Theme.of(context).colorScheme.onSurfaceVariant;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Wrap(
           spacing: 13,
@@ -116,57 +117,54 @@ class ClassroomSeatMap extends StatelessWidget {
             _legend(_mySeat, 'Моё'),
           ],
         ),
-        const SizedBox(height: 14),
-        Text('Прокрути схему вправо, чтобы увидеть все парты.',
-            style: TextStyle(color: textColor, fontSize: 12)),
-        const SizedBox(height: 14),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: 620,
-            child: Column(
-              children: [
-                Container(
-                  height: 37,
-                  alignment: Alignment.center,
-                  margin: const EdgeInsets.only(left: 47, right: 8, bottom: 22),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  child: Text('Доска / преподаватель',
-                      style: TextStyle(color: textColor, fontSize: 12)),
-                ),
-                for (var row = 1; row <= 3; row++)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 23),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 42,
-                          child: Text(
-                            'Ряд $row',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: textColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        for (var desk = 1; desk <= 9; desk++) ...[
-                          _desk(row, desk),
-                          if (desk < 9) const SizedBox(width: 11),
-                        ],
-                      ],
-                    ),
-                  ),
-              ],
+        const SizedBox(height: 17),
+        Container(
+          key: const ValueKey('room-board'),
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
             ),
           ),
+          child: Text(
+            'Доска / преподаватель',
+            style: TextStyle(color: textColor, fontSize: 12),
+          ),
         ),
+        const SizedBox(height: 18),
+        // Three vertical columns, each containing nine two-person desks.
+        // The first desk is closest to the board.
+        Row(
+          key: const ValueKey('room-vertical-rows'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var row = 1; row <= 3; row++)
+              Expanded(
+                child: Column(
+                  key: ValueKey('room-row-$row'),
+                  children: [
+                    Text(
+                      'Ряд $row',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: textColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    for (var desk = 1; desk <= 9; desk++) ...[
+                      _desk(row, desk),
+                      if (desk < 9) const SizedBox(height: 14),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 3),
       ],
     );
   }

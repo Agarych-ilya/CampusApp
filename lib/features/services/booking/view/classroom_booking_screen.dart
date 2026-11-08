@@ -6,9 +6,18 @@ import 'classroom_seat_map.dart';
 
 /// Demonstration booking only; not an official university room reservation.
 class ClassroomBookingScreen extends StatefulWidget {
-  const ClassroomBookingScreen({super.key, this.api});
+  const ClassroomBookingScreen({
+    super.key,
+    this.api,
+    this.initialDate,
+    this.initialSlot,
+    this.lessonTime,
+  });
 
   final ClassroomBookingApi? api;
+  final DateTime? initialDate;
+  final String? initialSlot;
+  final String? lessonTime;
 
   @override
   State<ClassroomBookingScreen> createState() => _ClassroomBookingScreenState();
@@ -16,8 +25,9 @@ class ClassroomBookingScreen extends StatefulWidget {
 
 class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   late final ClassroomBookingApi _api;
-  DateTime _date = DateTime.now();
-  String _slot = '1';
+  late DateTime _date;
+  late String _slot;
+  bool _dateAdjusted = false;
   ClassroomAvailability? _availability;
   ClassroomSeat? _selected;
   String? _error;
@@ -29,6 +39,18 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   void initState() {
     super.initState();
     _api = widget.api ?? ClassroomBookingApi();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final lessonDate = widget.initialDate;
+    final normalized = lessonDate == null
+        ? today
+        : DateTime(lessonDate.year, lessonDate.month, lessonDate.day);
+    final last = today.add(const Duration(days: 60));
+    _dateAdjusted = normalized.isBefore(today) || normalized.isAfter(last);
+    _date = _dateAdjusted ? today : normalized;
+    _slot = classroomDemoSlots.any((slot) => slot.id == widget.initialSlot)
+        ? widget.initialSlot!
+        : '1';
     _load();
   }
 
@@ -259,6 +281,21 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (_dateAdjusted || (widget.lessonTime != null &&
+                    classroomSlotForLessonTime(widget.lessonTime!) == null)) ...[
+                  Text(
+                    _dateAdjusted
+                        ? 'Дата выбранной пары вне периода бронирования. '
+                          'Установлена сегодняшняя дата — проверь её перед подтверждением.'
+                        : 'Время выбранной пары не совпадает с тестовыми интервалами. '
+                          'Выбери нужный интервал вручную.',
+                    style: TextStyle(
+                      color: theme.colorScheme.error,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 Text(
                   'Тестовое бронирование внутри CampusApp. '
                   'Оно не подтверждает реальную доступность аудитории '

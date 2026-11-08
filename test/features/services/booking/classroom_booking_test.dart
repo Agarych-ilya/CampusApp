@@ -28,6 +28,13 @@ void main() {
     expect(selectedSeat.label, contains('правое'));
   });
 
+  test('timetable time automatically selects a matching booking slot', () {
+    expect(classroomSlotForLessonTime('13:45 - 15:20'), '3');
+    expect(classroomSlotForLessonTime('09:20 – 10:55'), '1');
+    expect(classroomSlotForLessonTime('15:35 – 17:10'), '4');
+    expect(classroomSlotForLessonTime('08:00 – 09:00'), isNull);
+  });
+
   test('availability identifies full seats, reserved seats and mine', () {
     final data = ClassroomAvailability.fromJson({
       'room': 'М-307',
@@ -65,6 +72,21 @@ void main() {
     expect(find.byKey(const ValueKey('room-seat-1-1-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-2-5-1')), findsOneWidget);
     expect(find.byType(InkWell), findsAtLeastNWidgets(54));
+    // Each physical row is a vertical column of nine desks.
+    final row1Desk1 = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-1-1-1')),
+    );
+    final row1Desk9 = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-1-9-1')),
+    );
+    final row2Desk1 = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-2-1-1')),
+    );
+    expect(row1Desk9.dy, greaterThan(row1Desk1.dy));
+    expect(row2Desk1.dx, greaterThan(row1Desk1.dx));
+    expect((row1Desk9.dx - row1Desk1.dx).abs(), lessThan(1));
+    expect(find.byKey(const ValueKey('room-vertical-rows')), findsOneWidget);
+
     await tester.tap(find.byKey(const ValueKey('room-seat-1-1-1')));
     expect(tapped, isNull); // occupied seats cannot be selected
     await tester.tap(find.byKey(const ValueKey('room-seat-1-1-2')));
@@ -154,6 +176,27 @@ void main() {
     expect(find.byKey(const ValueKey('booking-confirm')), findsOneWidget);
   });
 
+  testWidgets('booking screen starts with the selected lesson interval',
+      (tester) async {
+    final lessonDate = DateTime.now().add(const Duration(days: 3));
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: ClassroomBookingScreen(
+        api: api,
+        initialDate: lessonDate,
+        initialSlot: '3',
+        lessonTime: '13:45 - 15:20',
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final slot = tester.widget<ChoiceChip>(
+        find.byKey(const ValueKey('booking-slot-3')));
+    expect(slot.selected, isTrue);
+    expect(api.lastSlot, '3');
+    expect(ClassroomBookingApi.dateKey(api.lastDate!),
+        ClassroomBookingApi.dateKey(lessonDate));
+  });
+
   testWidgets('booking screen shows test warning and a 54-seat layout',
       (tester) async {
     final api = _FakeBookingApi();
@@ -175,6 +218,8 @@ class _FakeBookingApi extends ClassroomBookingApi {
   ClassroomSeat? _mine;
   int reservations = 0;
   int cancellations = 0;
+  DateTime? lastDate;
+  String? lastSlot;
 
   ClassroomAvailability _snapshot(DateTime date, String slot) =>
       ClassroomAvailability(
@@ -192,7 +237,11 @@ class _FakeBookingApi extends ClassroomBookingApi {
     required DateTime date,
     required String slot,
     bool trySession = true,
-  }) async => _snapshot(date, slot);
+  }) async {
+    lastDate = date;
+    lastSlot = slot;
+    return _snapshot(date, slot);
+  }
 
   @override
   Future<ClassroomAvailability> reserve({

@@ -73,6 +73,27 @@ const classroomDemoSlots = [
   ClassroomTimeSlot(id: '6', time: '19:05–20:40'),
 ];
 
+/// Map a timetable lesson to the corresponding test booking interval.
+String? classroomSlotForLessonTime(String lessonTime) {
+  final lessonTimes = RegExp(r'\d{1,2}:\d{2}')
+      .allMatches(lessonTime)
+      .map((match) => match.group(0)!)
+      .toList();
+  if (lessonTimes.length < 2) return null;
+  for (final slot in classroomDemoSlots) {
+    final slotTimes = RegExp(r'\d{1,2}:\d{2}')
+        .allMatches(slot.time)
+        .map((match) => match.group(0)!)
+        .toList();
+    if (slotTimes.length == 2 &&
+        lessonTimes[0] == slotTimes[0] &&
+        lessonTimes[1] == slotTimes[1]) {
+      return slot.id;
+    }
+  }
+  return null;
+}
+
 class ClassroomAvailability {
   const ClassroomAvailability({
     required this.room,

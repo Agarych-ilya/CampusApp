@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/profile/data/student_grade.dart';
+import 'package:campusapp/features/services/booking/data/classroom_booking_api.dart';
 import 'package:campusapp/features/profile/data/bars_subject.dart';
 import 'package:campusapp/features/schedule/data/lesson_grades_summary.dart';
 import 'package:campusapp/features/schedule/data/lesson_group_access.dart';
@@ -128,6 +129,49 @@ void main() {
     expect(canOpenOwnLessonDetails(
       profileGroup: null, viewedGroup: 'А-03-23',
     ), isFalse);
+  });
+
+  testWidgets('lesson details opens separate M-307 booking with lesson date and time',
+      (tester) async {
+    final when = DateTime.now().add(const Duration(days: 2));
+    final dd = when.day.toString().padLeft(2, '0');
+    final mm = when.month.toString().padLeft(2, '0');
+    final lesson = ScheduleLesson(
+      date: '$dd.$mm.${when.year}',
+      time: '13:45 - 15:20',
+      subject: 'Тестовая лекция',
+      type: 'Лекция',
+      room: 'С-409',
+      teacher: 'Преподаватель',
+    );
+    final api = _MockGroupLessonNotesApi();
+    final booking = _BookingApiSpy();
+    final controller = ScrollController();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: LessonDetailsSheet(
+        group: 'А-03-23',
+        lesson: lesson,
+        scrollController: controller,
+        notesApi: api,
+        bookingApi: booking,
+      )),
+    ));
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('lesson-book-seat'));
+    expect(button, findsOneWidget);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование аудиторий'), findsOneWidget);
+    expect(find.text('М-307'), findsOneWidget);
+    expect(booking.lastSlot, '3');
+    expect(ClassroomBookingApi.dateKey(booking.lastDate!),
+        ClassroomBookingApi.dateKey(when));
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    booking.dispose();
+    api.dispose();
   });
 
   testWidgets('one note field switches between private and group drafts',
@@ -268,4 +312,28 @@ class _MockGroupLessonNotesApi extends GroupLessonNotesApi {
   @override
   Future<List<GroupLessonNote>> list(String group, ScheduleLesson lesson) async =>
       [];
+}
+
+class _BookingApiSpy extends ClassroomBookingApi {
+  DateTime? lastDate;
+  String? lastSlot;
+
+  @override
+  Future<ClassroomAvailability> load({
+    required DateTime date,
+    required String slot,
+    bool trySession = true,
+  }) async {
+    lastDate = date;
+    lastSlot = slot;
+    return ClassroomAvailability(
+      room: 'М-307',
+      date: ClassroomBookingApi.dateKey(date),
+      slot: slot,
+      occupied: const <ClassroomSeat>{},
+      mine: null,
+      slots: classroomDemoSlots,
+      testMode: true,
+    );
+  }
 }
