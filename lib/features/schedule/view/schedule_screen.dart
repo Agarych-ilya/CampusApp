@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/widgets.dart';
+import '../room_booking/room_booking_api.dart';
+import '../room_booking/room_booking_screen.dart';
 import '/core/theme/app_theme.dart';
 import '../data/data.dart';
 
@@ -372,6 +374,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                           itemCount: dayLessons.length,
                           itemBuilder: (context, index) {
                             final lesson = dayLessons[index];
+                            final room = RoomBookingApi.supportedRoom(lesson.room);
+                            final slot = RoomBookingApi.slotFromTime(lesson.time);
+                            final canBook = room != null &&
+                                slot != null &&
+                                lesson.parsedDate != null;
 
                             return LessonCard(
                               time: lesson.time,
@@ -379,6 +386,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                               type: lesson.type,
                               room: lesson.room,
                               teacher: lesson.teacher,
+                              onBookSeat: canBook
+                                  ? () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => RoomBookingScreen(
+                                            lesson: lesson,
+                                            room: room,
+                                            slot: slot,
+                                          ),
+                                        ),
+                                      )
+                                  : null,
                             );
                           },
                         ),
