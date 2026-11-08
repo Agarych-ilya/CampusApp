@@ -400,15 +400,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                         ],
                                       ),
                                     ),
-                                  if (!isOwnGroup)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: Text(
-                                        'Подробности и заметки доступны только '
-                                        'для группы из твоего профиля.',
-                                        style: theme.textTheme.bodySmall,
-                                      ),
-                                    ),
                                   for (final lesson in todayLessons)
                                     LessonCard(
                                       onTap: isOwnGroup
