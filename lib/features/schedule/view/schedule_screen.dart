@@ -262,10 +262,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _openLessonDetails(ScheduleLesson lesson) async {
     final group = _groupName;
     final profile = await StudentProfileStorage().getProfile();
-    if (!mounted || !canOpenOwnLessonDetails(
-      profileGroup: profile?.group,
-      viewedGroup: group,
-    )) {
+    if (!mounted || group == null || group.isEmpty ||
+        !canOpenOwnLessonDetails(
+          profileGroup: profile?.group,
+          viewedGroup: group,
+        )) {
       return;
     }
     await showModalBottomSheet<void>(
