@@ -8,6 +8,7 @@ void main() {
       expect(RoomBookingApi.supportedRoom('M-307'), 'М-307');
       expect(RoomBookingApi.supportedRoom('В-308 (Корпус В)'), 'В-308');
       expect(RoomBookingApi.supportedRoom('B-308'), 'В-308');
+      expect(RoomBookingApi.supportedRoom('V-308'), 'В-308');
       expect(RoomBookingApi.supportedRoom('В-3080'), isNull);
       expect(RoomBookingApi.supportedRoom('В-309'), isNull);
       expect(RoomBookingApi.supportedRoom('С-401'), isNull);
@@ -28,14 +29,14 @@ void main() {
         'capacity': 176,
         'available': 175,
         'occupied': [
-          {'row': 4, 'desk': 2, 'seat': 10, 'mine': true},
+          {'row': 4, 'desk': 10, 'seat': 2, 'mine': true},
         ],
-        'mine': {'row': 4, 'desk': 2, 'seat': 10, 'mine': true},
+        'mine': {'row': 4, 'desk': 10, 'seat': 2, 'mine': true},
       });
 
       expect(availability.capacity, 176);
       expect(availability.available, 175);
-      expect(availability.occupied.single.key, '4:2:10');
+      expect(availability.occupied.single.key, '4:10:2');
       expect(availability.mine?.mine, isTrue);
     });
   });
