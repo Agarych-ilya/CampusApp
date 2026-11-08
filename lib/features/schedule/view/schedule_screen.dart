@@ -391,8 +391,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                         MaterialPageRoute<void>(
                                           builder: (_) => RoomBookingScreen(
                                             lesson: lesson,
-                                            room: room,
-                                            slot: slot,
+                                            room: room!,
+                                            slot: slot!,
                                           ),
                                         ),
                                       )
