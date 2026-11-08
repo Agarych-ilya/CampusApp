@@ -23,7 +23,7 @@ class LessonCard extends StatelessWidget {
   final String teacher;
   final VoidCallback? onTap;
   final Widget? footer;
-  /// A prominent one-tap entry, shown only for eligible M-307 lessons.
+  /// Compact booking link beside the room, only for eligible M-307 lessons.
   final VoidCallback? onBookSeat;
 
   @override
@@ -87,9 +87,42 @@ class LessonCard extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-          if (room.isNotEmpty) ...[
+          if (room.isNotEmpty || onBookSeat != null) ...[
             const SizedBox(height: 5),
-            Text(room, style: theme.textTheme.bodyMedium),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    room,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                if (onBookSeat != null) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    key: const ValueKey('schedule-book-m307'),
+                    onPressed: onBookSeat,
+                    icon: const Icon(Icons.event_seat_outlined, size: 16),
+                    label: const Text('Выбрать место'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.brightness == Brightness.dark
+                          ? const Color(0xFFAFCBFA)
+                          : const Color(0xFF365E92),
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ],
           if (teacher.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -97,26 +130,6 @@ class LessonCard extends StatelessWidget {
               teacher,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-          ],
-          if (onBookSeat != null) ...[
-            const SizedBox(height: 13),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const ValueKey('schedule-book-m307'),
-                onPressed: onBookSeat,
-                icon: const Icon(Icons.event_seat_outlined, size: 19),
-                label: const Text('Забронировать место · М-307'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFAFCBFA),
-                  foregroundColor: const Color(0xFF192A41),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
               ),
             ),
           ],

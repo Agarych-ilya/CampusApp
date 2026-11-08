@@ -266,6 +266,39 @@ void main() {
     expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
   });
 
+  testWidgets('M-307 booking is a compact link next to the room',
+      (tester) async {
+    var bookingOpened = false;
+    var detailsOpened = false;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LessonCard(
+          time: first.time,
+          subject: first.subject,
+          type: first.type,
+          room: 'М-307 (Корпус М)',
+          teacher: first.teacher,
+          onTap: () => detailsOpened = true,
+          onBookSeat: () => bookingOpened = true,
+        ),
+      ),
+    ));
+    final link = find.byKey(const ValueKey('schedule-book-m307'));
+    expect(link, findsOneWidget);
+    expect(tester.widget<TextButton>(link).onPressed, isNotNull);
+    expect(find.text('Выбрать место'), findsOneWidget);
+    expect(find.byType(FilledButton), findsNothing);
+    expect(
+      (tester.getCenter(link).dy -
+              tester.getCenter(find.text('М-307 (Корпус М)')).dy).abs(),
+      lessThan(22),
+    );
+
+    await tester.tap(link);
+    expect(bookingOpened, isTrue);
+    expect(detailsOpened, isFalse);
+  });
+
   testWidgets('lesson card is tappable', (tester) async {
     var opened = false;
     await tester.pumpWidget(MaterialApp(
