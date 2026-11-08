@@ -7,7 +7,7 @@ import '/features/services/listings/data/listings_api.dart';
 
 /// Coordinates are scoped by classroom, lesson date and timetable slot.
 /// M-307: row 1..3, desk 1..9, seat 1..2.
-/// V-308: row 1..10, desk 1=left / 2=right, seat from aisle outward.
+/// V-308: row 1..10, desk=seat number from the aisle, seat=1 left / 2 right.
 class RoomSeat {
   const RoomSeat(this.row, this.desk, this.seat, {this.mine = false});
 
@@ -61,7 +61,7 @@ class RoomBookingApi {
   static String? supportedRoom(String raw) {
     final input = raw.toUpperCase().replaceAll('–', '-')
         .replaceAll('—', '-').replaceAll('−', '-');
-    final match = RegExp(r'(^|[^A-ZА-ЯЁ0-9])([МMВB])\s*-\s*(307|308)(?![0-9])')
+    final match = RegExp(r'(^|[^A-ZА-ЯЁ0-9])([МMВBV])\s*-\s*(307|308)(?![0-9])')
         .firstMatch(input);
     if (match == null) return null;
     final building = match.group(2)!;
@@ -69,7 +69,7 @@ class RoomBookingApi {
     if ((building == 'М' || building == 'M') && number == '307') {
       return 'М-307';
     }
-    if ((building == 'В' || building == 'B') && number == '308') {
+    if ((building == 'В' || building == 'B' || building == 'V') && number == '308') {
       return 'В-308';
     }
     return null;
