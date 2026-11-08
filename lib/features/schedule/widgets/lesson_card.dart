@@ -10,6 +10,7 @@ class LessonCard extends StatelessWidget {
     required this.type,
     required this.room,
     required this.teacher,
+    this.onBookSeat,
   });
 
   final String time;
@@ -17,6 +18,7 @@ class LessonCard extends StatelessWidget {
   final String type;
   final String room;
   final String teacher;
+  final VoidCallback? onBookSeat;
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +80,22 @@ class LessonCard extends StatelessWidget {
                 const SizedBox(height: 6),
 
                 // Тип занятия и аудитория.
-                Text(_formatLessonInfo(), style: theme.textTheme.bodyMedium),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 4,
+                  children: [
+                    Text(_formatLessonInfo(), style: theme.textTheme.bodyMedium),
+                    if (onBookSeat != null)
+                      ActionChip(
+                        avatar: const Icon(Icons.event_seat_outlined, size: 17),
+                        label: const Text('Выбрать место'),
+                        onPressed: onBookSeat,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                      ),
+                  ],
+                ),
 
                 // Преподаватель показывается только если он есть.
                 if (teacher.isNotEmpty) ...[
