@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '/features/services/booking/data/classroom_booking_api.dart';
+import '/features/services/booking/view/classroom_booking_screen.dart';
 
 import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
@@ -14,11 +16,13 @@ class ScheduleScreen extends StatefulWidget {
     super.key,
     this.scheduleApi,
     this.groupStorage,
+    this.bookingApi,
   });
 
   // Optional dependencies allow end-to-end widget tests without an MPEI server.
   final ScheduleApi? scheduleApi;
   final GroupStorage? groupStorage;
+  final ClassroomBookingApi? bookingApi;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -296,6 +300,29 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (mounted) setState(() => _notesRevision++);
   }
 
+  Future<void> _openM307Booking(ScheduleLesson lesson) async {
+    // The same rule as lesson details: other groups cannot interact with
+    // the selected group's lesson, and only the configured M-307 is bookable.
+    if (classroomCodeFromLesson(lesson.room) != 'М-307') return;
+    final profile = await StudentProfileStorage().getProfile();
+    if (!mounted || !canOpenOwnLessonDetails(
+      profileGroup: profile?.group,
+      viewedGroup: _groupName,
+    )) return;
+    final date = lesson.parsedDate;
+    if (date == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ClassroomBookingScreen(
+          api: widget.bookingApi,
+          lessonDate: date,
+          lessonTime: lesson.time,
+          initialRoom: lesson.room,
+        ),
+      ),
+    );
+  }
+
   Widget _weekPage(BuildContext context, int page) {
     final theme = Theme.of(context);
     final date = _dateForPage(page);
@@ -437,6 +464,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                     LessonCard(
                                       onTap: isOwnGroup
                                           ? () => _openLessonDetails(lesson)
+                                          : null,
+                                      onBookSeat: isOwnGroup &&
+                                              classroomCodeFromLesson(lesson.room) == 'М-307'
+                                          ? () => _openM307Booking(lesson)
                                           : null,
                                       footer: isOwnGroup && _groupName != null
                                           ? LessonNotePreview(

@@ -153,51 +153,34 @@ void main() {
     api.dispose();
   });
 
-  test('API uses room-specific availability, reservations and cancellation',
+  test('API rejects non-M-307 rooms before sending any network request',
       () async {
-    final calls = <http.Request>[];
-    final client = MockClient((request) async {
-      calls.add(request);
-      if (request.method == 'POST') {
-        final body = jsonDecode(request.body) as Map;
-        expect(body['room'], 'С-401');
-        return http.Response(jsonEncode({
-          'room': 'С-401', 'date': '2026-11-10', 'slot': '2',
-          'testMode': true, 'occupied': [
-            {'row': 1, 'desk': 1, 'seat': 2, 'mine': true},
-          ],
-          'mine': {'row': 1, 'desk': 1, 'seat': 2, 'mine': true},
-        }), 201);
-      }
-      if (request.method == 'DELETE') {
-        expect(request.url.queryParameters['room'], 'С-401');
-      } else {
-        expect(request.url.queryParameters['room'], 'С-401');
-      }
-      return http.Response(jsonEncode({
-        'room': 'С-401', 'date': '2026-11-10', 'slot': '2',
-        'testMode': true, 'occupied': [], 'mine': null,
-      }), 200);
-    });
+    var calls = 0;
     final api = ClassroomBookingApi(
-      client: client,
+      client: MockClient((request) async {
+        calls++;
+        return http.Response('{}', 500);
+      }),
       authorization: () async => {'X-Listing-CSRF': 'test-csrf'},
     );
-    final day = DateTime(2026, 11, 10);
-    final first = await api.load(
-      date: day, slot: '2', room: 'С-401', trySession: false,
+    final date = DateTime(2026, 11, 10);
+    final expected = throwsA(isA<ClassroomBookingException>());
+    await expectLater(
+      () => api.load(
+        date: date, slot: '2', room: 'С-401', trySession: false,
+      ), expected,
     );
-    expect(first.room, 'С-401');
-    final own = await api.reserve(
-      date: day, slot: '2', room: 'С-401',
-      seat: const ClassroomSeat(row: 1, desk: 1, seat: 2),
+    await expectLater(
+      () => api.reserve(
+        date: date, slot: '2', room: 'С-401',
+        seat: const ClassroomSeat(row: 1, desk: 1, seat: 2),
+      ), expected,
     );
-    expect(own.mine, isNotNull);
-    final cancelled = await api.cancel(
-      date: day, slot: '2', room: 'С-401',
+    await expectLater(
+      () => api.cancel(date: date, slot: '2', room: 'С-401'),
+      expected,
     );
-    expect(cancelled.mine, isNull);
-    expect(calls.map((r) => r.method).toList(), ['GET', 'POST', 'DELETE']);
+    expect(calls, 0);
     api.dispose();
   });
 
@@ -276,7 +259,7 @@ void main() {
         ClassroomBookingApi.dateKey(lessonDate));
   });
 
-  testWidgets('opens the lesson room and switches to another room',
+  testWidgets('M-307 booking does not offer a classroom switch',
       (tester) async {
     final api = _FakeBookingApi();
     final date = DateTime.now().add(const Duration(days: 2));
@@ -285,36 +268,19 @@ void main() {
         api: api,
         lessonDate: date,
         lessonTime: '13:45 - 15:20',
-        initialRoom: 'С-401 (Корпус С)',
+        initialRoom: 'М-307 (Корпус М)',
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('С-401'), findsOneWidget);
-    expect(api.loadedRooms, ['С-401']);
-    expect(api.lastSlot, '3');
-    expect(find.textContaining('54 тестовых места'), findsOneWidget);
-
-    final change = find.byKey(const ValueKey('booking-room-change'));
-    await tester.ensureVisible(change);
-    await tester.tap(change);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('booking-room-input')), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const ValueKey('booking-room-input')), 'M-307',
-    );
-    await tester.tap(find.text('Показать места'));
-    await tester.pumpAndSettle();
-
     expect(find.text('М-307'), findsOneWidget);
-    expect(api.loadedRooms, ['С-401', 'М-307']);
-    expect(api.lastSlot, '3'); // slot/time was not changed
-    expect(ClassroomBookingApi.dateKey(api.lastDate!),
-        ClassroomBookingApi.dateKey(date));
-    expect(find.byKey(const ValueKey('booking-date')), findsNothing);
-    expect(find.byType(ChoiceChip), findsNothing);
+    expect(api.loadedRooms, ['М-307']);
+    expect(find.byKey(const ValueKey('booking-room-change')), findsNothing);
+    expect(find.byKey(const ValueKey('booking-room-input')), findsNothing);
+    expect(find.byKey(const ValueKey('booking-confirm')), findsOneWidget);
+    expect(api.lastSlot, '3');
   });
 
-  testWidgets('online lesson requires an explicit physical room',
+  testWidgets('non-M-307 lesson is not bookable even via old entry point',
       (tester) async {
     final api = _FakeBookingApi();
     await tester.pumpWidget(MaterialApp(
@@ -322,14 +288,14 @@ void main() {
         api: api,
         lessonDate: DateTime.now().add(const Duration(days: 2)),
         lessonTime: '09:20 - 10:55',
-        initialRoom: 'ЭО и ДОТ (-)',
+        initialRoom: 'С-401 (Корпус С)',
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('Аудитория не выбрана'), findsOneWidget);
-    expect(api.loadedRooms, isEmpty);
+    expect(find.text('Бронирование недоступно'), findsOneWidget);
     expect(find.byKey(const ValueKey('booking-confirm')), findsNothing);
-    expect(find.byKey(const ValueKey('booking-room-change')), findsOneWidget);
+    expect(find.byKey(const ValueKey('booking-room-change')), findsNothing);
+    expect(api.loadedRooms, isEmpty);
   });
 
   testWidgets('past lesson never silently changes to today or loads seats',
@@ -383,7 +349,7 @@ void main() {
     expect(find.text('М-307'), findsOneWidget);
     expect(find.textContaining('54 посадочных места'), findsOneWidget);
     expect(find.byKey(const ValueKey('booking-free-count')), findsOneWidget);
-    expect(find.textContaining('Бронирование тестовое'), findsOneWidget);
+    expect(find.textContaining('Тестовое бронирование только для М-307'), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-3-9-2')), findsOneWidget);
   });
 }

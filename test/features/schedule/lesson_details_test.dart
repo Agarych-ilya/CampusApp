@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/profile/data/student_grade.dart';
-import 'package:campusapp/features/services/booking/data/classroom_booking_api.dart';
 import 'package:campusapp/features/profile/data/bars_subject.dart';
 import 'package:campusapp/features/schedule/data/lesson_grades_summary.dart';
 import 'package:campusapp/features/schedule/data/lesson_group_access.dart';
@@ -131,52 +130,24 @@ void main() {
     ), isFalse);
   });
 
-  testWidgets('lesson details opens booking for its own room and time',
+  testWidgets('lesson details focuses on grades and notes without booking',
       (tester) async {
-    final when = DateTime.now().add(const Duration(days: 2));
-    final dd = when.day.toString().padLeft(2, '0');
-    final mm = when.month.toString().padLeft(2, '0');
-    final lesson = ScheduleLesson(
-      date: '$dd.$mm.${when.year}',
-      time: '13:45 - 15:20',
-      subject: 'Тестовая лекция',
-      type: 'Лекция',
-      room: 'С-409',
-      teacher: 'Преподаватель',
-    );
     final api = _MockGroupLessonNotesApi();
-    final booking = _BookingApiSpy();
     final controller = ScrollController();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: LessonDetailsSheet(
         group: 'А-03-23',
-        lesson: lesson,
+        lesson: first,
         scrollController: controller,
         notesApi: api,
-        bookingApi: booking,
       )),
     ));
     await tester.pumpAndSettle();
-    final button = find.byKey(const ValueKey('lesson-book-seat'));
-    expect(button, findsOneWidget);
-    await tester.ensureVisible(button);
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-    expect(find.text('Бронирование аудиторий'), findsOneWidget);
-    expect(find.text('С-409'), findsOneWidget);
-    expect(find.byKey(const ValueKey('booking-room-change')), findsOneWidget);
-    expect(find.byKey(const ValueKey('booking-fixed-lesson')), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNothing);
-    expect(find.byKey(const ValueKey('booking-date')), findsNothing);
-    expect(find.text('13:45 - 15:20'), findsOneWidget);
-    expect(booking.lastSlot, '3');
-    expect(booking.lastRoom, 'С-409');
-    expect(ClassroomBookingApi.dateKey(booking.lastDate!),
-        ClassroomBookingApi.dateKey(when));
-
+    expect(find.byKey(const ValueKey('lesson-book-seat')), findsNothing);
+    expect(find.byKey(const ValueKey('lesson-note-composer')), findsOneWidget);
+    expect(find.text('Мои оценки по предмету'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
-    booking.dispose();
     api.dispose();
   });
 
@@ -318,31 +289,4 @@ class _MockGroupLessonNotesApi extends GroupLessonNotesApi {
   @override
   Future<List<GroupLessonNote>> list(String group, ScheduleLesson lesson) async =>
       [];
-}
-
-class _BookingApiSpy extends ClassroomBookingApi {
-  DateTime? lastDate;
-  String? lastSlot;
-  String? lastRoom;
-
-  @override
-  Future<ClassroomAvailability> load({
-    required DateTime date,
-    required String slot,
-    String room = 'М-307',
-    bool trySession = true,
-  }) async {
-    lastDate = date;
-    lastSlot = slot;
-    lastRoom = room;
-    return ClassroomAvailability(
-      room: room,
-      date: ClassroomBookingApi.dateKey(date),
-      slot: slot,
-      occupied: const <ClassroomSeat>{},
-      mine: null,
-      slots: classroomDemoSlots,
-      testMode: true,
-    );
-  }
 }

@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '/features/services/booking/data/classroom_booking_api.dart';
-import '/features/services/booking/view/classroom_booking_screen.dart';
-
 import '../data/group_lesson_notes_api.dart';
 import '../data/lesson_grades_summary.dart';
 import '../data/lesson_kind.dart';
@@ -19,7 +16,6 @@ class LessonDetailsSheet extends StatefulWidget {
     required this.scrollController,
     this.notesApi,
     this.onNotesChanged,
-    this.bookingApi,
   });
 
   final String group;
@@ -27,7 +23,6 @@ class LessonDetailsSheet extends StatefulWidget {
   final ScrollController scrollController;
   final GroupLessonNotesApi? notesApi;
   final VoidCallback? onNotesChanged;
-  final ClassroomBookingApi? bookingApi;
 
   @override
   State<LessonDetailsSheet> createState() => _LessonDetailsSheetState();
@@ -90,24 +85,6 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
     } finally {
       if (mounted) setState(() => _personalLoading = false);
     }
-  }
-
-  Future<void> _openBooking() async {
-    final lessonDate = widget.lesson.parsedDate;
-    if (lessonDate == null) {
-      _error('У этой пары не указана корректная дата бронирования');
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ClassroomBookingScreen(
-          api: widget.bookingApi,
-          lessonDate: lessonDate,
-          lessonTime: widget.lesson.time,
-          initialRoom: widget.lesson.room,
-        ),
-      ),
-    );
   }
 
   void _error(Object error) {
@@ -404,26 +381,6 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
           Text('Аудитория: ${widget.lesson.room}'),
         if (widget.lesson.teacher.trim().isNotEmpty)
           Text('Преподаватель: ${widget.lesson.teacher}'),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            key: const ValueKey('lesson-book-seat'),
-            onPressed: _openBooking,
-            icon: const Icon(Icons.event_seat_outlined),
-            label: const Text('Забронировать место'),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'По умолчанию выбирается аудитория этой пары. '
-          'В следующем окне её можно изменить. '
-          'Пока используются тестовые схемы мест, '
-          'не связанные с официальной занятостью МЭИ.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
         const SizedBox(height: 22),
         Text('Мои оценки по предмету',
             style: theme.textTheme.titleLarge?.copyWith(

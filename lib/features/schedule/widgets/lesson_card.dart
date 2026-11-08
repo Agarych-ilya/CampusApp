@@ -13,6 +13,7 @@ class LessonCard extends StatelessWidget {
     required this.teacher,
     this.onTap,
     this.footer,
+    this.onBookSeat,
   });
 
   final String time;
@@ -22,6 +23,8 @@ class LessonCard extends StatelessWidget {
   final String teacher;
   final VoidCallback? onTap;
   final Widget? footer;
+  /// A prominent one-tap entry, shown only for eligible M-307 lessons.
+  final VoidCallback? onBookSeat;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +97,26 @@ class LessonCard extends StatelessWidget {
               teacher,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurface.withOpacity(0.6),
+              ),
+            ),
+          ],
+          if (onBookSeat != null) ...[
+            const SizedBox(height: 13),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('schedule-book-m307'),
+                onPressed: onBookSeat,
+                icon: const Icon(Icons.event_seat_outlined, size: 19),
+                label: const Text('Забронировать место · М-307'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFAFCBFA),
+                  foregroundColor: const Color(0xFF192A41),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
             ),
           ],

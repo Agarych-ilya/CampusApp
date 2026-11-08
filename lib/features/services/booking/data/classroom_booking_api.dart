@@ -213,12 +213,21 @@ class ClassroomBookingApi {
     );
   }
 
+  void _validateRoom(String room) {
+    if (classroomCodeFromLesson(room) != 'М-307') {
+      throw const ClassroomBookingException(
+        'Пока бронирование доступно только для М-307',
+      );
+    }
+  }
+
   Future<ClassroomAvailability> load({
     required DateTime date,
     required String slot,
     String room = 'М-307',
     bool trySession = true,
   }) async {
+    _validateRoom(room);
     if (trySession && !ListingsApi.instance.hasSession) {
       try {
         await ListingsApi.instance.ensureSession();
@@ -257,6 +266,7 @@ class ClassroomBookingApi {
     required ClassroomSeat seat,
     String room = 'М-307',
   }) async {
+    _validateRoom(room);
     final headers = await _authorization();
     final response = await _client.post(
       _base,
@@ -276,6 +286,7 @@ class ClassroomBookingApi {
     required String slot,
     String room = 'М-307',
   }) async {
+    _validateRoom(room);
     final headers = await _authorization();
     final response = await _client.delete(
       _base.replace(queryParameters: {

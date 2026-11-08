@@ -29,7 +29,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   late final ClassroomBookingApi _api;
   late final DateTime _date;
   late final String? _slot;
-  String? _room;
+  static const String _room = 'М-307';
   String? _unavailableReason;
   ClassroomAvailability? _availability;
   ClassroomSeat? _selected;
@@ -50,11 +50,6 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
       widget.lessonDate.day,
     );
     _slot = classroomSlotForLessonTime(widget.lessonTime);
-    // Direct demo previews default to M-307. Timetable lessons use their
-    // actual room; remote classes require an explicit room selection.
-    _room = widget.initialRoom == null
-        ? 'М-307'
-        : classroomCodeFromLesson(widget.initialRoom);
     final last = today.add(const Duration(days: 60));
     if (_date.isBefore(today)) {
       _unavailableReason = 'Эта пара уже прошла. Места можно бронировать '
@@ -83,6 +78,11 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         }
       }
     }
+    if (widget.initialRoom != null &&
+        classroomCodeFromLesson(widget.initialRoom) != _room) {
+      _unavailableReason = 'Пока можно забронировать места '
+          'только в аудитории М-307.';
+    }
     if (_unavailableReason == null) _load();
   }
 
@@ -95,7 +95,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
 
   Future<void> _load() async {
     final id = ++_requestId;
-    if (_unavailableReason != null || _slot == null || _room == null) {
+    if (_unavailableReason != null || _slot == null) {
       if (mounted) {
         setState(() {
           _loading = false;
@@ -108,7 +108,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
     }
     final date = _date;
     final slot = _slot!;
-    final room = _room!;
+    const room = _room;
     setState(() {
       _loading = true;
       _availability = null;
@@ -130,83 +130,6 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         _loading = false;
       });
     }
-  }
-
-  Future<void> _chooseRoom() async {
-    if (_working) return;
-    final controller = TextEditingController(text: _room ?? '');
-    final lessonRoom = classroomCodeFromLesson(widget.initialRoom);
-    final chosen = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Выбрать аудиторию'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Укажи номер аудитории. '
-                'Для других аудиторий пока используется тестовая '
-                'схема 3 × 9 парт по два места.'),
-            const SizedBox(height: 13),
-            TextField(
-              key: const ValueKey('booking-room-input'),
-              controller: controller,
-              autofocus: true,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
-                hintText: 'Например, С-401',
-                labelText: 'Аудитория',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (value) {
-                final room = classroomCodeFromLesson(value);
-                if (room != null) Navigator.pop(dialogContext, room);
-              },
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 7,
-              children: [
-                if (lessonRoom != null)
-                  ActionChip(
-                    label: Text(lessonRoom),
-                    onPressed: () => controller.text = lessonRoom,
-                  ),
-                ActionChip(
-                  label: const Text('М-307'),
-                  onPressed: () => controller.text = 'М-307',
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final room = classroomCodeFromLesson(controller.text);
-              if (room != null) {
-                Navigator.pop(dialogContext, room);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Введи номер аудитории, например С-401'),
-                  ),
-                );
-              }
-            },
-            child: const Text('Показать места'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (!mounted || chosen == null || chosen == _room) return;
-    setState(() => _room = chosen);
-    await _load();
   }
 
   Future<bool> _confirm(String title, String message, String action) async {
@@ -240,10 +163,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   Future<void> _book() async {
     final seat = _selected;
     if (_working || _unavailableReason != null || _slot == null ||
-        _room == null || seat == null || _availability?.mine != null) return;
+        seat == null || _availability?.mine != null) return;
     final date = _date;
     final slot = _slot!;
-    final room = _room!;
+    const room = _room;
     final accepted = await _confirm(
       'Подтвердить место?',
       '${seat.label}\nАудитория $room · ${_formatDate(date)}\n'
@@ -274,10 +197,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
 
   Future<void> _cancel() async {
     if (_working || _unavailableReason != null || _slot == null ||
-        _room == null || _availability?.mine == null) return;
+        _availability?.mine == null) return;
     final date = _date;
     final slot = _slot!;
-    final room = _room!;
+    const room = _room;
     final accepted = await _confirm(
       'Отменить бронирование?',
       'Твоё место снова станет доступно другим студентам.',
@@ -369,36 +292,22 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_room ?? 'Аудитория не выбрана',
-                                key: const ValueKey('booking-room-label'),
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                )),
+                            Text(
+                              _room,
+                              key: const ValueKey('booking-room-label'),
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                             const SizedBox(height: 3),
                             Text(
-                              _room == 'М-307'
-                                  ? '3 ряда · 9 парт в ряду · 2 места за партой'
-                                  : 'Тестовая схема · 3 ряда по 9 парт',
+                              '3 ряда · 9 парт в ряду · 2 места за партой',
                               style: TextStyle(color: muted, fontSize: 12),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _room == 'М-307'
-                                  ? '54 посадочных места'
-                                  : '54 тестовых места — планировка не подтверждена',
+                              '54 посадочных места',
                               style: TextStyle(color: muted, fontSize: 12),
-                            ),
-                            const SizedBox(height: 7),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: TextButton.icon(
-                                key: const ValueKey('booking-room-change'),
-                                onPressed: _working ? null : _chooseRoom,
-                                icon: const Icon(Icons.swap_horiz_rounded, size: 19),
-                                label: Text(_room == null
-                                    ? 'Выбрать аудиторию'
-                                    : 'Сменить аудиторию'),
-                              ),
                             ),
                           ],
                         ),
@@ -408,10 +317,9 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Бронирование тестовое. Для других аудиторий '
-                  'используется примерная схема 54 мест, а не их '
-                  'подтверждённая планировка. '
-                  'Бронь не является разрешением МЭИ на использование аудитории.',
+                  'Тестовое бронирование только для М-307. '
+                  'Оно не связано с официальной занятостью '
+                  'аудиторий МЭИ.',
                   style: TextStyle(color: muted, fontSize: 12, height: 1.35),
                 ),
                 const SizedBox(height: 20),
@@ -469,31 +377,6 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                           _unavailableReason!,
                           textAlign: TextAlign.center,
                           style: TextStyle(color: muted),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (_room == null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    child: Column(
-                      children: [
-                        const Icon(Icons.meeting_room_outlined, size: 34),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Для этой пары аудитория не указана',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 7),
-                        const Text(
-                          'Укажи физическую аудиторию, чтобы открыть '
-                          'тестовую схему мест.',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                          onPressed: _chooseRoom,
-                          child: const Text('Выбрать аудиторию'),
                         ),
                       ],
                     ),

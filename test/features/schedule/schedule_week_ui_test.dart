@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/schedule/data/group_storage.dart';
+import 'package:campusapp/features/services/booking/data/classroom_booking_api.dart';
 import 'package:campusapp/features/schedule/data/semester_week.dart';
 import 'package:campusapp/features/schedule/data/private_lesson_notes_storage.dart';
 import 'package:campusapp/features/schedule/data/schedule_api.dart';
@@ -207,7 +208,7 @@ void main() {
     await GroupStorage().saveScheduleGroup('А-04-23');
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: ScheduleScreen(
-        scheduleApi: _FakeScheduleApi(),
+        scheduleApi: _FakeScheduleApi(room: 'М-307'),
         groupStorage: GroupStorage(),
       )),
     ));
@@ -219,6 +220,7 @@ void main() {
     expect(find.textContaining('Подробности и заметки доступны только'),
         findsNothing);
     expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-book-m307')), findsNothing);
   });
 
   testWidgets('my lesson shows a saved private note under the lesson',
@@ -261,6 +263,67 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('M-307 booking button opens seat map directly from timetable',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          scheduleApi: _FakeScheduleApi(room: 'М-307 (Корпус М)'),
+          groupStorage: GroupStorage(),
+          bookingApi: api,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('schedule-book-m307'));
+    expect(button, findsOneWidget);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование аудиторий'), findsOneWidget);
+    expect(find.text('М-307'), findsOneWidget);
+    expect(find.byKey(const ValueKey('booking-room-change')), findsNothing);
+    expect(find.text('Мои оценки по предмету'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+
+  testWidgets('other classrooms never show M-307 booking CTA',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          scheduleApi: _FakeScheduleApi(room: 'С-401 (Корпус С)'),
+          groupStorage: GroupStorage(),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-03-23'), findsWidgets);
+    expect(find.byKey(const ValueKey('schedule-book-m307')), findsNothing);
+  });
+
   test('choosing a timetable group does not change BARS group', () async {
     SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
     final storage = GroupStorage();
@@ -272,6 +335,8 @@ void main() {
 }
 
 class _FakeScheduleApi extends ScheduleApi {
+  _FakeScheduleApi({this.room = 'С-409'});
+  final String room;
   final requestedGroups = <String>[];
 
   @override
@@ -294,9 +359,27 @@ class _FakeScheduleApi extends ScheduleApi {
         time: '09:20 - 10:55',
         subject: 'Занятие $group',
         type: 'Лекция',
-        room: 'С-409',
+        room: room,
         teacher: 'Преподаватель',
       ),
     ];
   }
+}
+
+class _FakeBookingApi extends ClassroomBookingApi {
+  @override
+  Future<ClassroomAvailability> load({
+    required DateTime date,
+    required String slot,
+    String room = 'М-307',
+    bool trySession = true,
+  }) async => ClassroomAvailability(
+    room: room,
+    date: ClassroomBookingApi.dateKey(date),
+    slot: slot,
+    occupied: const <ClassroomSeat>{},
+    mine: null,
+    slots: classroomDemoSlots,
+    testMode: true,
+  );
 }
