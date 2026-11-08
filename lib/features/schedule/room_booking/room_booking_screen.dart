@@ -24,6 +24,8 @@ class RoomBookingScreen extends StatefulWidget {
 
 class _RoomBookingScreenState extends State<RoomBookingScreen> {
   final RoomBookingApi _api = const RoomBookingApi();
+  final ScrollController _horizontalController =
+      ScrollController(initialScrollOffset: 165);
   late final String _date;
   RoomAvailability? _availability;
   RoomSeat? _selected;
@@ -36,6 +38,12 @@ class _RoomBookingScreenState extends State<RoomBookingScreen> {
     super.initState();
     _date = RoomBookingApi.dateIso(widget.lesson.parsedDate!);
     _reload();
+  }
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
   }
 
   String get _cleanRoom => widget.room;
@@ -437,6 +445,7 @@ class _RoomBookingScreenState extends State<RoomBookingScreen> {
                             ),
                             child: SingleChildScrollView(
                               child: SingleChildScrollView(
+                                controller: _horizontalController,
                                 scrollDirection: Axis.horizontal,
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
