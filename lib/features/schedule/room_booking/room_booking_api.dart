@@ -61,11 +61,11 @@ class RoomBookingApi {
   static String? supportedRoom(String raw) {
     final input = raw.toUpperCase().replaceAll('–', '-')
         .replaceAll('—', '-').replaceAll('−', '-');
-    final match = RegExp(r'([МMВB])\s*-\s*(307|308)')
+    final match = RegExp(r'(^|[^A-ZА-ЯЁ0-9])([МMВB])\s*-\s*(307|308)(?![0-9])')
         .firstMatch(input);
     if (match == null) return null;
-    final building = match.group(1)!;
-    final number = match.group(2)!;
+    final building = match.group(2)!;
+    final number = match.group(3)!;
     if ((building == 'М' || building == 'M') && number == '307') {
       return 'М-307';
     }
