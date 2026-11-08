@@ -160,7 +160,7 @@ class _RoomBookingScreenState extends State<RoomBookingScreen> {
       child: Transform.translate(
         offset: Offset(0, arcOffset),
         child: Tooltip(
-          message: 'Ряд ${seat.row}, ${widget.room == 'В-308' ? (seat.desk == 1 ? 'слева' : 'справа') : 'парта ${seat.desk}'}, место ${seat.seat}'
+          message: 'Ряд ${seat.row}, ${widget.room == 'В-308' ? (seat.seat == 1 ? 'слева' : 'справа') : 'парта ${seat.desk}'}, место ${widget.room == 'В-308' ? seat.desk : seat.seat}'
               '${isMine ? ' · моё место' : isTaken ? ' · занято' : ''}',
           child: InkWell(
             borderRadius: BorderRadius.circular(7),
@@ -211,7 +211,7 @@ class _RoomBookingScreenState extends State<RoomBookingScreen> {
           if (sector == 1) SizedBox(width: missing * 31),
           for (final seatNumber in seatNumbers)
             _seat(
-              RoomSeat(row, sector, seatNumber),
+              RoomSeat(row, seatNumber, sector),
               occupied,
               arcOffset: (seatNumber - (count + 1) / 2).abs() * 1.25,
             ),
@@ -461,7 +461,7 @@ class _RoomBookingScreenState extends State<RoomBookingScreen> {
               if (mine != null) ...[
                 Text(
                   widget.room == 'В-308'
-                      ? 'Твоё место: ряд ${mine.row}, ${mine.desk == 1 ? 'слева' : 'справа'}, место ${mine.seat}'
+                      ? 'Твоё место: ряд ${mine.row}, ${mine.seat == 1 ? 'слева' : 'справа'}, место ${mine.desk}'
                       : 'Твоё место: ряд ${mine.row}, парта ${mine.desk}, место ${mine.seat}',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
