@@ -5,7 +5,15 @@ import '/core/theme/app_theme.dart';
 import '../data/data.dart';
 
 class ScheduleScreen extends StatefulWidget {
-  const ScheduleScreen({super.key});
+  const ScheduleScreen({
+    super.key,
+    this.scheduleApi,
+    this.groupStorage,
+  });
+
+  // Optional dependencies allow end-to-end widget tests without an MPEI server.
+  final ScheduleApi? scheduleApi;
+  final GroupStorage? groupStorage;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -13,13 +21,14 @@ class ScheduleScreen extends StatefulWidget {
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
   static const int _initialWeekPage = 5000;
-  final ScheduleApi _scheduleApi = ScheduleApi();
-  final GroupStorage _groupStorage = GroupStorage();
+  late final ScheduleApi _scheduleApi;
+  late final GroupStorage _groupStorage;
   final Map<int, Future<List<ScheduleLesson>>> _weekFutures = {};
 
   String? _groupName;
   String? _initializationError;
   bool _isInitializing = true;
+  bool _changingGroup = false;
   late DateTime _selectedDate;
   late DateTime _anchorWeek;
   late PageController _weekController;
@@ -28,6 +37,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void initState() {
     super.initState();
+    _scheduleApi = widget.scheduleApi ?? ScheduleApi();
+    _groupStorage = widget.groupStorage ?? GroupStorage();
     _selectedDate = DateTime.now();
     _anchorWeek = _getWeekStart(_selectedDate);
     _weekController = PageController(initialPage: _initialWeekPage);
@@ -150,6 +161,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _chooseGroup() async {
+    if (_changingGroup) return;
     final group = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -160,21 +172,41 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         currentGroup: _groupName ?? '',
       ),
     );
-    if (!mounted || group == null || group.trim().isEmpty ||
-        group.trim() == _groupName) {
-      return;
-    }
+    if (!mounted || group == null) return;
+    final selectedGroup = group.trim();
+    if (selectedGroup.isEmpty || selectedGroup == _groupName) return;
+
+    // Verify and fetch the selected group's timetable BEFORE changing
+    // its label or persisting it. This prevents a wrong group name
+    // from being displayed above the previous group's lessons.
+    final page = _currentWeekPage;
+    setState(() => _changingGroup = true);
     try {
-      await _groupStorage.saveScheduleGroup(group.trim());
+      final lessons = await _scheduleApi.getWeekSchedule(
+        group: selectedGroup,
+        selectedDate: _startForPage(page),
+        forceRefresh: true,
+      );
       if (!mounted) return;
+      await _groupStorage.saveScheduleGroup(selectedGroup);
+      if (!mounted) return;
+
       setState(() {
-        _groupName = group.trim();
+        _groupName = selectedGroup;
         _weekFutures.clear();
+        // Use the verified result instead of showing a stale old future.
+        _weekFutures[page] = Future.value(lessons);
+        _changingGroup = false;
       });
     } catch (error) {
       if (!mounted) return;
+      setState(() => _changingGroup = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось выбрать группу: $error')),
+        SnackBar(
+          content: Text(
+            'Не удалось открыть расписание группы $selectedGroup: $error',
+          ),
+        ),
       );
     }
   }
@@ -242,11 +274,42 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               onDateSelected: _selectDate,
             ),
             const SizedBox(height: 13),
-            Text(
-              _formatSelectedDate(date),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.62),
-              ),
+            Row(
+              children: [
+                Text(
+                  _formatSelectedDate(date),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.62),
+                  ),
+                ),
+                const Spacer(),
+                if (_changingGroup)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                TextButton.icon(
+                  key: const ValueKey('schedule-group-search'),
+                  onPressed: _changingGroup ? null : _chooseGroup,
+                  icon: const Icon(Icons.search_rounded, size: 18),
+                  label: Text(
+                    _groupName ?? 'Выбрать группу',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 7,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 15),
             Expanded(
@@ -398,46 +461,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            InkWell(
-              key: const ValueKey('schedule-group-search'),
-              borderRadius: BorderRadius.circular(14),
-              onTap: _chooseGroup,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.search_rounded,
-                        color: theme.colorScheme.onSurfaceVariant, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _groupName ?? 'Найти расписание группы',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const Icon(Icons.unfold_more_rounded, size: 19),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
             Expanded(
               child: PageView.builder(
                 key: ValueKey('schedule-pages-${_groupName ?? ''}'),
                 controller: _weekController,
+                physics: _changingGroup
+                    ? const NeverScrollableScrollPhysics()
+                    : const PageScrollPhysics(),
                 onPageChanged: _onWeekChanged,
                 itemBuilder: (context, page) => _weekPage(context, page),
               ),

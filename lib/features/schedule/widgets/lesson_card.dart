@@ -22,7 +22,7 @@ class LessonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final kind = lessonKind(type);
+    final kind = lessonKind(type, subject: subject);
     final accent = lessonKindColor(kind);
 
     return Container(
@@ -57,7 +57,7 @@ class LessonCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  lessonKindLabel(type),
+                  lessonKindLabel(type, subject: subject),
                   textAlign: TextAlign.right,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

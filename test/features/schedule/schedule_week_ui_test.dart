@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/schedule/data/group_storage.dart';
+import 'package:campusapp/features/schedule/data/schedule_api.dart';
+import 'package:campusapp/features/schedule/view/schedule_screen.dart';
 import 'package:campusapp/features/schedule/data/lesson_kind.dart';
 import 'package:campusapp/features/schedule/data/schedule_lesson.dart';
 import 'package:campusapp/features/schedule/widgets/lesson_card.dart';
@@ -16,6 +18,13 @@ void main() {
     expect(lessonKind('Практическое занятие'), LessonKind.practice);
     expect(lessonKind('Лабораторная работа'), LessonKind.laboratory);
     expect(lessonKind('Экзамен'), LessonKind.other);
+    expect(lessonKind('Факультатив'), LessonKind.elective);
+    expect(
+      lessonKind('Практика', subject: 'Факультатив по математике'),
+      LessonKind.elective,
+    );
+    expect(lessonKindLabel('Лекция', subject: 'Факультатив'), 'Факультатив');
+    expect(lessonKindColor(LessonKind.elective), const Color(0xFF8C8C94));
     expect(lessonKindColor(LessonKind.lecture), const Color(0xFF34C759));
     expect(lessonKindColor(LessonKind.practice), const Color(0xFFFACC15));
     expect(lessonKindColor(LessonKind.laboratory), const Color(0xFFEF4444));
@@ -48,6 +57,14 @@ void main() {
         room: 'С-401',
         teacher: '',
       ),
+      ScheduleLesson(
+        date: '02.11.2026',
+        time: '15:00 - 16:35',
+        subject: 'Факультатив по программированию',
+        type: 'Практика',
+        room: 'С-402',
+        teacher: '',
+      ),
     ];
 
     await tester.pumpWidget(
@@ -62,12 +79,18 @@ void main() {
       ),
     );
 
-    for (var i = 0; i < 3; i++) {
+    final kinds = [
+      LessonKind.lecture,
+      LessonKind.practice,
+      LessonKind.laboratory,
+      LessonKind.elective,
+    ];
+    for (var i = 0; i < kinds.length; i++) {
       final dot = tester.widget<Container>(
         find.byKey(ValueKey('lesson-dot-2026-11-2-$i')),
       );
       final decoration = dot.decoration! as BoxDecoration;
-      expect(decoration.color, lessonKindColor(LessonKind.values[i]));
+      expect(decoration.color, lessonKindColor(kinds[i]));
     }
     expect(find.byKey(const ValueKey('lesson-dot-2026-11-3-0')),
         findsNothing);
@@ -92,6 +115,70 @@ void main() {
     expect(find.text('С-409'), findsOneWidget);
   });
 
+  testWidgets('facultative cards are labelled and coloured grey', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LessonCard(
+            time: '13:15 - 14:50',
+            subject: 'Факультатив по программированию',
+            type: 'Лекция',
+            room: 'С-402',
+            teacher: '',
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Факультатив'), findsOneWidget);
+    final label = tester.widget<Text>(find.text('Факультатив'));
+    expect(label.style?.color, const Color(0xFF8C8C94));
+  });
+
+  testWidgets('changing group reloads real lessons, not only the label', (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    final api = _FakeScheduleApi();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScheduleScreen(
+            scheduleApi: api,
+            groupStorage: GroupStorage(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Занятие А-03-23'), findsWidgets);
+    final groupFinder = find.byKey(const ValueKey('schedule-group-search'));
+    expect(groupFinder, findsOneWidget);
+    final today = DateTime.now();
+    final dayFinder = find.byKey(
+      ValueKey('schedule-day-${today.year}-${today.month}-${today.day}'),
+    );
+    expect(dayFinder, findsOneWidget);
+    expect(
+      tester.getTopLeft(groupFinder).dy,
+      greaterThan(tester.getTopLeft(dayFinder).dy),
+    );
+
+    await tester.tap(groupFinder);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'А-04-23');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ListTile, 'А-04-23'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Занятие А-04-23'), findsWidgets);
+    expect(find.text('Занятие А-03-23'), findsNothing);
+    expect(api.requestedGroups, contains('А-04-23'));
+    expect(await GroupStorage().getScheduleGroup(), 'А-04-23');
+    expect(await GroupStorage().getGroup(), 'А-03-23');
+  });
+
   test('choosing a timetable group does not change BARS group', () async {
     SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
     final storage = GroupStorage();
@@ -100,4 +187,34 @@ void main() {
     expect(await storage.getScheduleGroup(), 'А-04-23');
     expect(await storage.getGroup(), 'А-03-23');
   });
+}
+
+class _FakeScheduleApi extends ScheduleApi {
+  final requestedGroups = <String>[];
+
+  @override
+  Future<List<String>> searchGroups(String query) async =>
+      ['А-03-23', 'А-04-23'];
+
+  @override
+  Future<List<ScheduleLesson>> getWeekSchedule({
+    required String group,
+    required DateTime selectedDate,
+    bool forceRefresh = false,
+  }) async {
+    requestedGroups.add(group);
+    final date = DateTime.now();
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return [
+      ScheduleLesson(
+        date: '$day.$month.${date.year}',
+        time: '09:20 - 10:55',
+        subject: 'Занятие $group',
+        type: 'Лекция',
+        room: 'С-409',
+        teacher: 'Преподаватель',
+      ),
+    ];
+  }
 }

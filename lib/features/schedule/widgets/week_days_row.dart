@@ -101,7 +101,7 @@ class WeekDaysRow extends StatelessWidget {
                               height: 6,
                               decoration: BoxDecoration(
                                 color: lessonKindColor(
-                                  lessonKind(lessons[i].type),
+                                  lessonKind(lessons[i].type, subject: lessons[i].subject),
                                 ),
                                 shape: BoxShape.circle,
                               ),

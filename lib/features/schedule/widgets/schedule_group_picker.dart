@@ -43,16 +43,15 @@ class _ScheduleGroupPickerState extends State<ScheduleGroupPicker> {
 
   void _onChanged(String input) {
     _debounce?.cancel();
+    // Invalidate any in-flight search immediately, not only after debounce.
+    _requestId++;
     setState(() {
       _groups = [];
       _error = null;
+      _loading = false;
     });
     final term = input.trim();
-    if (term.length < 2) {
-      _requestId++;
-      setState(() => _loading = false);
-      return;
-    }
+    if (term.length < 2) return;
     _debounce = Timer(const Duration(milliseconds: 320), () => _lookup(term));
   }
 

@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 
-enum LessonKind { lecture, practice, laboratory, other }
+enum LessonKind { lecture, practice, laboratory, other, elective }
 
-LessonKind lessonKind(String type) {
+LessonKind lessonKind(String type, {String subject = ''}) {
   final value = type.toLowerCase().trim();
+  final combined = '$value ${subject.toLowerCase()}';
+  // A facultative is a separate grey lesson even if MPEI marks it
+  // as a lecture, practical or laboratory in its type column.
+  if (combined.contains('факульт') ||
+      combined.contains('электив') ||
+      value == 'фак' ||
+      value == 'фак.') {
+    return LessonKind.elective;
+  }
   if (value.contains('лаборат') ||
       value.contains('лаб.') ||
       value == 'лаб') {
@@ -29,12 +38,13 @@ Color lessonKindColor(LessonKind kind) {
     case LessonKind.laboratory:
       return const Color(0xFFEF4444);
     case LessonKind.other:
+    case LessonKind.elective:
       return const Color(0xFF8C8C94);
   }
 }
 
-String lessonKindLabel(String type) {
-  switch (lessonKind(type)) {
+String lessonKindLabel(String type, {String subject = ''}) {
+  switch (lessonKind(type, subject: subject)) {
     case LessonKind.lecture:
       return 'Лекция';
     case LessonKind.practice:
@@ -43,5 +53,7 @@ String lessonKindLabel(String type) {
       return 'Лабораторная';
     case LessonKind.other:
       return type.trim().isEmpty ? 'Занятие' : type.trim();
+    case LessonKind.elective:
+      return 'Факультатив';
   }
 }
