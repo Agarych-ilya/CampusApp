@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '/core/theme/app_theme.dart';
+import '../data/lesson_kind.dart';
 
-// Карточка одного занятия.
+/// Schedule card with a color-coded lesson type next to its time.
 class LessonCard extends StatelessWidget {
   const LessonCard({
+    super.key,
     required this.time,
     required this.subject,
     required this.type,
@@ -21,92 +22,76 @@ class LessonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final kind = lessonKind(type);
+    final accent = lessonKindColor(kind);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+        ),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Вертикальная розовая полоска слева у карточки.
-          Container(
-            width: 4,
-            height: 76,
-            decoration: BoxDecoration(
-              color: AppTheme.pink,
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-
-          const SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Время занятия.
-                Text(
-                  time.isEmpty ? 'Время не указано' : time,
-                  style: const TextStyle(
-                    color: AppTheme.pink,
-                    fontSize: 13,
+          Row(
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                time.isEmpty ? 'Время не указано' : time,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  lessonKindLabel(type),
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-
-                const SizedBox(height: 6),
-
-                // Название предмета.
-                Text(
-                  subject.isEmpty ? 'Занятие' : subject,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                // Тип занятия и аудитория.
-                Text(_formatLessonInfo(), style: theme.textTheme.bodyMedium),
-
-                // Преподаватель показывается только если он есть.
-                if (teacher.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    teacher,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.55),
-                    ),
-                  ),
-                ],
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            subject.isEmpty ? 'Занятие' : subject,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
             ),
           ),
+          if (room.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(room, style: theme.textTheme.bodyMedium),
+          ],
+          if (teacher.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              teacher,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+              ),
+            ),
+          ],
         ],
       ),
     );
-  }
-
-  // Собирает строку вида:
-  // "Экзамен • М-307 (Корпус М)".
-  String _formatLessonInfo() {
-    final parts = [if (type.isNotEmpty) type, if (room.isNotEmpty) room];
-
-    if (parts.isEmpty) {
-      return 'Информация уточняется';
-    }
-
-    return parts.join(' • ');
   }
 }

@@ -12,55 +12,52 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
+  static const int _initialWeekPage = 5000;
   final ScheduleApi _scheduleApi = ScheduleApi();
   final GroupStorage _groupStorage = GroupStorage();
+  final Map<int, Future<List<ScheduleLesson>>> _weekFutures = {};
 
   String? _groupName;
-
-  bool _isInitializing = true;
-
   String? _initializationError;
-
+  bool _isInitializing = true;
   late DateTime _selectedDate;
-
-  late Future<List<ScheduleLesson>> _weekLessonsFuture;
+  late DateTime _anchorWeek;
+  late PageController _weekController;
+  int _currentWeekPage = _initialWeekPage;
 
   @override
   void initState() {
     super.initState();
-
     _selectedDate = DateTime.now();
-
+    _anchorWeek = _getWeekStart(_selectedDate);
+    _weekController = PageController(initialPage: _initialWeekPage);
     _initialize();
+  }
+
+  @override
+  void dispose() {
+    _weekController.dispose();
+    super.dispose();
   }
 
   Future<void> _initialize() async {
     try {
-      var group = await _groupStorage.getGroup();
-
+      final group = await _groupStorage.getScheduleGroup();
       if (group == null || group.isEmpty) {
         throw StateError(
-          'Учебная группа не найдена. '
-          'Войди в CampusApp через БАРС, чтобы загрузить свою группу.',
+          'Учебная группа не найдена. Войди через БАРС, '
+          'чтобы получить свою группу.',
         );
       }
-
-      _groupName = group;
-
-      _weekLessonsFuture = _loadWeekLessons();
-
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       setState(() {
+        _groupName = group;
+        _initializationError = null;
         _isInitializing = false;
+        _weekFutures.clear();
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       setState(() {
         _initializationError = error.toString();
         _isInitializing = false;
@@ -68,132 +65,265 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  Future<List<ScheduleLesson>> _loadWeekLessons({bool forceRefresh = false}) {
+  DateTime _getWeekStart(DateTime date) => DateTime(
+        date.year,
+        date.month,
+        date.day - date.weekday + 1,
+      );
+
+  DateTime _startForPage(int page) => DateTime(
+        _anchorWeek.year,
+        _anchorWeek.month,
+        _anchorWeek.day + (page - _initialWeekPage) * 7,
+      );
+
+  int _pageForDate(DateTime date) {
+    // UTC calendar math avoids daylight-saving gaps in local DateTime.
+    final monday = _getWeekStart(date);
+    final target = DateTime.utc(monday.year, monday.month, monday.day);
+    final anchor = DateTime.utc(
+      _anchorWeek.year,
+      _anchorWeek.month,
+      _anchorWeek.day,
+    );
+    return _initialWeekPage + target.difference(anchor).inDays ~/ 7;
+  }
+
+  DateTime _dateForPage(int page) {
+    final monday = _startForPage(page);
+    return DateTime(monday.year, monday.month,
+        monday.day + _selectedDate.weekday - 1);
+  }
+
+  Future<List<ScheduleLesson>> _lessonsForPage(int page) {
     final group = _groupName;
-
     if (group == null || group.isEmpty) {
-      throw StateError('Группа пользователя не определена');
+      return Future.error(StateError('Группа не определена'));
     }
-
-    return _scheduleApi.getWeekSchedule(
-      group: group,
-      selectedDate: _selectedDate,
-      forceRefresh: forceRefresh,
+    return _weekFutures.putIfAbsent(
+      page,
+      () => _scheduleApi.getWeekSchedule(
+        group: group,
+        selectedDate: _startForPage(page),
+      ),
     );
   }
 
-  void _selectDate(DateTime date) {
-    final oldWeekStart = _getWeekStart(_selectedDate);
-    final newWeekStart = _getWeekStart(date);
-
+  void _onWeekChanged(int page) {
+    if (page == _currentWeekPage) return;
+    final newStart = _startForPage(page);
+    final weekday = _selectedDate.weekday;
     setState(() {
-      _selectedDate = date;
-
-      if (!_isSameDate(oldWeekStart, newWeekStart)) {
-        _weekLessonsFuture = _loadWeekLessons();
-      }
+      _currentWeekPage = page;
+      _selectedDate = DateTime(
+        newStart.year,
+        newStart.month,
+        newStart.day + weekday - 1,
+      );
     });
   }
 
+  void _selectDate(DateTime date) {
+    final nextPage = _pageForDate(date);
+    if (nextPage < 0 || nextPage > 10000) return;
+    setState(() {
+      _selectedDate = date;
+      _currentWeekPage = nextPage;
+    });
+    if (_weekController.hasClients &&
+        _weekController.page?.round() != nextPage) {
+      _weekController.jumpToPage(nextPage);
+    }
+  }
+
   void _refreshWeekSchedule() {
-    if (_groupName == null) {
+    final group = _groupName;
+    if (group == null || group.isEmpty) return;
+    final page = _currentWeekPage;
+    setState(() {
+      _weekFutures[page] = _scheduleApi.getWeekSchedule(
+        group: group,
+        selectedDate: _startForPage(page),
+        forceRefresh: true,
+      );
+    });
+  }
+
+  Future<void> _chooseGroup() async {
+    final group = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      showDragHandle: true,
+      builder: (context) => ScheduleGroupPicker(
+        api: _scheduleApi,
+        currentGroup: _groupName ?? '',
+      ),
+    );
+    if (!mounted || group == null || group.trim().isEmpty ||
+        group.trim() == _groupName) {
       return;
     }
-
-    setState(() {
-      _weekLessonsFuture = _loadWeekLessons(forceRefresh: true);
-    });
+    try {
+      await _groupStorage.saveScheduleGroup(group.trim());
+      if (!mounted) return;
+      setState(() {
+        _groupName = group.trim();
+        _weekFutures.clear();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось выбрать группу: $error')),
+      );
+    }
   }
 
   Future<void> _showMonthCalendar() async {
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.08),
-      builder: (dialogContext) {
-        return Dialog(
-          alignment: Alignment.topLeft,
-          insetPadding: EdgeInsets.only(
-            left: 20,
-            top: MediaQuery.of(dialogContext).padding.top + 52,
-            right: 20,
-            bottom: 24,
-          ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: MonthCalendarPopup(
-            selectedDate: _selectedDate,
-            onDateSelected: (date) {
-              _selectDate(date);
-              Navigator.of(dialogContext).pop();
-            },
-          ),
+      builder: (dialogContext) => Dialog(
+        alignment: Alignment.topLeft,
+        insetPadding: EdgeInsets.only(
+          left: 20,
+          top: MediaQuery.of(dialogContext).padding.top + 52,
+          right: 20,
+          bottom: 24,
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: MonthCalendarPopup(
+          selectedDate: _selectedDate,
+          onDateSelected: (date) {
+            _selectDate(date);
+            Navigator.of(dialogContext).pop();
+          },
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDate(DateTime first, DateTime second) =>
+      first.year == second.year &&
+      first.month == second.month &&
+      first.day == second.day;
+
+  List<ScheduleLesson> _lessonsForDay(
+    List<ScheduleLesson> lessons,
+    DateTime date,
+  ) {
+    final filtered = lessons.where((lesson) {
+      final parsed = lesson.parsedDate;
+      return parsed != null && _isSameDate(parsed, date);
+    }).toList();
+    filtered.sort((a, b) => a.time.compareTo(b.time));
+    return filtered;
+  }
+
+  Widget _weekPage(BuildContext context, int page) {
+    final theme = Theme.of(context);
+    final date = _dateForPage(page);
+
+    return FutureBuilder<List<ScheduleLesson>>(
+      key: ValueKey('week-${_groupName ?? ''}-$page'),
+      future: _lessonsForPage(page),
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? const <ScheduleLesson>[];
+        final todayLessons = _lessonsForDay(all, date);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 6),
+            WeekDaysRow(
+              selectedDate: date,
+              weekLessons: all,
+              onDateSelected: _selectDate,
+            ),
+            const SizedBox(height: 13),
+            Text(
+              _formatSelectedDate(date),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withOpacity(0.62),
+              ),
+            ),
+            const SizedBox(height: 15),
+            Expanded(
+              child: snapshot.connectionState == ConnectionState.waiting
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppTheme.pink),
+                    )
+                  : snapshot.hasError
+                      ? ScheduleMessage(
+                          icon: Icons.error_outline,
+                          title: 'Не удалось загрузить расписание',
+                          subtitle: snapshot.error.toString(),
+                          buttonText: 'Повторить',
+                          onPressed: _refreshWeekSchedule,
+                        )
+                      : todayLessons.isEmpty
+                          ? const ScheduleMessage(
+                              icon: Icons.event_busy_outlined,
+                              title: 'Занятий нет',
+                              subtitle: 'Для выбранного дня расписание не найдено',
+                            )
+                          : RefreshIndicator(
+                              onRefresh: () async {
+                                _refreshWeekSchedule();
+                                try {
+                                  await _lessonsForPage(page);
+                                } catch (_) {
+                                  // FutureBuilder shows the error message.
+                                }
+                              },
+                              child: ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  if (_scheduleApi.showingOfflineCopy)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.cloud_off_outlined,
+                                              size: 18, color: Colors.amber),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Нет связи с сервером. '
+                                              'Показано сохранённое расписание.',
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  for (final lesson in todayLessons)
+                                    LessonCard(
+                                      time: lesson.time,
+                                      subject: lesson.subject,
+                                      type: lesson.type,
+                                      room: lesson.room,
+                                      teacher: lesson.teacher,
+                                    ),
+                                ],
+                              ),
+                            ),
+            ),
+          ],
         );
       },
     );
   }
 
-  DateTime _getWeekStart(DateTime date) {
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-    ).subtract(Duration(days: date.weekday - 1));
-  }
-
-  bool _isSameDate(DateTime firstDate, DateTime secondDate) {
-    return firstDate.year == secondDate.year &&
-        firstDate.month == secondDate.month &&
-        firstDate.day == secondDate.day;
-  }
-
-  DateTime? _parseLessonDate(String date) {
-    final match = RegExp(r'(\d{1,2})\.(\d{1,2})\.(\d{4})').firstMatch(date);
-
-    if (match == null) {
-      return null;
-    }
-
-    final day = int.tryParse(match.group(1)!);
-    final month = int.tryParse(match.group(2)!);
-    final year = int.tryParse(match.group(3)!);
-
-    if (day == null || month == null || year == null) {
-      return null;
-    }
-
-    return DateTime(year, month, day);
-  }
-
-  List<ScheduleLesson> _filterLessonsBySelectedDate(
-    List<ScheduleLesson> weekLessons,
-  ) {
-    final filteredLessons = weekLessons.where((lesson) {
-      final lessonDate = _parseLessonDate(lesson.date);
-
-      if (lessonDate == null) {
-        return false;
-      }
-
-      return _isSameDate(lessonDate, _selectedDate);
-    }).toList();
-
-    filteredLessons.sort((firstLesson, secondLesson) {
-      return firstLesson.time.compareTo(secondLesson.time);
-    });
-
-    return filteredLessons;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     if (_isInitializing) {
       return const SafeArea(
         child: Center(child: CircularProgressIndicator(color: AppTheme.pink)),
       );
     }
-
     if (_initializationError != null) {
       return SafeArea(
         child: Center(
@@ -203,21 +333,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.error_outline, size: 48),
-                const SizedBox(height: 16),
-                const Text(
-                  'Не удалось загрузить данные пользователя',
-                  textAlign: TextAlign.center,
-                ),
+                const SizedBox(height: 14),
+                const Text('Не удалось загрузить группу'),
                 const SizedBox(height: 8),
                 Text(_initializationError!, textAlign: TextAlign.center),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 FilledButton(
                   onPressed: () {
                     setState(() {
                       _isInitializing = true;
                       _initializationError = null;
                     });
-
                     _initialize();
                   },
                   child: const Text('Повторить'),
@@ -235,19 +361,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 20),
-
+            const SizedBox(height: 15),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: _showMonthCalendar,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 7),
                     child: Row(
                       children: [
                         Text(
@@ -257,135 +378,68 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(Icons.keyboard_arrow_down, size: 20),
+                        const Icon(Icons.keyboard_arrow_down, size: 19),
                       ],
                     ),
                   ),
                 ),
-
-                Row(
-                  children: [
-                    Text(
-                      _getMonthName(_selectedDate),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(width: 6),
-
-                    IconButton(
-                      onPressed: _refreshWeekSchedule,
-                      icon: const Icon(Icons.refresh, size: 21),
-                    ),
-                  ],
+                const Spacer(),
+                Text(
+                  _getMonthName(_selectedDate),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Обновить расписание',
+                  onPressed: _refreshWeekSchedule,
+                  icon: const Icon(Icons.refresh, size: 21),
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
-            WeekDaysRow(
-              selectedDate: _selectedDate,
-              onDateSelected: _selectDate,
-            ),
-
-            const SizedBox(height: 20),
-
-            Text(
-              _groupName ?? '',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.blue,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              _formatSelectedDate(_selectedDate),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            Expanded(
-              child: FutureBuilder<List<ScheduleLesson>>(
-                future: _weekLessonsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: AppTheme.pink),
-                    );
-                  }
-
-                  if (snapshot.hasError) {
-                    return ScheduleMessage(
-                      icon: Icons.error_outline,
-                      title: 'Не удалось загрузить расписание',
-                      subtitle: snapshot.error?.toString() ??
-                          'Проверь соединение с сервером',
-                      buttonText: 'Повторить',
-                      onPressed: _refreshWeekSchedule,
-                    );
-                  }
-
-                  final weekLessons = snapshot.data ?? [];
-
-                  final dayLessons = _filterLessonsBySelectedDate(weekLessons);
-
-                  if (dayLessons.isEmpty) {
-                    return const ScheduleMessage(
-                      icon: Icons.event_busy_outlined,
-                      title: 'Занятий нет',
-                      subtitle: 'Для выбранного дня расписание не найдено',
-                    );
-                  }
-
-                  return Column(
-                    children: [
-                      if (_scheduleApi.showingOfflineCopy)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.cloud_off_outlined,
-                                size: 18,
-                                color: Colors.amber,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Нет связи с сервером. '
-                                  'Показано сохранённое расписание.',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: dayLessons.length,
-                          itemBuilder: (context, index) {
-                            final lesson = dayLessons[index];
-
-                            return LessonCard(
-                              time: lesson.time,
-                              subject: lesson.subject,
-                              type: lesson.type,
-                              room: lesson.room,
-                              teacher: lesson.teacher,
-                            );
-                          },
+            InkWell(
+              key: const ValueKey('schedule-group-search'),
+              borderRadius: BorderRadius.circular(14),
+              onTap: _chooseGroup,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.search_rounded,
+                        color: theme.colorScheme.onSurfaceVariant, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _groupName ?? 'Найти расписание группы',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ],
-                  );
-                },
+                    ),
+                    const Icon(Icons.unfold_more_rounded, size: 19),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: PageView.builder(
+                key: ValueKey('schedule-pages-${_groupName ?? ''}'),
+                controller: _weekController,
+                onPageChanged: _onWeekChanged,
+                itemBuilder: (context, page) => _weekPage(context, page),
               ),
             ),
           ],
