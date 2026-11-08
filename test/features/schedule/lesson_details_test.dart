@@ -131,7 +131,7 @@ void main() {
     ), isFalse);
   });
 
-  testWidgets('lesson details opens separate M-307 booking with lesson date and time',
+  testWidgets('lesson details opens booking for its own room and time',
       (tester) async {
     final when = DateTime.now().add(const Duration(days: 2));
     final dd = when.day.toString().padLeft(2, '0');
@@ -163,12 +163,14 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(find.text('Бронирование аудиторий'), findsOneWidget);
-    expect(find.text('М-307'), findsOneWidget);
+    expect(find.text('С-409'), findsOneWidget);
+    expect(find.byKey(const ValueKey('booking-room-change')), findsOneWidget);
     expect(find.byKey(const ValueKey('booking-fixed-lesson')), findsOneWidget);
     expect(find.byType(ChoiceChip), findsNothing);
     expect(find.byKey(const ValueKey('booking-date')), findsNothing);
     expect(find.text('13:45 - 15:20'), findsOneWidget);
     expect(booking.lastSlot, '3');
+    expect(booking.lastRoom, 'С-409');
     expect(ClassroomBookingApi.dateKey(booking.lastDate!),
         ClassroomBookingApi.dateKey(when));
 
@@ -321,17 +323,20 @@ class _MockGroupLessonNotesApi extends GroupLessonNotesApi {
 class _BookingApiSpy extends ClassroomBookingApi {
   DateTime? lastDate;
   String? lastSlot;
+  String? lastRoom;
 
   @override
   Future<ClassroomAvailability> load({
     required DateTime date,
     required String slot,
+    String room = 'М-307',
     bool trySession = true,
   }) async {
     lastDate = date;
     lastSlot = slot;
+    lastRoom = room;
     return ClassroomAvailability(
-      room: 'М-307',
+      room: room,
       date: ClassroomBookingApi.dateKey(date),
       slot: slot,
       occupied: const <ClassroomSeat>{},

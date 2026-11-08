@@ -104,6 +104,7 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
           api: widget.bookingApi,
           lessonDate: lessonDate,
           lessonTime: widget.lesson.time,
+          initialRoom: widget.lesson.room,
         ),
       ),
     );
@@ -415,8 +416,10 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Тестовая аудитория М-307 · 54 места. '
-          'Бронирование не связано с официальной занятостью аудиторий МЭИ.',
+          'По умолчанию выбирается аудитория этой пары. '
+          'В следующем окне её можно изменить. '
+          'Пока используются тестовые схемы мест, '
+          'не связанные с официальной занятостью МЭИ.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

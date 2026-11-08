@@ -5,6 +5,25 @@ import 'package:http/http.dart' as http;
 import '/core/config/api_config.dart';
 import '/features/services/listings/data/listings_api.dart';
 
+/// Take the physical room code from the schedule:
+/// "С-401 (Корпус С)" -> "С-401". Online lessons return null.
+String? classroomCodeFromLesson(String? roomLabel) {
+  final input = roomLabel?.trim() ?? '';
+  if (input.isEmpty) return null;
+  final match = RegExp(
+    r'([A-Za-zА-Яа-яЁё]{1,3})\s*[-–—−]\s*(\d{1,4})(?!\d)',
+  ).firstMatch(input);
+  if (match == null) return null;
+  final building = match.group(1)!.toUpperCase()
+      .replaceAll('M', 'М').replaceAll('C', 'С')
+      .replaceAll('A', 'А').replaceAll('K', 'К')
+      .replaceAll('P', 'Р').replaceAll('T', 'Т')
+      .replaceAll('H', 'Н').replaceAll('B', 'В')
+      .replaceAll('E', 'Е').replaceAll('O', 'О')
+      .replaceAll('X', 'Х');
+  return '$building-' + match.group(2)!;
+}
+
 class ClassroomSeat {
   const ClassroomSeat({
     required this.row,
@@ -129,7 +148,7 @@ class ClassroomAvailability {
     final mine = rawMine == null ? null : ClassroomSeat.fromJson(rawMine);
     final rawSlots = value['slots'];
     return ClassroomAvailability(
-      room: value['room']?.toString() ?? 'М-307',
+      room: value['room']?.toString() ?? '',
       date: value['date']?.toString() ?? '',
       slot: value['slot']?.toString() ?? '',
       occupied: occupied,
@@ -197,6 +216,7 @@ class ClassroomBookingApi {
   Future<ClassroomAvailability> load({
     required DateTime date,
     required String slot,
+    String room = 'М-307',
     bool trySession = true,
   }) async {
     if (trySession && !ListingsApi.instance.hasSession) {
@@ -210,16 +230,32 @@ class ClassroomBookingApi {
       _base.replace(queryParameters: {
         'date': dateKey(date),
         'slot': slot,
+        'room': room,
       }),
       headers: ListingsApi.instance.studyReadHeaders,
     ).timeout(const Duration(seconds: 17));
-    return _parse(response, 200);
+    return _checkRoom(_parse(response, 200), room);
+  }
+
+  ClassroomAvailability _checkRoom(
+    ClassroomAvailability result,
+    String requestedRoom,
+  ) {
+    if (classroomCodeFromLesson(result.room) !=
+        classroomCodeFromLesson(requestedRoom)) {
+      throw const ClassroomBookingException(
+        'Сервер бронирования не поддерживает эту аудиторию. '
+        'Обнови backend CampusApp.',
+      );
+    }
+    return result;
   }
 
   Future<ClassroomAvailability> reserve({
     required DateTime date,
     required String slot,
     required ClassroomSeat seat,
+    String room = 'М-307',
   }) async {
     final headers = await _authorization();
     final response = await _client.post(
@@ -228,25 +264,28 @@ class ClassroomBookingApi {
       body: jsonEncode({
         'date': dateKey(date),
         'slot': slot,
+        'room': room,
         ...seat.toJson(),
       }),
     ).timeout(const Duration(seconds: 17));
-    return _parse(response, 201);
+    return _checkRoom(_parse(response, 201), room);
   }
 
   Future<ClassroomAvailability> cancel({
     required DateTime date,
     required String slot,
+    String room = 'М-307',
   }) async {
     final headers = await _authorization();
     final response = await _client.delete(
       _base.replace(queryParameters: {
         'date': dateKey(date),
         'slot': slot,
+        'room': room,
       }),
       headers: headers,
     ).timeout(const Duration(seconds: 17));
-    return _parse(response, 200);
+    return _checkRoom(_parse(response, 200), room);
   }
 
   void dispose() => _client.close();
