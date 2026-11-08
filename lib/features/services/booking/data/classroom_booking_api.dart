@@ -18,10 +18,33 @@ String? classroomCodeFromLesson(String? roomLabel) {
       .replaceAll('M', 'М').replaceAll('C', 'С')
       .replaceAll('A', 'А').replaceAll('K', 'К')
       .replaceAll('P', 'Р').replaceAll('T', 'Т')
-      .replaceAll('H', 'Н').replaceAll('B', 'В')
+      .replaceAll('H', 'Н').replaceAll('B', 'В').replaceAll('V', 'В')
       .replaceAll('E', 'Е').replaceAll('O', 'О')
       .replaceAll('X', 'Х');
   return '$building-' + match.group(2)!;
+}
+
+const bookableClassrooms = ['М-307', 'В-308'];
+
+bool isBookableClassroom(String? roomLabel) =>
+    bookableClassrooms.contains(classroomCodeFromLesson(roomLabel));
+
+int classroomSeatCapacity(String room) =>
+    classroomCodeFromLesson(room) == 'В-308' ? 176 : 54;
+
+/// For В-308, row is the tier (1–10), desk is the seat number on a side,
+/// seat=1 means the left bank and seat=2 means the right bank.
+/// For М-307, these are the original row / desk / seat coordinates.
+bool isValidClassroomSeat(String room, int row, int desk, int seat) {
+  if (row < 1 || desk < 1 || (seat != 1 && seat != 2)) return false;
+  switch (classroomCodeFromLesson(room)) {
+    case 'М-307':
+      return row <= 3 && desk <= 9;
+    case 'В-308':
+      return row <= 10 && desk <= (row <= 4 ? 10 : 8);
+    default:
+      return false;
+  }
 }
 
 class ClassroomSeat {
@@ -39,6 +62,11 @@ class ClassroomSeat {
   String get label =>
       'Ряд $row, парта $desk, ${seat == 1 ? 'левое' : 'правое'} место';
 
+  String labelForRoom(String room) =>
+      classroomCodeFromLesson(room) == 'В-308'
+          ? 'Ряд $row, ${seat == 1 ? 'левая' : 'правая'} сторона, место $desk'
+          : label;
+
   @override
   bool operator ==(Object other) =>
       other is ClassroomSeat &&
@@ -47,15 +75,16 @@ class ClassroomSeat {
   @override
   int get hashCode => Object.hash(row, desk, seat);
 
-  factory ClassroomSeat.fromJson(Object? value) {
+  factory ClassroomSeat.fromJson(Object? value, {String room = 'М-307'}) {
     if (value is! Map) {
       throw const FormatException('Некорректное место');
     }
     final row = value['row'], desk = value['desk'], seat = value['seat'];
     if (row is! num || desk is! num || seat is! num ||
-        row.toInt() < 1 || row.toInt() > 3 ||
-        desk.toInt() < 1 || desk.toInt() > 9 ||
-        seat.toInt() < 1 || seat.toInt() > 2) {
+        row.toInt() != row || desk.toInt() != desk || seat.toInt() != seat ||
+        !isValidClassroomSeat(
+          room, row.toInt(), desk.toInt(), seat.toInt(),
+        )) {
       throw const FormatException('Некорректный номер места');
     }
     return ClassroomSeat(
@@ -132,7 +161,7 @@ class ClassroomAvailability {
   final List<ClassroomTimeSlot> slots;
   final bool testMode;
 
-  int get capacity => 54;
+  int get capacity => classroomSeatCapacity(room);
   int get available => capacity - occupied.length;
 
   bool isOccupied(ClassroomSeat seat) => occupied.contains(seat);
@@ -142,13 +171,21 @@ class ClassroomAvailability {
     if (value is! Map || value['occupied'] is! List) {
       throw const FormatException('Некорректный ответ сервера');
     }
+    final room = value['room']?.toString() ?? '';
+    if (!isBookableClassroom(room)) {
+      throw const FormatException('Неизвестная аудитория в ответе сервера');
+    }
     final rawSeats = value['occupied'] as List;
-    final occupied = rawSeats.map(ClassroomSeat.fromJson).toSet();
+    final occupied = rawSeats
+        .map((seat) => ClassroomSeat.fromJson(seat, room: room))
+        .toSet();
     final rawMine = value['mine'];
-    final mine = rawMine == null ? null : ClassroomSeat.fromJson(rawMine);
+    final mine = rawMine == null
+        ? null
+        : ClassroomSeat.fromJson(rawMine, room: room);
     final rawSlots = value['slots'];
     return ClassroomAvailability(
-      room: value['room']?.toString() ?? '',
+      room: room,
       date: value['date']?.toString() ?? '',
       slot: value['slot']?.toString() ?? '',
       occupied: occupied,
@@ -214,9 +251,9 @@ class ClassroomBookingApi {
   }
 
   void _validateRoom(String room) {
-    if (classroomCodeFromLesson(room) != 'М-307') {
+    if (!isBookableClassroom(room)) {
       throw const ClassroomBookingException(
-        'Пока бронирование доступно только для М-307',
+        'Пока бронирование доступно только для М-307 и В-308',
       );
     }
   }

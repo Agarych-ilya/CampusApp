@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:campusapp/features/services/booking/data/classroom_booking_api.dart';
 import 'package:campusapp/features/services/booking/view/classroom_booking_screen.dart';
 import 'package:campusapp/features/services/booking/view/classroom_seat_map.dart';
+import 'package:campusapp/features/services/booking/view/amphitheater_seat_map.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +41,85 @@ void main() {
     expect(classroomCodeFromLesson('C-401 (Корпус C)'), 'С-401');
     expect(classroomCodeFromLesson('М-307'), 'М-307');
     expect(classroomCodeFromLesson('M-307'), 'М-307');
+    expect(classroomCodeFromLesson('В-308 (Корпус В)'), 'В-308');
+    expect(classroomCodeFromLesson('V-308'), 'В-308');
+    expect(isBookableClassroom('В-308 (Корпус В)'), isTrue);
+    expect(isBookableClassroom('С-401'), isFalse);
     expect(classroomCodeFromLesson('ЭО и ДОТ (-)'), isNull);
+  });
+
+  test('В-308 has 176 positions: four red and six blue rows per bank', () {
+    final seats = <ClassroomSeat>{};
+    for (var row = 1; row <= 10; row++) {
+      final limit = row <= 4 ? 10 : 8;
+      for (var side = 1; side <= 2; side++) {
+        for (var number = 1; number <= limit; number++) {
+          expect(isValidClassroomSeat('В-308', row, number, side), isTrue);
+          seats.add(ClassroomSeat(row: row, desk: number, seat: side));
+        }
+      }
+    }
+    expect(seats, hasLength(176));
+    expect(classroomSeatCapacity('В-308'), 176);
+    expect(classroomSeatCapacity('М-307'), 54);
+    expect(isValidClassroomSeat('В-308', 4, 10, 2), isTrue);
+    expect(isValidClassroomSeat('В-308', 5, 9, 2), isFalse);
+    expect(isValidClassroomSeat('В-308', 11, 1, 1), isFalse);
+    expect(
+      const ClassroomSeat(row: 5, desk: 8, seat: 2).labelForRoom('В-308'),
+      'Ряд 5, правая сторона, место 8',
+    );
+  });
+
+  test('В-308 availability parses both sides and its 176-seat capacity', () {
+    final data = ClassroomAvailability.fromJson({
+      'room': 'В-308', 'date': '2026-11-10', 'slot': '2',
+      'testMode': true,
+      'occupied': [
+        {'row': 4, 'desk': 10, 'seat': 1, 'mine': false},
+        {'row': 9, 'desk': 8, 'seat': 2, 'mine': true},
+      ],
+      'mine': {'row': 9, 'desk': 8, 'seat': 2, 'mine': true},
+    });
+    expect(data.capacity, 176);
+    expect(data.available, 174);
+    expect(data.mine, const ClassroomSeat(row: 9, desk: 8, seat: 2));
+    expect(() => ClassroomSeat.fromJson(
+      {'row': 5, 'desk': 9, 'seat': 1}, room: 'В-308',
+    ), throwsFormatException);
+  });
+
+  testWidgets('В-308 map has 176 clickable seats with a central aisle',
+      (tester) async {
+    ClassroomSeat? picked;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: AmphitheaterSeatMap(
+            occupied: const {ClassroomSeat(row: 1, desk: 1, seat: 1)},
+            mine: null,
+            selected: null,
+            onSelected: (seat) => picked = seat,
+          ),
+        ),
+      ),
+    ));
+    expect(find.byKey(const ValueKey('amphitheater-red-zone')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-blue-zone')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-row-10')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-4-10-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-4-10-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-5-8-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-5-9-2')), findsNothing);
+    expect(find.byType(InkWell), findsAtLeastNWidgets(176));
+    final unavailable = find.byKey(const ValueKey('room-seat-1-1-1'));
+    await tester.ensureVisible(unavailable);
+    await tester.tap(unavailable);
+    expect(picked, isNull);
+    final blue = find.byKey(const ValueKey('room-seat-5-8-2'));
+    await tester.ensureVisible(blue);
+    await tester.tap(blue);
+    expect(picked, const ClassroomSeat(row: 5, desk: 8, seat: 2));
   });
 
   test('availability identifies full seats, reserved seats and mine', () {
@@ -153,7 +232,7 @@ void main() {
     api.dispose();
   });
 
-  test('API rejects non-M-307 rooms before sending any network request',
+  test('API rejects unsupported classrooms before any network request',
       () async {
     var calls = 0;
     final api = ClassroomBookingApi(
@@ -184,6 +263,65 @@ void main() {
     api.dispose();
   });
 
+  test('В-308 booking and cancellation use its own classroom identifier',
+      () async {
+    final calls = <http.Request>[];
+    final client = MockClient((request) async {
+      calls.add(request);
+      final row = request.method == 'POST'
+          ? jsonDecode(request.body) as Map<String, dynamic>
+          : null;
+      if (row != null) {
+        expect(row['room'], 'В-308');
+        expect(row['row'], 5);
+        expect(row['desk'], 8);
+        expect(row['seat'], 2);
+      } else {
+        expect(request.url.queryParameters['room'], 'В-308');
+      }
+      return http.Response(
+        jsonEncode({
+          'room': 'В-308',
+          'date': '2026-11-10',
+          'slot': '3',
+          'testMode': true,
+          'occupied': request.method == 'POST'
+              ? [
+                  {'row': 5, 'desk': 8, 'seat': 2, 'mine': true},
+                ]
+              : [],
+          'mine': request.method == 'POST'
+              ? {'row': 5, 'desk': 8, 'seat': 2, 'mine': true}
+              : null,
+        }),
+        request.method == 'POST' ? 201 : 200,
+      );
+    });
+    final api = ClassroomBookingApi(
+      client: client,
+      authorization: () async => {'X-Listing-CSRF': 'test'},
+    );
+    final date = DateTime(2026, 11, 10);
+    final empty = await api.load(
+      date: date, slot: '3', room: 'В-308', trySession: false,
+    );
+    expect(empty.available, 176);
+    final mine = await api.reserve(
+      date: date,
+      slot: '3',
+      room: 'В-308',
+      seat: const ClassroomSeat(row: 5, desk: 8, seat: 2),
+    );
+    expect(mine.available, 175);
+    expect(mine.mine?.labelForRoom('В-308'),
+        'Ряд 5, правая сторона, место 8');
+    final restored = await api.cancel(date: date, slot: '3', room: 'В-308');
+    expect(restored.available, 176);
+    expect(calls.map((call) => call.method).toList(),
+        ['GET', 'POST', 'DELETE']);
+    api.dispose();
+  });
+
   test('old backend cannot silently book M-307 instead of selected room',
       () async {
     final api = ClassroomBookingApi(
@@ -195,7 +333,7 @@ void main() {
     await expectLater(
       () => api.load(
         date: DateTime(2026, 11, 10),
-        slot: '1', room: 'С-401', trySession: false,
+        slot: '1', room: 'В-308', trySession: false,
       ),
       throwsA(isA<ClassroomBookingException>()),
     );
@@ -280,7 +418,30 @@ void main() {
     expect(api.lastSlot, '3');
   });
 
-  testWidgets('non-M-307 lesson is not bookable even via old entry point',
+  testWidgets('В-308 opens its own amphitheater with 176 places',
+      (tester) async {
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: ClassroomBookingScreen(
+        api: api,
+        lessonDate: DateTime.now().add(const Duration(days: 2)),
+        lessonTime: '13:45 - 15:20',
+        initialRoom: 'В-308 (Корпус В)',
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('В-308'), findsOneWidget);
+    expect(find.textContaining('176 мест'), findsOneWidget);
+    expect(find.textContaining('Свободно: 176/176'), findsOneWidget);
+    expect(find.byType(AmphitheaterSeatMap), findsOneWidget);
+    expect(find.byType(ClassroomSeatMap), findsNothing);
+    expect(api.loadedRooms, ['В-308']);
+    expect(api.lastSlot, '3');
+    expect(find.byKey(const ValueKey('booking-room-change')), findsNothing);
+    expect(find.byType(ChoiceChip), findsNothing);
+  });
+
+  testWidgets('unsupported room is not bookable even via old entry point',
       (tester) async {
     final api = _FakeBookingApi();
     await tester.pumpWidget(MaterialApp(
@@ -349,7 +510,7 @@ void main() {
     expect(find.text('М-307'), findsOneWidget);
     expect(find.textContaining('54 посадочных места'), findsOneWidget);
     expect(find.byKey(const ValueKey('booking-free-count')), findsOneWidget);
-    expect(find.textContaining('Тестовое бронирование только для М-307'), findsOneWidget);
+    expect(find.textContaining('Тестовое бронирование для М-307 и В-308'), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-3-9-2')), findsOneWidget);
   });
 }

@@ -220,7 +220,7 @@ void main() {
     expect(find.textContaining('Подробности и заметки доступны только'),
         findsNothing);
     expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
-    expect(find.byKey(const ValueKey('schedule-book-m307')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-book-seat')), findsNothing);
   });
 
   testWidgets('my lesson shows a saved private note under the lesson',
@@ -286,7 +286,7 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    final button = find.byKey(const ValueKey('schedule-book-m307'));
+    final button = find.byKey(const ValueKey('schedule-book-seat'));
     expect(button, findsOneWidget);
     await tester.ensureVisible(button);
     await tester.tap(button);
@@ -294,6 +294,45 @@ void main() {
     expect(find.text('Бронирование аудиторий'), findsOneWidget);
     expect(find.text('М-307'), findsOneWidget);
     expect(find.byKey(const ValueKey('booking-room-change')), findsNothing);
+    expect(find.text('Мои оценки по предмету'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+
+  testWidgets('В-308 seat booking opens directly beside the classroom',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          scheduleApi: _FakeScheduleApi(room: 'В-308 (Корпус В)'),
+          groupStorage: GroupStorage(),
+          bookingApi: api,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('schedule-book-seat'));
+    expect(entry, findsOneWidget);
+    expect(find.text('Выбрать место'), findsOneWidget);
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование аудиторий'), findsOneWidget);
+    expect(find.text('В-308'), findsOneWidget);
+    expect(find.textContaining('176 мест'), findsOneWidget);
+    expect(api, isNotNull); // Route opened without intermediate details.
     expect(find.text('Мои оценки по предмету'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     api.dispose();
@@ -321,7 +360,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Занятие А-03-23'), findsWidgets);
-    expect(find.byKey(const ValueKey('schedule-book-m307')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-book-seat')), findsNothing);
   });
 
   test('choosing a timetable group does not change BARS group', () async {

@@ -300,10 +300,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (mounted) setState(() => _notesRevision++);
   }
 
-  Future<void> _openM307Booking(ScheduleLesson lesson) async {
+  Future<void> _openClassroomBooking(ScheduleLesson lesson) async {
     // The same rule as lesson details: other groups cannot interact with
-    // the selected group's lesson, and only the configured M-307 is bookable.
-    if (classroomCodeFromLesson(lesson.room) != 'М-307') return;
+    // the selected group's lesson; only M-307 and V-308 are bookable.
+    if (!isBookableClassroom(lesson.room)) return;
     final profile = await StudentProfileStorage().getProfile();
     if (!mounted || !canOpenOwnLessonDetails(
       profileGroup: profile?.group,
@@ -466,8 +466,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                           ? () => _openLessonDetails(lesson)
                                           : null,
                                       onBookSeat: isOwnGroup &&
-                                              classroomCodeFromLesson(lesson.room) == 'М-307'
-                                          ? () => _openM307Booking(lesson)
+                                              isBookableClassroom(lesson.room)
+                                          ? () => _openClassroomBooking(lesson)
                                           : null,
                                       footer: isOwnGroup && _groupName != null
                                           ? LessonNotePreview(

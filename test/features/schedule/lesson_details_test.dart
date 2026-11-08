@@ -283,7 +283,7 @@ void main() {
         ),
       ),
     ));
-    final link = find.byKey(const ValueKey('schedule-book-m307'));
+    final link = find.byKey(const ValueKey('schedule-book-seat'));
     expect(link, findsOneWidget);
     expect(tester.widget<TextButton>(link).onPressed, isNotNull);
     expect(find.text('Выбрать место'), findsOneWidget);

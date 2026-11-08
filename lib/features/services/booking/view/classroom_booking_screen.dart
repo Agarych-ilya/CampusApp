@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '/features/services/style/service_palette.dart';
 import '../data/classroom_booking_api.dart';
 import 'classroom_seat_map.dart';
+import 'amphitheater_seat_map.dart';
 
 /// Demonstration booking only; not an official university room reservation.
 class ClassroomBookingScreen extends StatefulWidget {
@@ -29,7 +30,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
   late final ClassroomBookingApi _api;
   late final DateTime _date;
   late final String? _slot;
-  static const String _room = 'М-307';
+  late final String _room;
   String? _unavailableReason;
   ClassroomAvailability? _availability;
   ClassroomSeat? _selected;
@@ -50,6 +51,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
       widget.lessonDate.day,
     );
     _slot = classroomSlotForLessonTime(widget.lessonTime);
+    _room = classroomCodeFromLesson(widget.initialRoom) ?? 'М-307';
     final last = today.add(const Duration(days: 60));
     if (_date.isBefore(today)) {
       _unavailableReason = 'Эта пара уже прошла. Места можно бронировать '
@@ -79,9 +81,9 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
       }
     }
     if (widget.initialRoom != null &&
-        classroomCodeFromLesson(widget.initialRoom) != _room) {
-      _unavailableReason = 'Пока можно забронировать места '
-          'только в аудитории М-307.';
+        !isBookableClassroom(widget.initialRoom)) {
+      _unavailableReason = 'Тестовое бронирование доступно '
+          'только для М-307 и В-308.';
     }
     if (_unavailableReason == null) _load();
   }
@@ -108,7 +110,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
     }
     final date = _date;
     final slot = _slot!;
-    const room = _room;
+    final room = _room;
     setState(() {
       _loading = true;
       _availability = null;
@@ -166,10 +168,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         seat == null || _availability?.mine != null) return;
     final date = _date;
     final slot = _slot!;
-    const room = _room;
+    final room = _room;
     final accepted = await _confirm(
       'Подтвердить место?',
-      '${seat.label}\nАудитория $room · ${_formatDate(date)}\n'
+      '${seat.labelForRoom(room)}\nАудитория $room · ${_formatDate(date)}\n'
           '${_time(slot)}\n\nЭто тестовая бронь CampusApp.',
       'Забронировать',
     );
@@ -184,7 +186,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         _availability = result;
         _selected = null;
       });
-      _notify('Место забронировано: ${seat.label}');
+      _notify('Место забронировано: ${seat.labelForRoom(room)}');
     } on ClassroomBookingException catch (error) {
       _notify(error.message);
       if (error.conflict) await _load();
@@ -200,7 +202,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         _availability?.mine == null) return;
     final date = _date;
     final slot = _slot!;
-    const room = _room;
+    final room = _room;
     final accepted = await _confirm(
       'Отменить бронирование?',
       'Твоё место снова станет доступно другим студентам.',
@@ -301,12 +303,16 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              '3 ряда · 9 парт в ряду · 2 места за партой',
+                              _room == 'В-308'
+                                  ? 'Амфитеатр · 4 ряда по 10 и 6 рядов по 8 мест'
+                                  : '3 ряда · 9 парт в ряду · 2 места за партой',
                               style: TextStyle(color: muted, fontSize: 12),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '54 посадочных места',
+                              _room == 'В-308'
+                                  ? '176 мест · слева и справа от прохода'
+                                  : '54 посадочных места',
                               style: TextStyle(color: muted, fontSize: 12),
                             ),
                           ],
@@ -317,7 +323,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Тестовое бронирование только для М-307. '
+                  'Тестовое бронирование для М-307 и В-308. '
                   'Оно не связано с официальной занятостью '
                   'аудиторий МЭИ.',
                   style: TextStyle(color: muted, fontSize: 12, height: 1.35),
@@ -411,7 +417,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                             fontWeight: FontWeight.w800,
                           )),
                       const Spacer(),
-                      Text('Свободно: ${snapshot.available}/54',
+                      Text('Свободно: ${snapshot.available}/${snapshot.capacity}',
                           key: const ValueKey('booking-free-count'),
                           style: TextStyle(
                             color: muted,
@@ -421,13 +427,22 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  ClassroomSeatMap(
-                    occupied: snapshot.occupied,
-                    mine: mine,
-                    selected: _selected,
-                    disabled: _working,
-                    onSelected: (seat) => setState(() => _selected = seat),
-                  ),
+                  if (_room == 'В-308')
+                    AmphitheaterSeatMap(
+                      occupied: snapshot.occupied,
+                      mine: mine,
+                      selected: _selected,
+                      disabled: _working,
+                      onSelected: (seat) => setState(() => _selected = seat),
+                    )
+                  else
+                    ClassroomSeatMap(
+                      occupied: snapshot.occupied,
+                      mine: mine,
+                      selected: _selected,
+                      disabled: _working,
+                      onSelected: (seat) => setState(() => _selected = seat),
+                    ),
                   const SizedBox(height: 5),
                   if (mine != null) ...[
                     Container(
@@ -442,7 +457,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                               color: ServicePalette.amber),
                           const SizedBox(width: 9),
                           Expanded(
-                            child: Text('Твоя бронь: ${mine.label}',
+                            child: Text('Твоя бронь: ${mine.labelForRoom(_room)}',
                                 style: TextStyle(color: onSurface)),
                           ),
                         ],
@@ -459,7 +474,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                     if (_selected != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
-                        child: Text('Выбрано: ${_selected!.label}',
+                        child: Text('Выбрано: ${_selected!.labelForRoom(_room)}',
                             style: TextStyle(
                               color: onSurface, fontWeight: FontWeight.w700,
                             )),

@@ -23,7 +23,7 @@ class LessonCard extends StatelessWidget {
   final String teacher;
   final VoidCallback? onTap;
   final Widget? footer;
-  /// Compact booking link beside the room, only for eligible M-307 lessons.
+  /// Compact booking link beside the room for configured M-307 / V-308.
   final VoidCallback? onBookSeat;
 
   @override
@@ -102,7 +102,7 @@ class LessonCard extends StatelessWidget {
                 if (onBookSeat != null) ...[
                   const SizedBox(width: 8),
                   TextButton.icon(
-                    key: const ValueKey('schedule-book-m307'),
+                    key: const ValueKey('schedule-book-seat'),
                     onPressed: onBookSeat,
                     icon: const Icon(Icons.event_seat_outlined, size: 16),
                     label: const Text('Выбрать место'),
