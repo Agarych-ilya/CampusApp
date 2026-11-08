@@ -64,19 +64,12 @@ class GroupLessonNotesApi {
   }
 
   Future<List<GroupLessonNote>> list(String group, ScheduleLesson lesson) async {
-    // Recover verified BARS identity silently when available, so the
-    // student's own published notes remain deletable after reopening.
-    if (!ListingsApi.instance.hasSession) {
-      try {
-        await ListingsApi.instance.ensureSession();
-      } catch (_) {
-        // Public group notes stay readable without a BARS session.
-      }
-    }
+    // Group notes are private to the server-verified BARS group.
+    final headers = await ListingsApi.instance.scheduleNotesAuthHeaders();
     final uri = _uri.replace(queryParameters: _params(group, lesson));
     final response = await _client.get(
       uri,
-      headers: ListingsApi.instance.studyReadHeaders,
+      headers: headers,
     ).timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) throw Exception(_error(response));
     final data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -89,7 +82,7 @@ class GroupLessonNotesApi {
     ScheduleLesson lesson,
     String content,
   ) async {
-    final headers = await ListingsApi.instance.studyAuthHeaders();
+    final headers = await ListingsApi.instance.scheduleNotesAuthHeaders(write: true);
     final response = await _client.post(
       _uri,
       headers: {...headers, 'Content-Type': 'application/json'},
@@ -103,7 +96,7 @@ class GroupLessonNotesApi {
   }
 
   Future<void> delete(int id) async {
-    final headers = await ListingsApi.instance.studyAuthHeaders();
+    final headers = await ListingsApi.instance.scheduleNotesAuthHeaders(write: true);
     final response = await _client.delete(
       _uri.replace(path: '${_uri.path}/$id'),
       headers: headers,

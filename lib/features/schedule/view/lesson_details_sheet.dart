@@ -13,52 +13,55 @@ class LessonDetailsSheet extends StatefulWidget {
     required this.group,
     required this.lesson,
     required this.scrollController,
+    this.notesApi,
   });
 
   final String group;
   final ScheduleLesson lesson;
   final ScrollController scrollController;
+  final GroupLessonNotesApi? notesApi;
 
   @override
   State<LessonDetailsSheet> createState() => _LessonDetailsSheetState();
 }
 
 class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
-  final _personalController = TextEditingController();
-  final _sharedController = TextEditingController();
+  final _noteController = TextEditingController();
   final _privateStore = PrivateLessonNotesStorage();
-  final _notesApi = GroupLessonNotesApi();
+  late final GroupLessonNotesApi _notesApi;
   late Future<LessonGradesSummary> _grades;
-  late Future<List<GroupLessonNote>> _shared;
+  Future<List<GroupLessonNote>>? _shared;
+  bool _forGroup = false;
   bool _personalLoading = true;
-  bool _personalSaving = false;
-  bool _sharedSaving = false;
-  bool _deleted = false;
+  bool _saving = false;
+  bool _deleting = false;
+  String _privateDraft = '';
+  String _sharedDraft = '';
 
   @override
   void initState() {
     super.initState();
+    _notesApi = widget.notesApi ?? GroupLessonNotesApi();
     _grades = LessonGradesSummary.load(widget.lesson.subject);
-    _shared = _notesApi.list(widget.group, widget.lesson);
     _loadPersonal();
   }
 
   @override
   void dispose() {
-    _personalController.dispose();
-    _sharedController.dispose();
-    _notesApi.dispose();
+    _noteController.dispose();
+    if (widget.notesApi == null) _notesApi.dispose();
     super.dispose();
   }
 
   Future<void> _loadPersonal() async {
     try {
-      final value = await _privateStore.load(
+      final text = await _privateStore.load(
         group: widget.group,
         lesson: widget.lesson,
       );
       if (!mounted) return;
-      _personalController.text = value;
+      _privateDraft = text;
+      if (!_forGroup) _noteController.text = text;
     } catch (error) {
       _error(error);
     } finally {
@@ -73,50 +76,61 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
     );
   }
 
-  Future<void> _savePersonal() async {
-    if (_personalSaving) return;
-    setState(() => _personalSaving = true);
-    try {
-      await _privateStore.save(
-        group: widget.group,
-        lesson: widget.lesson,
-        content: _personalController.text,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Личная заметка сохранена на устройстве')),
-      );
-    } catch (error) {
-      _error(error);
-    } finally {
-      if (mounted) setState(() => _personalSaving = false);
+  void _switchRecipient(bool toGroup) {
+    if (_saving || _forGroup == toGroup) return;
+    if (_forGroup) {
+      _sharedDraft = _noteController.text;
+    } else {
+      _privateDraft = _noteController.text;
     }
+    setState(() {
+      _forGroup = toGroup;
+      _noteController.text = toGroup ? _sharedDraft : _privateDraft;
+      if (toGroup) {
+        _shared ??= _notesApi.list(widget.group, widget.lesson);
+      }
+    });
   }
 
-  Future<void> _publish() async {
-    final content = _sharedController.text.trim();
-    if (content.isEmpty || _sharedSaving) return;
-    setState(() => _sharedSaving = true);
+  Future<void> _saveNote() async {
+    if (_saving || (_personalLoading && !_forGroup)) return;
+    final content = _noteController.text;
+    if (_forGroup && content.trim().isEmpty) return;
+    setState(() => _saving = true);
     try {
-      await _notesApi.create(widget.group, widget.lesson, content);
-      if (!mounted) return;
-      _sharedController.clear();
-      setState(() {
-        _shared = _notesApi.list(widget.group, widget.lesson);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заметка опубликована для группы')),
-      );
+      if (_forGroup) {
+        await _notesApi.create(widget.group, widget.lesson, content.trim());
+        if (!mounted) return;
+        _sharedDraft = '';
+        _noteController.clear();
+        setState(() {
+          _shared = _notesApi.list(widget.group, widget.lesson);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Заметка опубликована для группы')),
+        );
+      } else {
+        await _privateStore.save(
+          group: widget.group,
+          lesson: widget.lesson,
+          content: content,
+        );
+        if (!mounted) return;
+        _privateDraft = content;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Личная заметка сохранена')),
+        );
+      }
     } catch (error) {
       _error(error);
     } finally {
-      if (mounted) setState(() => _sharedSaving = false);
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   Future<void> _deleteNote(int id) async {
-    if (_deleted) return;
-    setState(() => _deleted = true);
+    if (_deleting) return;
+    setState(() => _deleting = true);
     try {
       await _notesApi.delete(id);
       if (!mounted) return;
@@ -126,8 +140,73 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
     } catch (error) {
       _error(error);
     } finally {
-      if (mounted) setState(() => _deleted = false);
+      if (mounted) setState(() => _deleting = false);
     }
+  }
+
+  Widget _sharedNotes(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<List<GroupLessonNote>>(
+      future: _shared,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Column(
+            children: [
+              const Text(
+                'Заметки группы доступны только студентам '
+                'с подтверждённой группой БАРС.',
+              ),
+              TextButton(
+                onPressed: () => setState(() =>
+                    _shared = _notesApi.list(widget.group, widget.lesson)),
+                child: const Text('Повторить'),
+              ),
+            ],
+          );
+        }
+        final notes = snapshot.data ?? [];
+        if (notes.isEmpty) {
+          return Text('Общих заметок пока нет.',
+              style: theme.textTheme.bodyMedium);
+        }
+        return Column(
+          children: [
+            for (final note in notes)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(note.isMine ? 'Моя запись' : note.author,
+                                style: theme.textTheme.labelMedium),
+                            const SizedBox(height: 6),
+                            Text(note.content),
+                          ],
+                        ),
+                      ),
+                      if (note.isMine)
+                        IconButton(
+                          tooltip: 'Удалить свою заметку',
+                          onPressed: _deleting
+                              ? null : () => _deleteNote(note.id),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _gradesSection(BuildContext context) {
@@ -285,126 +364,71 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
         const SizedBox(height: 12),
         _gradesSection(context),
         const SizedBox(height: 24),
-        Text('Личная заметка',
+        Text('Заметка',
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w800,
             )),
-        const SizedBox(height: 5),
-        Text('Видна только на этом устройстве.',
-            style: theme.textTheme.bodySmall),
         const SizedBox(height: 10),
-        TextField(
-          key: const ValueKey('personal-lesson-note'),
-          controller: _personalController,
-          enabled: !_personalLoading,
-          minLines: 3,
-          maxLines: 6,
-          maxLength: 10000,
-          decoration: const InputDecoration(
-            hintText: 'Домашнее задание, тема, что повторить…',
-            border: OutlineInputBorder(),
-          ),
+        SegmentedButton<bool>(
+          key: const ValueKey('lesson-note-recipient'),
+          segments: const [
+            ButtonSegment<bool>(
+              value: false,
+              label: Text('Для себя'),
+              icon: Icon(Icons.lock_outline),
+            ),
+            ButtonSegment<bool>(
+              value: true,
+              label: Text('Для группы'),
+              icon: Icon(Icons.groups_outlined),
+            ),
+          ],
+          selected: {_forGroup},
+          onSelectionChanged: (values) => _switchRecipient(values.first),
         ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: FilledButton.icon(
-            onPressed: (_personalLoading || _personalSaving)
-                ? null : _savePersonal,
-            icon: const Icon(Icons.save_outlined),
-            label: Text(_personalSaving ? 'Сохранение…' : 'Сохранить'),
-          ),
-        ),
-        const SizedBox(height: 26),
-        Text('Заметки для группы',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            )),
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
         Text(
-          'Их видит любой, кто открывает расписание группы '
-          '«${widget.group}». Не публикуй личные данные.',
+          _forGroup
+              ? 'Заметка будет доступна только студентам группы '
+                '${widget.group}, подтверждённым через БАРС.'
+              : 'Личная заметка видна только на этом устройстве.',
           style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 14),
-        FutureBuilder<List<GroupLessonNote>>(
-          future: _shared,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Column(
-                children: [
-                  Text('Не удалось загрузить общие заметки: ${snapshot.error}'),
-                  TextButton(
-                    onPressed: () => setState(
-                      () => _shared = _notesApi.list(widget.group, widget.lesson),
-                    ),
-                    child: const Text('Повторить'),
-                  ),
-                ],
-              );
-            }
-            final notes = snapshot.data ?? [];
-            if (notes.isEmpty) {
-              return Text('Пока нет общих заметок.',
-                  style: theme.textTheme.bodyMedium);
-            }
-            return Column(
-              children: [
-                for (final note in notes)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(note.isMine ? 'Моя запись' : note.author,
-                                    style: theme.textTheme.labelMedium),
-                                const SizedBox(height: 6),
-                                Text(note.content),
-                              ],
-                            ),
-                          ),
-                          if (note.isMine)
-                            IconButton(
-                              tooltip: 'Удалить свою заметку',
-                              onPressed: _deleted ? null :
-                                  () => _deleteNote(note.id),
-                              icon: const Icon(Icons.delete_outline),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
         ),
         const SizedBox(height: 12),
         TextField(
-          key: const ValueKey('group-lesson-note'),
-          controller: _sharedController,
-          maxLength: 1500,
-          minLines: 2,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: 'Написать для группы…',
-            border: OutlineInputBorder(),
+          key: const ValueKey('lesson-note-composer'),
+          controller: _noteController,
+          enabled: !_saving && (!_personalLoading || _forGroup),
+          minLines: 3,
+          maxLines: 6,
+          maxLength: _forGroup ? 1500 : 10000,
+          decoration: InputDecoration(
+            hintText: _forGroup
+                ? 'Написать сообщение для группы…'
+                : 'Домашнее задание, тема, что повторить…',
+            border: const OutlineInputBorder(),
           ),
         ),
         Align(
           alignment: Alignment.centerRight,
           child: FilledButton.icon(
-            onPressed: _sharedSaving ? null : _publish,
-            icon: const Icon(Icons.send_outlined),
-            label: Text(_sharedSaving ? 'Публикация…' : 'Опубликовать'),
+            key: const ValueKey('lesson-note-save'),
+            onPressed: _saving ? null : _saveNote,
+            icon: Icon(_forGroup ? Icons.send_outlined : Icons.save_outlined),
+            label: Text(_saving
+                ? 'Сохранение…'
+                : _forGroup ? 'Опубликовать' : 'Сохранить'),
           ),
         ),
+        if (_forGroup) ...[
+          const SizedBox(height: 24),
+          Text('Заметки группы',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              )),
+          const SizedBox(height: 12),
+          _sharedNotes(context),
+        ],
       ],
     );
   }

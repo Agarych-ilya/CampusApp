@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:campusapp/features/profile/data/student_grade.dart';
 import 'package:campusapp/features/profile/data/bars_subject.dart';
 import 'package:campusapp/features/schedule/data/lesson_grades_summary.dart';
+import 'package:campusapp/features/schedule/data/lesson_group_access.dart';
+import 'package:campusapp/features/schedule/data/group_lesson_notes_api.dart';
+import 'package:campusapp/features/schedule/view/lesson_details_sheet.dart';
 import 'package:campusapp/features/schedule/data/private_lesson_notes_storage.dart';
 import 'package:campusapp/features/schedule/data/schedule_lesson.dart';
 import 'package:campusapp/features/schedule/widgets/lesson_card.dart';
@@ -113,6 +116,58 @@ void main() {
     expect(stats.gradeCount, 0);
   });
 
+  test('only the profile group unlocks details', () {
+    expect(canOpenOwnLessonDetails(
+      profileGroup: 'А-03-23', viewedGroup: 'A-03-23',
+    ), isTrue);
+    expect(canOpenOwnLessonDetails(
+      profileGroup: 'А-03-23', viewedGroup: 'А-20-24',
+    ), isFalse);
+    expect(canOpenOwnLessonDetails(
+      profileGroup: null, viewedGroup: 'А-03-23',
+    ), isFalse);
+  });
+
+  testWidgets('one note field switches between private and group drafts',
+      (tester) async {
+    final api = _MockGroupLessonNotesApi();
+    final controller = ScrollController();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LessonDetailsSheet(
+          group: 'А-03-23',
+          lesson: first,
+          scrollController: controller,
+          notesApi: api,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final input = find.byKey(const ValueKey('lesson-note-composer'));
+    expect(input, findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.ensureVisible(input);
+    await tester.enterText(input, 'Личный черновик');
+    final toGroup = find.text('Для группы');
+    await tester.ensureVisible(toGroup);
+    await tester.tap(toGroup);
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Опубликовать'), findsOneWidget);
+    await tester.ensureVisible(input);
+    await tester.enterText(input, 'Групповой черновик');
+    final toSelf = find.text('Для себя');
+    await tester.ensureVisible(toSelf);
+    await tester.tap(toSelf);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(input).controller!.text,
+        'Личный черновик');
+    expect(find.text('Сохранить'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
+
   testWidgets('lesson card is tappable', (tester) async {
     var opened = false;
     await tester.pumpWidget(MaterialApp(
@@ -130,4 +185,10 @@ void main() {
     await tester.tap(find.text(first.subject));
     expect(opened, isTrue);
   });
+}
+
+class _MockGroupLessonNotesApi extends GroupLessonNotesApi {
+  @override
+  Future<List<GroupLessonNote>> list(String group, ScheduleLesson lesson) async =>
+      [];
 }

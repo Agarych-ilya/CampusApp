@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
 import '../data/data.dart';
+import '../data/lesson_group_access.dart';
+import '/features/profile/data/student_profile_storage.dart';
 import 'lesson_details_sheet.dart';
 
 class ScheduleScreen extends StatefulWidget {
@@ -27,6 +29,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   final Map<int, Future<List<ScheduleLesson>>> _weekFutures = {};
 
   String? _groupName;
+  String? _profileGroup;
   String? _initializationError;
   bool _isInitializing = true;
   bool _changingGroup = false;
@@ -55,6 +58,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _initialize() async {
     try {
       final group = await _groupStorage.getScheduleGroup();
+      final profile = await StudentProfileStorage().getProfile();
       if (group == null || group.isEmpty) {
         throw StateError(
           'Учебная группа не найдена. Войди через БАРС, '
@@ -64,6 +68,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       if (!mounted) return;
       setState(() {
         _groupName = group;
+        _profileGroup = profile?.group;
         _initializationError = null;
         _isInitializing = false;
         _weekFutures.clear();
@@ -256,7 +261,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Future<void> _openLessonDetails(ScheduleLesson lesson) async {
     final group = _groupName;
-    if (group == null || group.isEmpty) return;
+    final profile = await StudentProfileStorage().getProfile();
+    if (!mounted || !canOpenOwnLessonDetails(
+      profileGroup: profile?.group,
+      viewedGroup: group,
+    )) {
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -286,6 +297,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       builder: (context, snapshot) {
         final all = snapshot.data ?? const <ScheduleLesson>[];
         final todayLessons = _lessonsForDay(all, date);
+        final isOwnGroup = canOpenOwnLessonDetails(
+          profileGroup: _profileGroup,
+          viewedGroup: _groupName,
+        );
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,9 +399,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                         ],
                                       ),
                                     ),
+                                  if (!isOwnGroup)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: Text(
+                                        'Подробности и заметки доступны только '
+                                        'для группы из твоего профиля.',
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                    ),
                                   for (final lesson in todayLessons)
                                     LessonCard(
-                                      onTap: () => _openLessonDetails(lesson),
+                                      onTap: isOwnGroup
+                                          ? () => _openLessonDetails(lesson)
+                                          : null,
                                       time: lesson.time,
                                       subject: lesson.subject,
                                       type: lesson.type,

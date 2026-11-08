@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:campusapp/features/schedule/data/group_storage.dart';
 import 'package:campusapp/features/schedule/data/schedule_api.dart';
 import 'package:campusapp/features/schedule/view/schedule_screen.dart';
+import 'package:campusapp/features/profile/data/student_profile_storage.dart';
+import 'package:campusapp/features/profile/data/student_profile.dart';
 import 'package:campusapp/features/schedule/data/lesson_kind.dart';
 import 'package:campusapp/features/schedule/data/schedule_lesson.dart';
 import 'package:campusapp/features/schedule/widgets/lesson_card.dart';
@@ -177,6 +179,34 @@ void main() {
     expect(api.requestedGroups, contains('А-04-23'));
     expect(await GroupStorage().getScheduleGroup(), 'А-04-23');
     expect(await GroupStorage().getGroup(), 'А-03-23');
+  });
+
+  testWidgets('another group stays visible but lesson details stay closed',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    await GroupStorage().saveScheduleGroup('А-04-23');
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-04-23'), findsWidgets);
+    await tester.tap(find.text('Занятие А-04-23').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Мои оценки по предмету'), findsNothing);
+    expect(find.textContaining('Подробности и заметки доступны только'),
+        findsWidgets);
   });
 
   test('choosing a timetable group does not change BARS group', () async {
