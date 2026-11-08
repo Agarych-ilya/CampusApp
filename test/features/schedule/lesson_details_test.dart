@@ -6,6 +6,8 @@ import 'package:campusapp/features/profile/data/student_grade.dart';
 import 'package:campusapp/features/profile/data/bars_subject.dart';
 import 'package:campusapp/features/schedule/data/lesson_grades_summary.dart';
 import 'package:campusapp/features/schedule/data/lesson_group_access.dart';
+import 'package:campusapp/features/schedule/data/own_lesson_note_preview_storage.dart';
+import 'package:campusapp/features/schedule/widgets/lesson_note_preview.dart';
 import 'package:campusapp/features/schedule/data/group_lesson_notes_api.dart';
 import 'package:campusapp/features/schedule/view/lesson_details_sheet.dart';
 import 'package:campusapp/features/schedule/data/private_lesson_notes_storage.dart';
@@ -166,6 +168,81 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
     api.dispose();
+  });
+
+  test('saved group preview is independent of private note and group', () async {
+    final storage = OwnLessonNotePreviewStorage();
+    await PrivateLessonNotesStorage().save(
+      group: 'А-03-23', lesson: first, content: 'Личное ДЗ',
+    );
+    await storage.savePublished(
+      group: 'А-03-23', lesson: first, content: 'Принести отчёт',
+    );
+    final firstRead = await OwnLessonNotePreviewStorage().load(
+      group: 'А-03-23', lesson: first,
+    );
+    expect(firstRead.personal, 'Личное ДЗ');
+    expect(firstRead.published, 'Принести отчёт');
+    expect((await storage.load(group: 'А-04-23', lesson: first)).isEmpty, isTrue);
+    expect((await storage.load(group: 'А-03-23', lesson: second)).isEmpty, isTrue);
+    await storage.savePublished(
+      group: 'А-03-23', lesson: first, content: '',
+    );
+    expect((await storage.load(group: 'А-03-23', lesson: first)).published,
+        isEmpty);
+    expect((await storage.load(group: 'А-03-23', lesson: first)).personal,
+        'Личное ДЗ');
+  });
+
+  testWidgets('card preview appears after save and disappears after clearing',
+      (tester) async {
+    final storage = OwnLessonNotePreviewStorage();
+    Future<void> show(int revision) => tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: LessonCard(
+          time: first.time,
+          subject: first.subject,
+          type: first.type,
+          room: first.room,
+          teacher: first.teacher,
+          footer: LessonNotePreview(
+            group: 'А-03-23',
+            lesson: first,
+            revision: revision,
+          ),
+        ),
+      ),
+    ));
+    await show(0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
+
+    await PrivateLessonNotesStorage().save(
+      group: 'А-03-23', lesson: first, content: 'Повторить тему',
+    );
+    await show(1);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsOneWidget);
+    expect(find.textContaining('Повторить тему', findRichText: true),
+        findsOneWidget);
+
+    await storage.savePublished(
+      group: 'А-03-23', lesson: first, content: 'Конспект группе',
+    );
+    await show(2);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Конспект группе', findRichText: true),
+        findsOneWidget);
+
+    await PrivateLessonNotesStorage().save(
+      group: 'А-03-23', lesson: first, content: '',
+    );
+    await storage.savePublished(
+      group: 'А-03-23', lesson: first, content: '',
+    );
+    await show(3);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
   });
 
   testWidgets('lesson card is tappable', (tester) async {

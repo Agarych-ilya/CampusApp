@@ -4,6 +4,8 @@ import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
 import '../data/data.dart';
 import '../data/lesson_group_access.dart';
+import '../data/semester_week.dart';
+import '../widgets/lesson_note_preview.dart';
 import '/features/profile/data/student_profile_storage.dart';
 import 'lesson_details_sheet.dart';
 
@@ -33,6 +35,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _initializationError;
   bool _isInitializing = true;
   bool _changingGroup = false;
+  int _notesRevision = 0;
   late DateTime _selectedDate;
   late DateTime _anchorWeek;
   late PageController _weekController;
@@ -283,9 +286,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           group: group,
           lesson: lesson,
           scrollController: controller,
+          onNotesChanged: () {
+            if (mounted) setState(() => _notesRevision++);
+          },
         ),
       ),
     );
+    // Changes made in the modal are visible on the underlying cards.
+    if (mounted) setState(() => _notesRevision++);
   }
 
   Widget _weekPage(BuildContext context, int page) {
@@ -315,37 +323,62 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             const SizedBox(height: 13),
             Row(
               children: [
-                Text(
-                  _formatSelectedDate(date),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.62),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _formatSelectedDate(date),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.62),
+                      ),
+                    ),
                   ),
                 ),
-                const Spacer(),
-                if (_changingGroup)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                Text(
+                  semesterWeekLabel(date),
+                  key: const ValueKey('schedule-semester-week'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                TextButton.icon(
-                  key: const ValueKey('schedule-group-search'),
-                  onPressed: _changingGroup ? null : _chooseGroup,
-                  icon: const Icon(Icons.search_rounded, size: 18),
-                  label: Text(
-                    _groupName ?? 'Выбрать группу',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 7,
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_changingGroup)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: SizedBox(
+                              height: 14,
+                              width: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        Flexible(
+                          child: TextButton.icon(
+                            key: const ValueKey('schedule-group-search'),
+                            onPressed: _changingGroup ? null : _chooseGroup,
+                            icon: const Icon(Icons.search_rounded, size: 17),
+                            label: Text(
+                              _groupName ?? 'Группа',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 7,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ],
@@ -404,6 +437,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                     LessonCard(
                                       onTap: isOwnGroup
                                           ? () => _openLessonDetails(lesson)
+                                          : null,
+                                      footer: isOwnGroup && _groupName != null
+                                          ? LessonNotePreview(
+                                              group: _groupName!,
+                                              lesson: lesson,
+                                              revision: _notesRevision,
+                                            )
                                           : null,
                                       time: lesson.time,
                                       subject: lesson.subject,

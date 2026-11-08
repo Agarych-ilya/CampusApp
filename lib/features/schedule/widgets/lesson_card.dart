@@ -12,6 +12,7 @@ class LessonCard extends StatelessWidget {
     required this.room,
     required this.teacher,
     this.onTap,
+    this.footer,
   });
 
   final String time;
@@ -20,6 +21,7 @@ class LessonCard extends StatelessWidget {
   final String room;
   final String teacher;
   final VoidCallback? onTap;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +97,7 @@ class LessonCard extends StatelessWidget {
               ),
             ),
           ],
+          if (footer != null) footer!,
         ],
       ),
       ),

@@ -4,6 +4,7 @@ import '../data/group_lesson_notes_api.dart';
 import '../data/lesson_grades_summary.dart';
 import '../data/lesson_kind.dart';
 import '../data/private_lesson_notes_storage.dart';
+import '../data/own_lesson_note_preview_storage.dart';
 import '../data/schedule_lesson.dart';
 
 /// A bottom-sheet opened from a timetable lesson.
@@ -14,12 +15,14 @@ class LessonDetailsSheet extends StatefulWidget {
     required this.lesson,
     required this.scrollController,
     this.notesApi,
+    this.onNotesChanged,
   });
 
   final String group;
   final ScheduleLesson lesson;
   final ScrollController scrollController;
   final GroupLessonNotesApi? notesApi;
+  final VoidCallback? onNotesChanged;
 
   @override
   State<LessonDetailsSheet> createState() => _LessonDetailsSheetState();
@@ -28,6 +31,7 @@ class LessonDetailsSheet extends StatefulWidget {
 class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
   final _noteController = TextEditingController();
   final _privateStore = PrivateLessonNotesStorage();
+  final _previewStore = OwnLessonNotePreviewStorage();
   late final GroupLessonNotesApi _notesApi;
   late Future<LessonGradesSummary> _grades;
   Future<List<GroupLessonNote>>? _shared;
@@ -51,6 +55,20 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
     _noteController.dispose();
     if (widget.notesApi == null) _notesApi.dispose();
     super.dispose();
+  }
+
+  /// Synchronize the local card preview after reading actual server notes.
+  Future<List<GroupLessonNote>> _loadSharedNotes() async {
+    final notes = await _notesApi.list(widget.group, widget.lesson);
+    final own = notes.where((note) => note.isMine).toList();
+    final last = own.isEmpty ? '' : own.first.content;
+    await _previewStore.savePublished(
+      group: widget.group,
+      lesson: widget.lesson,
+      content: last,
+    );
+    widget.onNotesChanged?.call();
+    return notes;
   }
 
   Future<void> _loadPersonal() async {
@@ -87,7 +105,7 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
       _forGroup = toGroup;
       _noteController.text = toGroup ? _sharedDraft : _privateDraft;
       if (toGroup) {
-        _shared ??= _notesApi.list(widget.group, widget.lesson);
+        _shared ??= _loadSharedNotes();
       }
     });
   }
@@ -100,11 +118,18 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
     try {
       if (_forGroup) {
         await _notesApi.create(widget.group, widget.lesson, content.trim());
+        // Server owns the note; the device keeps a quick own-note preview.
+        await _previewStore.savePublished(
+          group: widget.group,
+          lesson: widget.lesson,
+          content: content.trim(),
+        );
         if (!mounted) return;
+        widget.onNotesChanged?.call();
         _sharedDraft = '';
         _noteController.clear();
         setState(() {
-          _shared = _notesApi.list(widget.group, widget.lesson);
+          _shared = _loadSharedNotes();
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Заметка опубликована для группы')),
@@ -117,6 +142,7 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
         );
         if (!mounted) return;
         _privateDraft = content;
+        widget.onNotesChanged?.call();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Личная заметка сохранена')),
         );
@@ -133,9 +159,11 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
     setState(() => _deleting = true);
     try {
       await _notesApi.delete(id);
+      // Fetch the remaining own notes before updating the card's preview.
+      final refreshed = await _loadSharedNotes();
       if (!mounted) return;
       setState(() {
-        _shared = _notesApi.list(widget.group, widget.lesson);
+        _shared = Future.value(refreshed);
       });
     } catch (error) {
       _error(error);
@@ -161,7 +189,7 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
               ),
               TextButton(
                 onPressed: () => setState(() =>
-                    _shared = _notesApi.list(widget.group, widget.lesson)),
+                    _shared = _loadSharedNotes()),
                 child: const Text('Повторить'),
               ),
             ],

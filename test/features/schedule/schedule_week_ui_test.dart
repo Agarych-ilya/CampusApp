@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/schedule/data/group_storage.dart';
+import 'package:campusapp/features/schedule/data/semester_week.dart';
+import 'package:campusapp/features/schedule/data/private_lesson_notes_storage.dart';
 import 'package:campusapp/features/schedule/data/schedule_api.dart';
 import 'package:campusapp/features/schedule/view/schedule_screen.dart';
 import 'package:campusapp/features/profile/data/student_profile_storage.dart';
@@ -14,6 +16,14 @@ import 'package:campusapp/features/schedule/widgets/week_days_row.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('teaching week follows the semester, not the ISO year', () {
+    expect(semesterWeekNumber(DateTime(2026, 9, 1)), 1);
+    expect(semesterWeekNumber(DateTime(2026, 11, 3)), 10);
+    expect(semesterWeekLabel(DateTime(2026, 11, 3)), '10 неделя');
+    expect(semesterWeekNumber(DateTime(2027, 2, 1)), 1);
+    expect(semesterWeekNumber(DateTime(2027, 3, 1)), 5);
+  });
 
   test('lesson type determines green/yellow/red/gray colors', () {
     expect(lessonKind('Лекция'), LessonKind.lecture);
@@ -153,6 +163,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Занятие А-03-23'), findsWidgets);
+    expect(find.byKey(const ValueKey('schedule-semester-week')), findsOneWidget);
     final groupFinder = find.byKey(const ValueKey('schedule-group-search'));
     expect(groupFinder, findsOneWidget);
     final today = DateTime.now();
@@ -206,7 +217,48 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Мои оценки по предмету'), findsNothing);
     expect(find.textContaining('Подробности и заметки доступны только'),
-        findsWidgets);
+        findsNothing);
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
+  });
+
+  testWidgets('my lesson shows a saved private note under the lesson',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    final date = DateTime.now();
+    final dd = date.day.toString().padLeft(2, '0');
+    final mm = date.month.toString().padLeft(2, '0');
+    final lesson = ScheduleLesson(
+      date: '$dd.$mm.${date.year}',
+      time: '09:20 - 10:55',
+      subject: 'Занятие А-03-23',
+      type: 'Лекция',
+      room: 'С-409',
+      teacher: 'Преподаватель',
+    );
+    await PrivateLessonNotesStorage().save(
+      group: 'А-03-23',
+      lesson: lesson,
+      content: 'Сделать лабораторную',
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsOneWidget);
+    expect(find.textContaining('Сделать лабораторную', findRichText: true),
+        findsOneWidget);
   });
 
   test('choosing a timetable group does not change BARS group', () async {
