@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../widgets/widgets.dart';
 import '/core/theme/app_theme.dart';
 import '../data/data.dart';
+import 'lesson_details_sheet.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({
@@ -253,6 +254,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return filtered;
   }
 
+  Future<void> _openLessonDetails(ScheduleLesson lesson) async {
+    final group = _groupName;
+    if (group == null || group.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.9,
+        minChildSize: 0.55,
+        maxChildSize: 0.97,
+        builder: (context, controller) => LessonDetailsSheet(
+          group: group,
+          lesson: lesson,
+          scrollController: controller,
+        ),
+      ),
+    );
+  }
+
   Widget _weekPage(BuildContext context, int page) {
     final theme = Theme.of(context);
     final date = _dateForPage(page);
@@ -363,6 +386,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                     ),
                                   for (final lesson in todayLessons)
                                     LessonCard(
+                                      onTap: () => _openLessonDetails(lesson),
                                       time: lesson.time,
                                       subject: lesson.subject,
                                       type: lesson.type,

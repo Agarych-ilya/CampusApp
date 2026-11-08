@@ -11,6 +11,7 @@ class LessonCard extends StatelessWidget {
     required this.type,
     required this.room,
     required this.teacher,
+    this.onTap,
   });
 
   final String time;
@@ -18,6 +19,7 @@ class LessonCard extends StatelessWidget {
   final String type;
   final String room;
   final String teacher;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +27,10 @@ class LessonCard extends StatelessWidget {
     final kind = lessonKind(type, subject: subject);
     final accent = lessonKindColor(kind);
 
-    return Container(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       decoration: BoxDecoration(
@@ -91,6 +96,7 @@ class LessonCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
       ),
     );
   }
