@@ -122,7 +122,7 @@ void main() {
     expect(picked, const ClassroomSeat(row: 5, desk: 8, seat: 2));
   });
 
-  testWidgets('В-308 fits narrow phones without clipped seats or overflow',
+  testWidgets('В-308 shows both curved banks at once on narrow phones',
       (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
@@ -131,7 +131,6 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    ClassroomSeat? picked;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
@@ -139,41 +138,50 @@ void main() {
             occupied: const {},
             mine: null,
             selected: null,
-            onSelected: (seat) => picked = seat,
+            onSelected: (_) {},
           ),
         ),
       ),
     ));
     expect(tester.takeException(), isNull);
 
-    // The left side is fully rendered: all ten places in a red row.
+    // Both banks exist simultaneously; no sector switching or missing places.
+    expect(find.byKey(const ValueKey('room-seat-1-10-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-1-10-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-5-8-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-5-8-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-5-9-1')), findsNothing);
+    expect(find.byKey(const ValueKey('room-seat-5-9-2')), findsNothing);
+    expect(find.byType(InkWell), findsNWidgets(176));
+    expect(find.byKey(const ValueKey('amphitheater-viewport')),
+        findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(find.byKey(const ValueKey('amphitheater-side-left')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('amphitheater-side-right')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('room-seat-1-10-1')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('room-seat-1-10-2')),
-        findsNothing);
-    expect(find.byKey(const ValueKey('room-seat-5-8-1')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('room-seat-5-9-1')),
         findsNothing);
 
-    await tester.tap(find.byKey(
-      const ValueKey('amphitheater-side-right'),
-    ));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(find.byKey(const ValueKey('room-seat-1-10-1')),
-        findsNothing);
-    expect(find.byKey(const ValueKey('room-seat-1-10-2')),
-        findsOneWidget);
+    // Rows are actually curved: the edge of the bank is lower
+    // than the middle of the same tier.
+    final edge = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-1-10-1')),
+    );
+    final middle = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-1-5-1')),
+    );
+    expect(edge.dy, greaterThan(middle.dy));
 
-    final seat = find.byKey(const ValueKey('room-seat-5-8-2'));
-    await tester.ensureVisible(seat);
-    await tester.tap(seat);
-    expect(picked, const ClassroomSeat(row: 5, desk: 8, seat: 2));
+    final viewer = tester.widget<InteractiveViewer>(
+      find.byType(InteractiveViewer),
+    );
+    final controller = viewer.transformationController!;
+    final originalScale = controller.value.getMaxScaleOnAxis();
+    await tester.tap(find.byKey(const ValueKey('amphitheater-zoom-in')));
+    await tester.pump();
+    expect(controller.value.getMaxScaleOnAxis(),
+        greaterThan(originalScale));
+    await tester.tap(find.byKey(const ValueKey('amphitheater-show-all')));
+    await tester.pump();
+    expect(controller.value.getMaxScaleOnAxis(),
+        closeTo(originalScale, 0.0001));
     expect(tester.takeException(), isNull);
   });
 
