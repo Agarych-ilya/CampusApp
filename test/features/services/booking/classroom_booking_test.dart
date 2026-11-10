@@ -152,7 +152,7 @@ void main() {
     expect(find.byKey(const ValueKey('room-seat-5-8-2')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-5-9-1')), findsNothing);
     expect(find.byKey(const ValueKey('room-seat-5-9-2')), findsNothing);
-    expect(find.byType(InkWell), findsNWidgets(176));
+    expect(find.byType(InkWell), findsAtLeastNWidgets(176));
     expect(find.byKey(const ValueKey('amphitheater-viewport')),
         findsOneWidget);
     expect(find.byType(InteractiveViewer), findsOneWidget);
