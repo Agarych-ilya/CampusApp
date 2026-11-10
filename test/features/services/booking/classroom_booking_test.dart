@@ -122,6 +122,61 @@ void main() {
     expect(picked, const ClassroomSeat(row: 5, desk: 8, seat: 2));
   });
 
+  testWidgets('В-308 fits narrow phones without clipped seats or overflow',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    ClassroomSeat? picked;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: AmphitheaterSeatMap(
+            occupied: const {},
+            mine: null,
+            selected: null,
+            onSelected: (seat) => picked = seat,
+          ),
+        ),
+      ),
+    ));
+    expect(tester.takeException(), isNull);
+
+    // The left side is fully rendered: all ten places in a red row.
+    expect(find.byKey(const ValueKey('amphitheater-side-left')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-side-right')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-1-10-1')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-1-10-2')),
+        findsNothing);
+    expect(find.byKey(const ValueKey('room-seat-5-8-1')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-5-9-1')),
+        findsNothing);
+
+    await tester.tap(find.byKey(
+      const ValueKey('amphitheater-side-right'),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('room-seat-1-10-1')),
+        findsNothing);
+    expect(find.byKey(const ValueKey('room-seat-1-10-2')),
+        findsOneWidget);
+
+    final seat = find.byKey(const ValueKey('room-seat-5-8-2'));
+    await tester.ensureVisible(seat);
+    await tester.tap(seat);
+    expect(picked, const ClassroomSeat(row: 5, desk: 8, seat: 2));
+    expect(tester.takeException(), isNull);
+  });
+
   test('availability identifies full seats, reserved seats and mine', () {
     final data = ClassroomAvailability.fromJson({
       'room': 'М-307',
