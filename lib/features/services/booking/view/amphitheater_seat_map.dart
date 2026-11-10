@@ -109,7 +109,7 @@ class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
                       '${place.desk}',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: math.min(seatWidth * 0.46, 12),
+                        fontSize: math.min(seatWidth * 0.46, 12.0),
                         fontWeight: FontWeight.w700,
                       ),
                     )
