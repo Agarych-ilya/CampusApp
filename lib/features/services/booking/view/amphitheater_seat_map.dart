@@ -47,8 +47,11 @@ class _AuditoriumGeometry {
   static double rowTop(int row) =>
       98.0 + (row - 1) * 63.0 + (row >= 5 ? 26.0 : 0.0);
 
-  static double x(int side, int index) =>
-      (side == 1 ? left : right) + index * seatStep;
+  // Shorter blue rows retract toward the outside walls, not away from
+  // the central aisle. Their inner-most seats align with the red rows.
+  static double x(int side, int index, int count) =>
+      (side == 1 ? left + (10 - count) * seatStep : right) +
+      index * seatStep;
 
   static double arcOffset(int index, int count) {
     final middle = (count - 1) / 2;
@@ -75,9 +78,9 @@ class _CurvedRowGuides extends CustomPainter {
         ..style = PaintingStyle.stroke;
 
       for (var side = 1; side <= 2; side++) {
-        final first = _AuditoriumGeometry.x(side, 0) +
+        final first = _AuditoriumGeometry.x(side, 0, count) +
             _AuditoriumGeometry.seatWidth / 2;
-        final last = _AuditoriumGeometry.x(side, count - 1) +
+        final last = _AuditoriumGeometry.x(side, count - 1, count) +
             _AuditoriumGeometry.seatWidth / 2;
         final path = Path()
           ..moveTo(first, y + _AuditoriumGeometry.arcDepth)
@@ -189,7 +192,7 @@ class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
     final t = (index - (count - 1) / 2) / ((count - 1) / 2);
 
     return Positioned(
-      left: _AuditoriumGeometry.x(place.seat, index),
+      left: _AuditoriumGeometry.x(place.seat, index, count),
       top: _AuditoriumGeometry.rowTop(place.row) +
           _AuditoriumGeometry.arcOffset(index, count),
       child: Transform.rotate(
