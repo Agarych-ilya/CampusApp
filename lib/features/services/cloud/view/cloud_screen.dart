@@ -417,13 +417,13 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _save(CloudFile file) async {
     await _perform(
       () => _api.saveFile(file.id),
-      '«${file.name}» сохранён в «Мои файлы»',
+      '«${file.name}» сохранён в твою библиотеку',
     );
   }
 
   Future<void> _removeSaved(CloudFile file) async {
     await _perform(
-      () => _api.unsaveFile(file.id), 'Убрано из моих файлов',
+      () => _api.unsaveFile(file.id), 'Убрано из библиотеки',
     );
   }
 
@@ -1200,7 +1200,7 @@ class _CloudScreenState extends State<CloudScreen> {
                     const SizedBox(height: 7),
                     Text(_isSearching
                         ? 'Попробуй другое название'
-                        : 'Загрузи файл или найди учебные материалы в «Общем»',
+                        : 'Загрузи файл или найди доступные учебные материалы',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: colors.onSurfaceVariant)),
                   ]),
