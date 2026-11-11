@@ -121,7 +121,7 @@ class _ServerRoomSeatMapState extends State<ServerRoomSeatMap> {
       child: Transform.rotate(
         angle: position.rotation,
         child: Semantics(
-          label: '${seat.labelForRoom(widget.layout.room)}, $status',
+          label: '${position.label.isNotEmpty ? position.label : seat.labelForRoom(widget.layout.room)}, $status',
           button: true,
           enabled: available,
           selected: own || selected,
