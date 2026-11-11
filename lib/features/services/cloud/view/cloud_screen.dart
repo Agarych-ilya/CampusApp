@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '/features/services/style/service_palette.dart';
 import '../data/cloud_api.dart';
@@ -323,11 +324,19 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _deleteFile(CloudFile file) async {
     final confirmed = await _confirm(
       'Удалить навсегда?',
-      '«${file.name}» будет удалён с сервера и исчезнет '
-      'из сохранённого у других студентов.',
+      file.local
+          ? '«${file.name}» будет удалён с этого устройства без восстановления.'
+          : '«${file.name}» будет удалён с сервера и исчезнет '
+              'из сохранённого у других студентов.',
     );
     if (!confirmed) return;
-    await _perform(() => _api.deleteFile(file.id), 'Файл удалён');
+    await _perform(() async {
+      if (file.local) {
+        await _local.deleteFile(file);
+      } else {
+        await _api.deleteFile(file.id);
+      }
+    }, 'Файл удалён');
   }
 
   Future<void> _deleteFolder(CloudFolder folder) async {
@@ -338,12 +347,49 @@ class _CloudScreenState extends State<CloudScreen> {
     )) {
       return;
     }
-    await _perform(() => _api.deleteFolder(folder.id), 'Папка удалена');
+    await _perform(() async {
+      if (folder.local) {
+        await _local.deleteFolder(folder.id);
+      } else {
+        await _api.deleteFolder(folder.id);
+      }
+    }, 'Папка удалена');
   }
 
   Future<void> _changeScope(CloudFile file) async {
     final access = await _pickVisibility(current: file.visibility);
-    if (access == null || access == file.visibility) return;
+    if (!mounted || access == null ||
+        (access == file.visibility && !file.local)) return;
+
+    if (file.local && access == CloudVisibility.private) return;
+    if (file.local) {
+      if (!await _confirm(
+        'Опубликовать файл?',
+        '«${file.name}» будет загружен с устройства на сервер CampusApp. '
+        'Локальный оригинал останется на устройстве.',
+      )) return;
+      await _perform(() => _api.uploadFile(
+        file.localPath!, visibility: access,
+      ), 'Копия файла загружена на сервер');
+      return;
+    }
+    if (access == CloudVisibility.private) {
+      if (!await _confirm(
+        'Переместить на устройство?',
+        'Файл будет скачан на телефон и удалён с сервера CampusApp. '
+        'Все ссылки и сохранения других студентов перестанут работать.',
+      )) return;
+      await _perform(() async {
+        final temporary = await _api.downloadToTemporary(file);
+        try {
+          await _local.saveFile(temporary.path, name: file.name);
+          await _api.deleteFile(file.id);
+        } finally {
+          if (await temporary.exists()) await temporary.delete();
+        }
+      }, 'Файл теперь хранится только на устройстве');
+      return;
+    }
     await _perform(
       () => _api.changeVisibility(file.id, access),
       'Доступ: ${access.label.toLowerCase()}',
@@ -386,7 +432,10 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Future<void> _moveFile(CloudFile file) async {
     try {
-      final folders = await _api.getFolders();
+      final folders = file.local
+          ? await _local.folders()
+          : (await _api.getFolders(mode: 'mine'))
+              .where((folder) => folder.mine).toList();
       if (!mounted) return;
       const root = -1;
       final selection = await showModalBottomSheet<int>(
@@ -417,12 +466,17 @@ class _CloudScreenState extends State<CloudScreen> {
         ),
       );
       if (!mounted || selection == null) return;
-      await _perform(
-        () => _api.moveFile(
-          file.id, folderId: selection == root ? null : selection,
-        ),
-        'Файл перемещён',
-      );
+      await _perform(() async {
+        if (file.local) {
+          await _local.moveFile(
+            file.id, selection == root ? null : selection,
+          );
+        } else {
+          await _api.moveFile(
+            file.id, folderId: selection == root ? null : selection,
+          );
+        }
+      }, 'Файл перемещён');
     } catch (error) {
       _message(_cleanError(error), error: true);
     }
@@ -430,7 +484,7 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Future<void> _openFile(CloudFile file) async {
     if (!file.available) {
-      _message('Файл недоступен на сервере', error: true);
+      _message('Файл отсутствует в хранилище', error: true);
       return;
     }
     if (file.image) {
@@ -455,7 +509,9 @@ class _CloudScreenState extends State<CloudScreen> {
                   maxHeight: MediaQuery.sizeOf(context).height * 0.65,
                 ),
                 child: FutureBuilder<Uint8List>(
-                  future: _api.previewBytes(file),
+                  future: file.local
+                      ? File(file.localPath!).readAsBytes()
+                      : _api.previewBytes(file),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return Padding(
@@ -505,7 +561,14 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _download(CloudFile file) async {
     _message('Открываем «${file.name}»…');
     try {
-      await _api.downloadAndOpenFile(file);
+      if (file.local) {
+        final result = await OpenFilex.open(file.localPath!);
+        if (result.type != ResultType.done) {
+          throw Exception('Не удалось открыть файл: ${result.message}');
+        }
+      } else {
+        await _api.downloadAndOpenFile(file);
+      }
     } catch (error) {
       _message(_cleanError(error), error: true);
     }
@@ -558,7 +621,7 @@ class _CloudScreenState extends State<CloudScreen> {
   static String _scopeDescription(CloudVisibility visibility) {
     switch (visibility) {
       case CloudVisibility.private:
-        return 'Видно только тебе';
+        return 'Только на этом устройстве · не загружается на сервер';
       case CloudVisibility.group:
         return 'Доступно студентам твоей группы БАРС';
       case CloudVisibility.public:
@@ -594,16 +657,22 @@ class _CloudScreenState extends State<CloudScreen> {
     }
   }
 
-  Widget _scopeTag(CloudVisibility visibility, {String? group}) {
+  Widget _scopeTag(CloudVisibility visibility, {
+    String? group, bool local = false,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(_scopeIcon(visibility), size: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant),
         const SizedBox(width: 3),
-        Text(visibility == CloudVisibility.group &&
-                group != null && group.isNotEmpty
-            ? group : visibility.label, style: TextStyle(
+        Text(local
+            ? 'На устройстве'
+            : (visibility == CloudVisibility.private
+                ? 'Личное · на сервере (ранее)'
+                : visibility == CloudVisibility.group &&
+                        group != null && group.isNotEmpty
+                    ? group : visibility.label), style: TextStyle(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 11,
         )),
@@ -661,7 +730,8 @@ class _CloudScreenState extends State<CloudScreen> {
                     maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
-                _scopeTag(folder.visibility, group: folder.group),
+                _scopeTag(folder.visibility, group: folder.group,
+                    local: folder.local),
               ],
             ),
           ),
@@ -704,7 +774,8 @@ class _CloudScreenState extends State<CloudScreen> {
                         color: colors.onSurfaceVariant, fontSize: 12,
                       )),
                       const SizedBox(height: 4),
-                      _scopeTag(file.visibility, group: file.group),
+                      _scopeTag(file.visibility, group: file.group,
+                          local: file.local),
                     ],
                   ),
                 ),
@@ -744,15 +815,20 @@ class _CloudScreenState extends State<CloudScreen> {
                         value: 'move', child: Text('Переместить в папку'),
                       ),
                     if (file.mine) ...[
-                      const PopupMenuItem(
-                        value: 'scope', child: Text('Настроить доступ'),
+                      PopupMenuItem(
+                        value: 'scope',
+                        child: Text(file.local
+                            ? 'Загрузить в общее облако'
+                            : 'Настроить доступ'),
                       ),
-                      const PopupMenuItem(
-                        value: 'link', child: Text('Скопировать ссылку'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'revoke', child: Text('Отозвать ссылку'),
-                      ),
+                      if (!file.local) ...[
+                        const PopupMenuItem(
+                          value: 'link', child: Text('Скопировать ссылку'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'revoke', child: Text('Отозвать ссылку'),
+                        ),
+                      ],
                       const PopupMenuItem(
                         value: 'delete',
                         child: Text('Удалить навсегда',
