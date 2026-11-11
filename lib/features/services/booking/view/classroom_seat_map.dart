@@ -72,12 +72,33 @@ class ClassroomSeatMap extends StatelessWidget {
       key: ValueKey('room-desk-$row-$desk'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        Stack(
+          clipBehavior: Clip.none,
           children: [
-            _seat(ClassroomSeat(row: row, desk: desk, seat: 1)),
-            const SizedBox(width: 3),
-            _seat(ClassroomSeat(row: row, desk: desk, seat: 2)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _seat(ClassroomSeat(row: row, desk: desk, seat: 1)),
+                const SizedBox(width: 3),
+                _seat(ClassroomSeat(row: row, desk: desk, seat: 2)),
+              ],
+            ),
+            if (row == 3 && (desk == 6 || desk == 8))
+              Positioned(
+                right: -20,
+                top: 4,
+                child: Tooltip(
+                  message: 'Розетка справа от парты $desk, ряд 3',
+                  child: Icon(
+                    Icons.power_outlined,
+                    key: ValueKey('room-outlet-3-$desk-2'),
+                    size: 17,
+                    color: const Color(0xFFF0BF78),
+                    semanticLabel:
+                        'Розетка рядом с правым местом парты $desk',
+                  ),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 4),
