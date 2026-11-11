@@ -85,6 +85,7 @@ class _CloudScreenState extends State<CloudScreen> {
 
       var remoteFiles = <CloudFile>[];
       var remoteFolders = <CloudFolder>[];
+      final pendingServerIds = await _local.pendingServerFolderIds();
       String? remoteError;
       try {
         if (folder?.local != true) {
@@ -95,7 +96,11 @@ class _CloudScreenState extends State<CloudScreen> {
           );
         }
         if (folder == null) {
-          remoteFolders = await _api.getFolders(mode: 'all', query: q);
+          remoteFolders = (await _api.getFolders(mode: 'all', query: q))
+              .where((item) =>
+                  !pendingServerIds.contains(item.id) ||
+                  item.visibility != CloudVisibility.private)
+              .toList();
         }
       } catch (error) {
         remoteError = _cleanError(error);
@@ -400,42 +405,190 @@ class _CloudScreenState extends State<CloudScreen> {
     if (mounted) setState(() => _migrationStatus = null);
   }
 
-  /// Sharing a local folder produces a server COPY, preserving the local
-  /// original. This is intentionally not a destructive "move".
+  Future<bool> _sameBytes(File leftFile, File rightFile) async {
+    if (await leftFile.length() != await rightFile.length()) return false;
+    final left = await leftFile.open();
+    final right = await rightFile.open();
+    try {
+      while (true) {
+        final a = await left.read(65536);
+        final b = await right.read(65536);
+        if (a.length != b.length) return false;
+        for (var i = 0; i < a.length; i++) {
+          if (a[i] != b[i]) return false;
+        }
+        if (a.isEmpty) return true;
+      }
+    } finally {
+      await left.close();
+      await right.close();
+    }
+  }
+
+  /// Change the storage location instead of making a second visible folder.
+  /// A private server staging folder allows retries without exposing a
+  /// partially uploaded collection to other students.
   Future<void> _publishLocalFolder(
     CloudFolder folder, CloudVisibility access,
   ) async {
+    if (_busy || access == CloudVisibility.private) return;
     final approved = await _confirm(
-      'Опубликовать папку?',
-      'Все файлы папки «${folder.name}» будут загружены в Cloud Campus '
-      'с доступом «${access.label}». Локальная папка останется на устройстве. '
-      'Создать серверную копию?',
+      'Перенести папку в облако?',
+      'Файлы «${folder.name}» будут загружены и проверены на сервере. '
+      'После успешной проверки локальная папка исчезнет из списка, '
+      'останется одна папка с доступом «${access.label}». '
+      'Если такая серверная копия уже есть, приложение сначала '
+      'проверит её содержимое. Продолжить?',
     );
     if (!mounted || !approved) return;
     await _perform(() async {
-      final files = await _local.files(folderId: folder.id);
-      for (final file in files) {
-        if (!file.available || file.localPath == null) {
-          throw Exception('Локальный файл не найден: ${file.name}');
-        }
-      }
-      final published = await _api.createFolder(folder.name, access);
       try {
+        final files = await _local.files(folderId: folder.id);
         for (final file in files) {
+          if (!file.available || file.localPath == null ||
+              await File(file.localPath!).length() != file.size) {
+            throw Exception('Не удалось прочитать файл: ${file.name}');
+          }
+        }
+
+        final pendingId = await _local.pendingPublication(folder.id);
+        final serverFolders = await _api.getFolders(mode: 'mine');
+        CloudFolder? serverFolder;
+        var existingPublishedCopy = false;
+
+        if (pendingId != null) {
+          for (final candidate in serverFolders) {
+            if (candidate.id == pendingId && candidate.mine) {
+              serverFolder = candidate;
+              break;
+            }
+          }
+          if (serverFolder == null) {
+            throw Exception(
+              'Не найдена папка незавершённого переноса на сервере. '
+              'Проверь доступ к backend перед повторением.',
+            );
+          }
+        } else {
+          final existing = serverFolders.where((candidate) =>
+              candidate.mine && candidate.name == folder.name &&
+              candidate.visibility == access).toList();
+          if (existing.length > 1) {
+            throw Exception(
+              'Найдено несколько общих папок с названием «${folder.name}». '
+              'Переименуй лишние папки, чтобы безопасно объединить данные.',
+            );
+          }
+          if (existing.length == 1) {
+            // Legacy duplicate created by the previous copy-only behavior:
+            // verify bytes before adopting the existing server folder.
+            serverFolder = existing.single;
+            existingPublishedCopy = true;
+          } else {
+            serverFolder = await _api.createFolder(
+              folder.name, CloudVisibility.private,
+            );
+          }
+          await _local.markPendingPublication(folder.id, serverFolder.id);
+        }
+
+        final destination = serverFolder!;
+        if (destination.name != folder.name) {
+          throw Exception('Название папки изменилось во время переноса');
+        }
+
+        var onServer = await _api.getFiles(
+          mode: 'mine', folderId: destination.id,
+        );
+        final unmatched = [...onServer];
+        for (var i = 0; i < files.length; i++) {
+          final localFile = files[i];
+          final index = unmatched.indexWhere((remote) =>
+              remote.mine && remote.name == localFile.name &&
+              remote.size == localFile.size);
+          if (index >= 0) {
+            unmatched.removeAt(index);
+            continue;
+          }
+          if (existingPublishedCopy) {
+            throw Exception(
+              'Содержимое уже опубликованной папки отличается. '
+              'Ничего не удалено. Сверь файлы вручную.',
+            );
+          }
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Загрузка ${i + 1} из ${files.length}');
+          }
           await _api.uploadFile(
-            file.localPath!,
-            filename: file.name,
-            folderId: published.id,
-            visibility: access,
+            localFile.localPath!,
+            filename: localFile.name,
+            folderId: destination.id,
+            visibility: CloudVisibility.private,
           );
         }
-      } catch (_) {
-        throw Exception(
-          'Не все файлы удалось загрузить. Личная папка сохранена; '
-          'проверь созданную серверную копию, прежде чем повторять публикацию.',
+        if (unmatched.isNotEmpty) {
+          throw Exception(
+            'На сервере оказались дополнительные файлы. '
+            'Папки не объединены, локальные данные сохранены.',
+          );
+        }
+
+        onServer = await _api.getFiles(
+          mode: 'mine', folderId: destination.id,
         );
+        if (onServer.length != files.length) {
+          throw Exception('Не все файлы появились на сервере');
+        }
+        final toVerify = [...onServer];
+        for (var i = 0; i < files.length; i++) {
+          final localFile = files[i];
+          final index = toVerify.indexWhere((remote) =>
+              remote.mine && remote.name == localFile.name &&
+              remote.size == localFile.size && remote.available);
+          if (index < 0) {
+            throw Exception('Файл отсутствует на сервере: ${localFile.name}');
+          }
+          final remoteFile = toVerify.removeAt(index);
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Проверка ${i + 1} из ${files.length}');
+          }
+          final temp = await _api.downloadToTemporary(remoteFile);
+          try {
+            if (!await _sameBytes(File(localFile.localPath!), temp)) {
+              throw Exception(
+                'Файл «${localFile.name}» отличается от загруженного. '
+                'Локальная папка сохранена.',
+              );
+            }
+          } finally {
+            if (await temp.exists()) {
+              try { await temp.delete(); } catch (_) {}
+            }
+          }
+        }
+
+        if (destination.visibility != access) {
+          if (mounted) {
+            setState(() => _migrationStatus = 'Открытие доступа к папке');
+          }
+          await _api.changeFolderVisibility(destination.id, access);
+        }
+
+        if (mounted) {
+          setState(() => _migrationStatus =
+              'Завершение переноса · удаление локальной копии');
+        }
+        await _local.finishPublishedFolder(folder.id, files, destination.id);
+        if (mounted && _currentFolder?.local == true &&
+            _currentFolder?.id == folder.id) {
+          setState(() => _currentFolder = null);
+        }
+      } finally {
+        if (mounted) setState(() => _migrationStatus = null);
       }
-    }, 'Общая копия папки создана. Личные файлы остались на устройстве.');
+    }, 'Папка перенесена в облако. Дубликатов больше нет.');
   }
 
   Future<bool> _confirm(String title, String message) async =>
