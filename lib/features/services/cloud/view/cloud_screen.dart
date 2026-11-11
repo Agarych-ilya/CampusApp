@@ -299,6 +299,29 @@ class _CloudScreenState extends State<CloudScreen> {
     );
   }
 
+  Future<void> _mergeExistingCopies(CloudFolder folder) async {
+    if (!folder.local || _busy) return;
+    try {
+      final remote = (await _api.getFolders(mode: 'mine')).where((item) =>
+          item.mine && item.name == folder.name &&
+          item.visibility != CloudVisibility.private).toList();
+      if (!mounted) return;
+      if (remote.length != 1) {
+        _message(
+          remote.isEmpty
+              ? 'Нет опубликованной папки с названием «${folder.name}»'
+              : 'Найдено несколько опубликованных папок. '
+                  'Переименуй лишние, чтобы выбрать нужную.',
+          error: true,
+        );
+        return;
+      }
+      await _publishLocalFolder(folder, remote.single.visibility);
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    }
+  }
+
   Future<void> _changeFolderAccess(CloudFolder folder) async {
     if (_busy) return;
     final access = await _pickVisibility(current: folder.visibility);
@@ -1101,6 +1124,7 @@ class _CloudScreenState extends State<CloudScreen> {
                       onSelected: (value) {
                         if (value == 'rename') _renameFolder(folder);
                         if (value == 'access') _changeFolderAccess(folder);
+                        if (value == 'merge') _mergeExistingCopies(folder);
                         if (value == 'link') _createFolderLink(folder);
                         if (value == 'revoke') _revokeFolderLink(folder);
                         if (value == 'delete') _deleteFolder(folder);
@@ -1112,6 +1136,11 @@ class _CloudScreenState extends State<CloudScreen> {
                         const PopupMenuItem(
                           value: 'access', child: Text('Настроить доступ'),
                         ),
+                        if (folder.local)
+                          const PopupMenuItem(
+                            value: 'merge',
+                            child: Text('Объединить с облачной копией'),
+                          ),
                         PopupMenuItem(
                           value: 'link',
                           child: Text(folder.local
