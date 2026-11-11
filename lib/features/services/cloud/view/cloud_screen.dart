@@ -75,7 +75,9 @@ class _CloudScreenState extends State<CloudScreen> {
       final q = _search.text.trim();
       final folder = q.isEmpty ? _currentFolder : null;
       final localFiles = await _local.files(
-        query: q, folderId: folder?.local == true ? folder?.id : null,
+        query: q,
+        folderId: folder?.local == true ? folder?.id : null,
+        rootOnly: q.isEmpty && folder == null,
       );
       final localFolders = folder == null
           ? await _local.folders(query: q) : <CloudFolder>[];
@@ -223,6 +225,71 @@ class _CloudScreenState extends State<CloudScreen> {
         }
       },
       'Название папки изменено',
+    );
+  }
+
+  Future<void> _renameFile(CloudFile file) async {
+    if (!file.mine) {
+      _message('Изменять название может только владелец файла', error: true);
+      return;
+    }
+    final nextName = await showDialog<String>(
+      context: context,
+      builder: (_) => _FolderNameDialog(
+        title: 'Переименовать файл',
+        actionText: 'Сохранить',
+        initialName: file.name,
+      ),
+    );
+    if (!mounted || nextName == null || nextName == file.name) return;
+    await _perform(() async {
+      if (file.local) {
+        await _local.renameFile(file.id, nextName);
+      } else {
+        await _api.renameFile(file.id, nextName);
+      }
+    }, 'Название файла изменено');
+  }
+
+  Future<void> _createFolderLink(CloudFolder folder) async {
+    if (folder.local) {
+      _message(
+        'Эта папка хранится только на телефоне. '
+        'Для ссылки создай общую папку и загрузи в неё файлы.',
+      );
+      return;
+    }
+    if (!await _confirm(
+      'Поделиться ссылкой на папку?',
+      'Все, у кого есть ссылка, смогут просматривать список и скачивать '
+      'файлы папки «${folder.name}», даже без входа в CampusApp.',
+    )) return;
+    if (!mounted || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final uri = await _api.createFolderShareLink(folder.id);
+      await Clipboard.setData(ClipboardData(text: uri.toString()));
+      if (!mounted) return;
+      _message('Ссылка на папку скопирована');
+      if (['localhost', '127.0.0.1', '10.0.2.2'].contains(uri.host)) {
+        _message('Для других устройств нужен публичный HTTPS-адрес backend.');
+      }
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _revokeFolderLink(CloudFolder folder) async {
+    if (folder.local) return;
+    if (!await _confirm(
+      'Отозвать ссылку на папку?',
+      'Ранее отправленная ссылка перестанет работать.',
+    )) return;
+    await _perform(
+      () => _api.revokeFolderShareLink(folder.id),
+      'Ссылка на папку отозвана',
     );
   }
 
@@ -718,11 +785,9 @@ class _CloudScreenState extends State<CloudScreen> {
         const SizedBox(width: 3),
         Text(local
             ? 'На устройстве'
-            : (visibility == CloudVisibility.private
-                ? 'Личное · на сервере (ранее)'
-                : visibility == CloudVisibility.group &&
-                        group != null && group.isNotEmpty
-                    ? group : visibility.label), style: TextStyle(
+            : (visibility == CloudVisibility.group &&
+                    group != null && group.isNotEmpty
+                ? group : visibility.label), style: TextStyle(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 11,
         )),
@@ -761,16 +826,29 @@ class _CloudScreenState extends State<CloudScreen> {
                       onSelected: (value) {
                         if (value == 'rename') _renameFolder(folder);
                         if (value == 'access') _changeFolderAccess(folder);
+                        if (value == 'link') _createFolderLink(folder);
+                        if (value == 'revoke') _revokeFolderLink(folder);
                         if (value == 'delete') _deleteFolder(folder);
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
                           value: 'rename', child: Text('Переименовать'),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'access', child: Text('Настроить доступ'),
                         ),
                         PopupMenuItem(
+                          value: 'link',
+                          child: Text(folder.local
+                              ? 'Как поделиться папкой?'
+                              : 'Скопировать ссылку на папку'),
+                        ),
+                        if (!folder.local)
+                          const PopupMenuItem(
+                            value: 'revoke',
+                            child: Text('Отозвать ссылку на папку'),
+                          ),
+                        const PopupMenuItem(
                           value: 'delete', child: Text('Удалить папку'),
                         ),
                       ],
@@ -840,6 +918,7 @@ class _CloudScreenState extends State<CloudScreen> {
                       case 'save': _save(file); break;
                       case 'unsave': _removeSaved(file); break;
                       case 'move': _moveFile(file); break;
+                      case 'rename': _renameFile(file); break;
                       case 'scope': _changeScope(file); break;
                       case 'link': _createLink(file); break;
                       case 'revoke': _revokeLink(file); break;
@@ -866,6 +945,9 @@ class _CloudScreenState extends State<CloudScreen> {
                         value: 'move', child: Text('Переместить в папку'),
                       ),
                     if (file.mine) ...[
+                      const PopupMenuItem(
+                        value: 'rename', child: Text('Переименовать'),
+                      ),
                       PopupMenuItem(
                         value: 'scope',
                         child: Text(file.local
