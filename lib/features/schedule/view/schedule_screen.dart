@@ -40,6 +40,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   bool _isInitializing = true;
   bool _changingGroup = false;
   int _notesRevision = 0;
+  Set<String> _bookableRooms = bookableClassrooms.toSet();
   late DateTime _selectedDate;
   late DateTime _anchorWeek;
   late PageController _weekController;
@@ -54,6 +55,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _anchorWeek = _getWeekStart(_selectedDate);
     _weekController = PageController(initialPage: _initialWeekPage);
     _initialize();
+    _loadBookableRooms();
+  }
+
+  /// Refresh server catalogue without blocking or changing timetable loading.
+  Future<void> _loadBookableRooms() async {
+    // Widget tests inject an offline fake booking API.
+    if (widget.bookingApi != null) return;
+    final api = ClassroomBookingApi();
+    try {
+      final rooms = await api.bookableRooms();
+      if (mounted) setState(() => _bookableRooms = rooms);
+    } catch (_) {
+      // Keep the known demo rooms until the backend becomes reachable.
+    } finally {
+      api.dispose();
+    }
   }
 
   @override
@@ -302,8 +319,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Future<void> _openClassroomBooking(ScheduleLesson lesson) async {
     // The same rule as lesson details: other groups cannot interact with
-    // the selected group's lesson; only M-307 and V-308 are bookable.
-    if (!isBookableClassroom(lesson.room)) return;
+    // Only a student's own group and server-supported rooms are bookable.
+    if (!_bookableRooms.contains(classroomCodeFromLesson(lesson.room))) return;
     final profile = await StudentProfileStorage().getProfile();
     if (!mounted || !canOpenOwnLessonDetails(
       profileGroup: profile?.group,
@@ -318,6 +335,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           lessonDate: date,
           lessonTime: lesson.time,
           initialRoom: lesson.room,
+          allowedRooms: _bookableRooms,
         ),
       ),
     );
@@ -466,7 +484,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                           ? () => _openLessonDetails(lesson)
                                           : null,
                                       onBookSeat: isOwnGroup &&
-                                              isBookableClassroom(lesson.room)
+                                              _bookableRooms.contains(
+                                                classroomCodeFromLesson(lesson.room),
+                                              )
                                           ? () => _openClassroomBooking(lesson)
                                           : null,
                                       footer: isOwnGroup && _groupName != null
