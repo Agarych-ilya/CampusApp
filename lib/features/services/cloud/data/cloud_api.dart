@@ -289,6 +289,28 @@ class CloudApi {
     await _request('DELETE', '/files/$id/link', write: true);
   }
 
+  Future<void> renameFile(int id, String name) async {
+    await _request('PATCH', '/files/$id/name',
+      write: true, body: {'name': name.trim()});
+  }
+
+  Future<Uri> createFolderShareLink(int id) async {
+    final value = await _request('POST', '/folders/$id/link', write: true);
+    if (value is! Map || value['token'] is! String) {
+      throw const FormatException('Не удалось получить ссылку на папку');
+    }
+    final publicUrl = value['url'];
+    if (publicUrl is String && publicUrl.startsWith('https://')) {
+      final parsed = Uri.tryParse(publicUrl);
+      if (parsed != null && parsed.host.isNotEmpty) return parsed;
+    }
+    return Uri.parse('$_base/f/${Uri.encodeComponent(value['token'] as String)}');
+  }
+
+  Future<void> revokeFolderShareLink(int id) async {
+    await _request('DELETE', '/folders/$id/link', write: true);
+  }
+
   Future<void> deleteFile(int id) async {
     await _request('DELETE', '/files/$id', write: true);
   }
