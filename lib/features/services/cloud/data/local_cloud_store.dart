@@ -261,6 +261,92 @@ class LocalCloudStore {
     }
   }
 
+  /// A partially uploaded server folder is tracked for safe retries.
+  Future<int?> pendingPublication(int localFolderId) async {
+    final index = await _read();
+    for (final item in (index['folders'] as List).whereType<Map>()) {
+      if (item['id'] == localFolderId) {
+        return (item['pendingServerFolderId'] as num?)?.toInt();
+      }
+    }
+    throw const FileSystemException('Личная папка не найдена');
+  }
+
+  Future<void> markPendingPublication(
+    int localFolderId, int serverFolderId,
+  ) async {
+    if (serverFolderId <= 0) {
+      throw const FormatException('Некорректный серверный идентификатор');
+    }
+    final index = await _read();
+    final folders = (index['folders'] as List).whereType<Map>()
+        .where((row) => row['id'] == localFolderId);
+    if (folders.length != 1) {
+      throw const FileSystemException('Личная папка не найдена');
+    }
+    final item = folders.single;
+    final old = (item['pendingServerFolderId'] as num?)?.toInt();
+    if (old != null && old != serverFolderId) {
+      throw const FileSystemException(
+        'Для этой папки уже выполняется перенос на другой сервер',
+      );
+    }
+    item['pendingServerFolderId'] = serverFolderId;
+    await _write(index);
+  }
+
+  /// Commit a successful local -> cloud move in one catalogue update.
+  /// Uploaded bytes must already have been verified on the server.
+  Future<void> finishPublishedFolder(
+    int localFolderId, List<CloudFile> expected,
+    int serverFolderId,
+  ) async {
+    final index = await _read();
+    final root = await _root();
+    final folders = (index['folders'] as List).whereType<Map>()
+        .where((item) => item['id'] == localFolderId).toList();
+    if (folders.length != 1) {
+      throw const FileSystemException('Личная папка не найдена');
+    }
+    final folder = folders.single;
+    if ((folder['pendingServerFolderId'] as num?)?.toInt() != serverFolderId) {
+      throw const FileSystemException('Перенос в эту серверную папку не подтверждён');
+    }
+    final records = (index['files'] as List).whereType<Map>()
+        .where((item) => item['folderId'] == localFolderId).toList();
+    final expectedById = {for (final file in expected) file.id: file};
+    if (records.length != expected.length ||
+        expectedById.length != expected.length) {
+      throw const FileSystemException('Состав личной папки изменился');
+    }
+    for (final record in records) {
+      final file = expectedById[(record['id'] as num).toInt()];
+      if (file == null || record['name'] != file.name ||
+          record['size'] != file.size || !file.local ||
+          !File('${root.path}/${record['blob']}').existsSync()) {
+        throw const FileSystemException(
+          'Файлы личной папки изменились при загрузке',
+        );
+      }
+    }
+    (index['files'] as List).removeWhere(
+      (row) => row is Map && row['folderId'] == localFolderId,
+    );
+    (index['folders'] as List).removeWhere(
+      (row) => row is Map && row['id'] == localFolderId,
+    );
+    await _write(index);
+    // Physical cleanup cannot undo a completed cloud transfer.
+    for (final record in records) {
+      try {
+        final file = File('${root.path}/${record['blob']}');
+        if (await file.exists()) await file.delete();
+      } catch (_) {
+        // Unreferenced sandbox files can be cleaned up later.
+      }
+    }
+  }
+
   /// A folder migration is published to the local catalogue only when ALL
   /// bytes are copied and checked. If it fails, no partial folder is exposed.
   /// The origin ID makes a retry idempotent after a failed backend finalization.
