@@ -6,7 +6,17 @@ import 'package:campusapp/features/services/cloud/view/cloud_screen.dart';
 class _FakeCloudApi extends CloudApi {
   bool saved = false;
   int saves = 0;
+  int renames = 0;
+  int accessChanges = 0;
   String lastMode = '';
+  String lastQuery = '';
+  CloudFolder folder = const CloudFolder(
+    id: 7,
+    name: 'Физика',
+    visibility: CloudVisibility.private,
+    group: null,
+    mine: true,
+  );
 
   CloudFile _file(bool mine, {bool saved = false}) => CloudFile(
         id: mine ? 1 : 2,
@@ -31,18 +41,49 @@ class _FakeCloudApi extends CloudApi {
     int? folderId,
   }) async {
     lastMode = mode;
-    final my = _file(true);
-    final shared = _file(false, saved: saved);
+    lastQuery = query;
+    final all = [_file(true), _file(false, saved: saved)];
+    if (folderId != null) return [];
+    if (mode != 'search') {
+      throw StateError('Cloud Campus must use one unified catalogue');
+    }
     if (query.trim().isNotEmpty) {
-      return [my, shared].where((file) =>
+      return all.where((file) =>
           file.name.toLowerCase().contains(query.toLowerCase())).toList();
     }
-    if (mode == 'mine') return [my, if (saved) shared];
-    return [shared];
+    return all;
   }
 
   @override
-  Future<List<CloudFolder>> getFolders({String mode = 'mine'}) async => [];
+  Future<List<CloudFolder>> getFolders({String mode = 'mine'}) async {
+    expect(mode, 'all');
+    return [folder];
+  }
+
+  @override
+  Future<CloudFolder> renameFolder(int id, String name) async {
+    expect(id, folder.id);
+    renames++;
+    folder = CloudFolder(
+      id: folder.id, name: name, visibility: folder.visibility,
+      group: folder.group, mine: true,
+    );
+    return folder;
+  }
+
+  @override
+  Future<CloudFolder> changeFolderVisibility(
+    int id, CloudVisibility visibility,
+  ) async {
+    expect(id, folder.id);
+    accessChanges++;
+    folder = CloudFolder(
+      id: folder.id, name: folder.name, visibility: visibility,
+      group: visibility == CloudVisibility.group ? 'А-03-23' : null,
+      mine: true,
+    );
+    return folder;
+  }
 
   @override
   Future<void> saveFile(int id, {int? folderId}) async {
@@ -79,7 +120,7 @@ void main() {
     expect(file.mine, isFalse);
   });
 
-  testWidgets('found shared file can be saved and appears in My files',
+  testWidgets('one catalogue shows all accessible files and saves a shared file',
       (tester) async {
     tester.view.physicalSize = const Size(430, 1000);
     tester.view.devicePixelRatio = 1;
@@ -88,25 +129,71 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
     final api = _FakeCloudApi();
-    await tester.pumpWidget(MaterialApp(
-      home: CloudScreen(api: api),
-    ));
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(api: api)));
     await tester.pumpAndSettle();
 
+    expect(api.lastMode, 'search');
+    expect(find.text('Все файлы'), findsOneWidget);
+    expect(find.text('Мои файлы'), findsNothing);
+    expect(find.text('Общее'), findsNothing);
     expect(find.text('Моя лабораторная.pdf'), findsOneWidget);
-    expect(find.text('Чужой конспект.pdf'), findsNothing);
-    await tester.tap(find.text('Общее'));
-    await tester.pumpAndSettle();
     expect(find.text('Чужой конспект.pdf'), findsOneWidget);
-    expect(find.text('Сохранить себе'), findsOneWidget);
+
     await tester.tap(find.text('Сохранить себе'));
     await tester.pumpAndSettle();
     expect(api.saves, 1);
     expect(find.text('Сохранено у меня'), findsOneWidget);
-
-    await tester.tap(find.text('Мои файлы'));
-    await tester.pumpAndSettle();
-    expect(api.lastMode, 'mine');
     expect(find.text('Чужой конспект.pdf'), findsOneWidget);
+
+    // The same search box filters across both own and shared materials.
+    await tester.enterText(find.byType(TextField), 'Чужой');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(api.lastQuery, 'Чужой');
+    expect(api.lastMode, 'search');
+    expect(find.text('Чужой конспект.pdf'), findsOneWidget);
+    expect(find.text('Моя лабораторная.pdf'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('folder menu has separate name and access actions',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _FakeCloudApi();
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Настроить папку'));
+    await tester.pumpAndSettle();
+    expect(find.text('Переименовать'), findsOneWidget);
+    expect(find.text('Настроить доступ'), findsOneWidget);
+    expect(find.text('Название и доступ'), findsNothing);
+
+    await tester.tap(find.text('Переименовать'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Физика 2');
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+    expect(api.renames, 1);
+    expect(api.accessChanges, 0);
+    expect(find.text('Физика 2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('Настроить папку'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Настроить доступ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Моя группа').last);
+    await tester.pumpAndSettle();
+    expect(api.renames, 1);
+    expect(api.accessChanges, 1);
+    expect(api.folder.name, 'Физика 2');
+    expect(api.folder.visibility, CloudVisibility.group);
+    expect(tester.takeException(), isNull);
   });
 }
