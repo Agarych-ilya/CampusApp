@@ -1123,21 +1123,6 @@ class _CloudScreenState extends State<CloudScreen> {
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant)),
                       ]),
-                    if (_folders.isNotEmpty &&
-                        _currentFolder == null) ...[
-                      const SizedBox(height: 20),
-                      Text(_isSearching ? 'Найденные папки' : 'Папки',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          for (final folder in _folders) _folderCard(folder),
-                        ],
-                      ),
-                    ],
                     const SizedBox(height: 22),
                     Row(children: [
                       Expanded(child: Text(
@@ -1149,11 +1134,24 @@ class _CloudScreenState extends State<CloudScreen> {
                           fontWeight: FontWeight.w900),
                       )),
                       if (!_loading)
-                        Text('${_files.length}', style: TextStyle(
-                          color: colors.onSurfaceVariant,
-                        )),
+                        Text('${_files.length + _folders.length}',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                            )),
                     ]),
                     const SizedBox(height: 12),
+                    // Folder cards belong to the same root file browser.
+                    // Files nested in a folder are not flattened here.
+                    if (_folders.isNotEmpty && _currentFolder == null) ...[
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (final folder in _folders) _folderCard(folder),
+                        ],
+                      ),
+                      if (_files.isNotEmpty) const SizedBox(height: 14),
+                    ],
                   ],
                 ),
               ),
