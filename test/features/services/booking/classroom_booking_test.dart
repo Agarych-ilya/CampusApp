@@ -255,7 +255,8 @@ void main() {
         {'row': 1, 'desk': 1, 'seat': 1,
          'x': 20, 'y': 70, 'width': 27, 'height': 34},
         {'row': 1, 'desk': 1, 'seat': 2,
-         'x': 50, 'y': 70, 'width': 27, 'height': 34},
+         'x': 50, 'y': 70, 'width': 27, 'height': 34,
+         'label': 'Сектор А, место 2'},
       ],
       'elements': [
         {'id': 'board', 'type': 'rect', 'x': 20, 'y': 15,
@@ -266,6 +267,7 @@ void main() {
     };
     final layout = ServerRoomLayout.fromJson(json);
     expect(layout.seats, hasLength(2));
+    expect(layout.seatLabel(1, 1, 2), 'Сектор А, место 2');
     expect(layout.elements, hasLength(2));
     final availability = ClassroomAvailability.fromJson({
       'room': 'С-401', 'date': '2026-11-11', 'slot': '1',
