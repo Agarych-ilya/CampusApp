@@ -142,6 +142,23 @@ flutter run -d emulator-5554 --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:
 До запуска Flutter обнови backend (`feature/cloud`) и запусти NestJS,
 подключённый к MySQL. Описание формата: [backend/docs/room-layouts.md](https://github.com/Agarych-ilya/Campus-backend/blob/feature/cloud/docs/room-layouts.md).
 
+### Cloud Campus — папки, общие материалы и предпросмотр
+
+Новая версия облака: личные папки, разграничение доступа
+**«Личное» / «Моя группа БАРС» / «Всем»**, поиск по доступным файлам,
+сохранение найденных конспектов без дублирования, миниатюры изображений,
+копируемые ссылки на скачивание с возможностью отзыва.
+
+Чтобы проверить Cloud Campus, нужны обновлённый backend `feature/cloud`
+и Flutter `feature/schedule-screen`. Вход повторно не требуется:
+используется существующая подтверждённая сессия БАРС.
+
+Ранее загруженные файлы из старой таблицы `cloud` автоматически
+не появляются в новой личной библиотеке — для них не было данных о
+владельце. Их можно заново загрузить безопасно.
+
+Подробнее: [Cloud Campus API и политика доступа](https://github.com/Agarych-ilya/Campus-backend/blob/feature/cloud/docs/cloud-campus.md).
+
 <a id="архитектура"></a>
 ## 🧩 Архитектура
 
