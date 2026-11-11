@@ -268,7 +268,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
     expect(api.folderQuery, 'Физика');
-    expect(find.text('Найденные папки'), findsOneWidget);
+    expect(find.text('Результаты поиска'), findsOneWidget);
     expect(find.text('Физика'), findsOneWidget);
     expect(find.text('Чужой конспект.pdf'), findsNothing);
     expect(tester.takeException(), isNull);
