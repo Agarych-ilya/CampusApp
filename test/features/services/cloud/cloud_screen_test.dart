@@ -81,6 +81,12 @@ void main() {
 
   testWidgets('found shared file can be saved and appears in My files',
       (tester) async {
+    tester.view.physicalSize = const Size(430, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     final api = _FakeCloudApi();
     await tester.pumpWidget(MaterialApp(
       home: CloudScreen(api: api),
