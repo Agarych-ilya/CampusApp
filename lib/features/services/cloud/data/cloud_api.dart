@@ -236,6 +236,13 @@ class CloudApi {
       throw const FormatException('Ссылка не создана');
     }
     final token = value['token'] as String;
+    final publicUrl = value['url'];
+    if (publicUrl is String && publicUrl.startsWith('https://')) {
+      final uri = Uri.tryParse(publicUrl);
+      if (uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+        return uri;
+      }
+    }
     return Uri.parse('$_base/s/${Uri.encodeComponent(token)}');
   }
 
