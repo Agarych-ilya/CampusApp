@@ -288,7 +288,7 @@ class _CloudScreenState extends State<CloudScreen> {
         access = chosen;
       }
       await _perform(() async {
-        if (access == CloudVisibility.private && (folder == null || folder.local)) {
+        if (access == CloudVisibility.private) {
           await _local.saveFile(
             file.path!, name: file.name,
             folderId: folder?.id,
@@ -396,7 +396,9 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _changeScope(CloudFile file) async {
     final access = await _pickVisibility(current: file.visibility);
     if (!mounted || access == null ||
-        (access == file.visibility && !file.local)) return;
+        (access == file.visibility && access != CloudVisibility.private)) {
+      return;
+    }
 
     if (file.local && access == CloudVisibility.private) return;
     if (file.local) {
