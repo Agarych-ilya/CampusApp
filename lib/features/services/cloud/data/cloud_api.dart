@@ -185,6 +185,26 @@ class CloudApi {
     return CloudFolder.fromJson(data);
   }
 
+  /// A rename must not accidentally change sharing permissions.
+  Future<CloudFolder> renameFolder(int id, String name) async {
+    final data = await _request(
+      'PATCH', '/folders/$id', write: true,
+      body: {'name': name.trim()},
+    );
+    return CloudFolder.fromJson(data);
+  }
+
+  /// Access changes are separate from folder naming.
+  Future<CloudFolder> changeFolderVisibility(
+    int id, CloudVisibility visibility,
+  ) async {
+    final data = await _request(
+      'PATCH', '/folders/$id', write: true,
+      body: {'visibility': visibility.key},
+    );
+    return CloudFolder.fromJson(data);
+  }
+
   Future<void> deleteFolder(int id) async {
     await _request('DELETE', '/folders/$id', write: true);
   }
