@@ -355,7 +355,11 @@ class LocalCloudStore {
       );
     } catch (_) {
       for (final file in copied) {
-        if (await file.exists()) {\n          try { await file.delete(); } catch (_) {}\n        }
+        if (await file.exists()) {
+          try {
+            await file.delete();
+          } catch (_) {}
+        }
       }
       rethrow;
     }
