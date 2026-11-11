@@ -22,14 +22,20 @@ class YandexDiskImporter {
   static const int maxBytes = 20 * 1024 * 1024;
 
   static bool _shareHost(String hostname) =>
-      {'disk.yandex.ru', 'disk.yandex.com', 'disk.yandex.kz', 'yadi.sk'}
-          .contains(hostname.toLowerCase());
+      {
+        'disk.yandex.ru', 'disk.360.yandex.ru',
+        'disk.yandex.com', 'disk.yandex.kz', 'disk.yandex.by',
+        'yadi.sk',
+      }.contains(hostname.toLowerCase());
 
   static bool _downloadHost(String host) {
     final name = host.toLowerCase();
     return name == 'yandex.ru' || name.endsWith('.yandex.ru') ||
         name == 'yandex.net' || name.endsWith('.yandex.net') ||
         name == 'yandex.com' || name.endsWith('.yandex.com') ||
+        name == 'yandex.kz' || name.endsWith('.yandex.kz') ||
+        name == 'yandex.by' || name.endsWith('.yandex.by') ||
+        name == 'yandexcloud.net' || name.endsWith('.yandexcloud.net') ||
         name == 'yadi.sk';
   }
 
@@ -44,6 +50,29 @@ class YandexDiskImporter {
       );
     }
     return uri;
+  }
+
+  static String _apiError(http.Response response, String operation) {
+    try {
+      final value = jsonDecode(utf8.decode(response.bodyBytes));
+      if (value is Map) {
+        final description = value['description']?.toString() ??
+            value['message']?.toString() ?? value['error']?.toString();
+        if (description != null && description.isNotEmpty) {
+          return '$operation: $description (HTTP ${response.statusCode})';
+        }
+      }
+    } catch (_) {}
+    if (response.statusCode == 403 || response.statusCode == 401) {
+      return '$operation: владелец запретил скачивание или ссылка требует доступа';
+    }
+    if (response.statusCode == 404) {
+      return '$operation: ссылка удалена, закрыта или срок её действия истёк';
+    }
+    if (response.statusCode == 429) {
+      return '$operation: Яндекс ограничил частоту скачиваний; попробуй позже';
+    }
+    return '$operation: HTTP ${response.statusCode}';
   }
 
   static String _safeName(String value) {
@@ -61,7 +90,7 @@ class YandexDiskImporter {
     final metadataResponse = await _client.get(metadataUrl)
         .timeout(const Duration(seconds: 25));
     if (metadataResponse.statusCode != 200) {
-      throw Exception('Ссылка Яндекс Диска недоступна или закрыта');
+      throw Exception(_apiError(metadataResponse, 'Не удалось открыть ссылку'));
     }
     final metadata = jsonDecode(utf8.decode(metadataResponse.bodyBytes));
     if (metadata is! Map) {
@@ -83,7 +112,8 @@ class YandexDiskImporter {
     final linkResponse = await _client.get(downloadApi)
         .timeout(const Duration(seconds: 25));
     if (linkResponse.statusCode != 200) {
-      throw Exception('Не удалось получить ссылку для скачивания');
+      throw Exception(_apiError(linkResponse,
+          'Не удалось получить ссылку для скачивания'));
     }
     final payload = jsonDecode(utf8.decode(linkResponse.bodyBytes));
     if (payload is! Map || payload['href'] is! String) {
@@ -119,7 +149,12 @@ class YandexDiskImporter {
           continue;
         }
         if (response.statusCode != 200) {
-          throw Exception('Яндекс Диск не отдал файл: HTTP ${response.statusCode}');
+          final bytes = await response.stream.toBytes();
+          throw Exception(_apiError(
+            http.Response.bytes(bytes.take(8192).toList(),
+                response.statusCode),
+            'Яндекс не отдал содержимое',
+          ));
         }
         if (response.contentLength != null &&
             response.contentLength! > maxBytes) {
