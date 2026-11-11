@@ -294,26 +294,134 @@ class _CloudScreenState extends State<CloudScreen> {
   }
 
   Future<void> _changeFolderAccess(CloudFolder folder) async {
+    if (_busy) return;
     final access = await _pickVisibility(current: folder.visibility);
-    if (!mounted || access == null || access == folder.visibility) return;
+    if (!mounted || access == null ||
+        (access == folder.visibility && !(access == CloudVisibility.private &&
+            !folder.local))) return;
     if (folder.local) {
-      _message(
-        'Личную папку нельзя открыть через сервер автоматически. '
-        'Создай общую папку и загрузи в неё нужные файлы.',
-      );
+      if (access == CloudVisibility.private) return;
+      await _publishLocalFolder(folder, access);
       return;
     }
     if (access == CloudVisibility.private) {
-      _message(
-        'Серверную папку нельзя сделать локальной одним переключателем. '
-        'Скачай файлы на устройство, затем убери общую папку.',
-      );
+      await _moveFolderToDevice(folder);
       return;
     }
     await _perform(
       () async { await _api.changeFolderVisibility(folder.id, access); },
       'Доступ к папке: ${access.label.toLowerCase()}',
     );
+  }
+
+  /// Do not remove anything on the server before every file has been
+  /// downloaded, checked and committed to the app-private local store.
+  Future<void> _moveFolderToDevice(CloudFolder folder) async {
+    final approved = await _confirm(
+      'Сделать папку личной?',
+      'Все файлы папки «${folder.name}» будут сохранены на этом устройстве. '
+      'После успешного копирования серверная папка и её файлы удалятся, '
+      'все ссылки перестанут работать. Сохранённые чужие материалы '
+      'скопируются, но чужие оригиналы не удалятся. '
+      'Личные файлы не появятся на другом телефоне и могут пропасть '
+      'при удалении приложения. Продолжить?',
+    );
+    if (!mounted || !approved) return;
+    await _perform(() async {
+      final manifest = await _api.folderMigrationManifest(folder.id);
+      if (manifest.id != folder.id) {
+        throw const FormatException('Получены данные другой папки');
+      }
+      final staged = <int, File>{};
+      try {
+        // This includes foreign bookmarks saved in the folder.
+        for (final item in manifest.files) {
+          final temp = await _api.downloadToTemporary(
+            CloudFile(
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              available: true,
+              mine: item.owned,
+              saved: !item.owned,
+              mime: 'application/octet-stream',
+              folderId: folder.id,
+              visibility: folder.visibility,
+              group: folder.group,
+              image: false,
+            ),
+          );
+          staged[item.id] = temp;
+          if (await temp.length() != item.size) {
+            throw FileSystemException(
+              'Файл скачался не полностью: ${item.name}',
+            );
+          }
+        }
+
+        // Idempotent if the backend was unreachable after a prior copy.
+        await _local.importServerFolder(manifest, staged);
+        try {
+          await _api.finishFolderMigration(
+            folder.id, manifest.files.map((file) => file.id).toList(),
+          );
+        } catch (_) {
+          throw Exception(
+            'Копия папки уже сохранена на устройстве, но завершить удаление '
+            'на сервере не удалось. Серверная папка и ссылки пока остались. '
+            'Повтори «Настроить доступ → Личное» после проверки сети.',
+          );
+        }
+        if (mounted && _currentFolder?.id == folder.id &&
+            _currentFolder?.local == false) {
+          setState(() => _currentFolder = null);
+        }
+      } finally {
+        for (final file in staged.values) {
+          if (await file.exists()) {
+            try { await file.delete(); } catch (_) {}
+          }
+        }
+      }
+    }, 'Папка теперь только на устройстве. Ссылки отозваны.');
+  }
+
+  /// Sharing a local folder produces a server COPY, preserving the local
+  /// original. This is intentionally not a destructive "move".
+  Future<void> _publishLocalFolder(
+    CloudFolder folder, CloudVisibility access,
+  ) async {
+    final approved = await _confirm(
+      'Опубликовать папку?',
+      'Все файлы папки «${folder.name}» будут загружены в Cloud Campus '
+      'с доступом «${access.label}». Локальная папка останется на устройстве. '
+      'Создать серверную копию?',
+    );
+    if (!mounted || !approved) return;
+    await _perform(() async {
+      final files = await _local.files(folderId: folder.id);
+      for (final file in files) {
+        if (!file.available || file.localPath == null) {
+          throw Exception('Локальный файл не найден: ${file.name}');
+        }
+      }
+      final published = await _api.createFolder(folder.name, access);
+      try {
+        for (final file in files) {
+          await _api.uploadFile(
+            file.localPath!,
+            filename: file.name,
+            folderId: published.id,
+            visibility: access,
+          );
+        }
+      } catch (_) {
+        throw Exception(
+          'Не все файлы удалось загрузить. Личная папка сохранена; '
+          'проверь созданную серверную копию, прежде чем повторять публикацию.',
+        );
+      }
+    }, 'Общая копия папки создана. Личные файлы остались на устройстве.');
   }
 
   Future<bool> _confirm(String title, String message) async =>
