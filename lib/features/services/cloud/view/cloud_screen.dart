@@ -291,7 +291,7 @@ class _CloudScreenState extends State<CloudScreen> {
         if (access == CloudVisibility.private) {
           await _local.saveFile(
             file.path!, name: file.name,
-            folderId: folder?.id,
+            folderId: folder?.local == true ? folder?.id : null,
           );
         } else {
           await _api.uploadFile(
@@ -1310,11 +1310,12 @@ class _YandexLinkDialogState extends State<_YandexLinkDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Импорт из Яндекс Диска'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'Вставь публичную ссылку на файл или папку. '
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Вставь публичную ссылку на файл или папку. '
             'Закрытые ссылки без публичного доступа не поддерживаются. '
             'Папка импортируется ZIP-архивом до 20 МБ.',
           ),
@@ -1331,7 +1332,8 @@ class _YandexLinkDialogState extends State<_YandexLinkDialog> {
             ),
             onSubmitted: (_) => _submit(),
           ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
