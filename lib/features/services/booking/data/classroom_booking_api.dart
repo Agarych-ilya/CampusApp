@@ -34,6 +34,8 @@ int classroomSeatCapacity(String room) =>
 
 /// For В-308, row is the tier (1–10), desk is the seat number on a side,
 /// seat=1 means the left bank and seat=2 means the right bank.
+/// The API's row numbers remain top-down for backward compatibility, but
+/// V-308 students see row numbers bottom-up (1 nearest the lecturer).
 /// For М-307, these are the original row / desk / seat coordinates.
 bool isValidClassroomSeat(String room, int row, int desk, int seat) {
   if (row < 1 || desk < 1 || (seat != 1 && seat != 2)) return false;
@@ -64,7 +66,7 @@ class ClassroomSeat {
 
   String labelForRoom(String room) =>
       classroomCodeFromLesson(room) == 'В-308'
-          ? 'Ряд $row, ${seat == 1 ? 'левая' : 'правая'} сторона, место $desk'
+          ? 'Ряд ${11 - row}, ${seat == 1 ? 'левая' : 'правая'} сторона, место $desk'
           : label;
 
   @override
