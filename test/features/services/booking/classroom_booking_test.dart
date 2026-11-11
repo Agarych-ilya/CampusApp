@@ -98,7 +98,7 @@ void main() {
       home: Scaffold(
         body: SingleChildScrollView(
           child: AmphitheaterSeatMap(
-            occupied: const {ClassroomSeat(row: 1, desk: 1, seat: 1)},
+            occupied: {const ClassroomSeat(row: 1, desk: 1, seat: 1)},
             mine: null,
             selected: null,
             onSelected: (seat) => picked = seat,
