@@ -120,6 +120,28 @@ flutter run -d <DEVICE_ID> --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:80
 3. Проверь проброс: `adb reverse --list` для нужного устройства.
 4. Проверь `CAMPUS_API_BASE_URL`; явно заданный адрес отключает автоматический перебор других адресов для расписания.
 
+### Бронирование аудиторий из расписания
+
+Для М-307 и В-308, а также новых аудиторий из серверного каталога
+`GET /services/room-bookings/rooms`, доступна кнопка выбора места прямо
+в карточке пары. Дата и время передаются из расписания.
+
+Flutter использует универсальный `ServerRoomSeatMap`, а
+`GET /services/room-bookings` возвращает занятые места и серверную
+`layout`-схему с координатами. Разметка аудиторий, розетки и проходы
+хранятся в MySQL backend, а не в коде мобильного приложения.
+
+**Для проверки изменений в расписании выбери ветку:**
+
+```powershell
+git switch feature/schedule-screen
+git pull origin feature/schedule-screen
+flutter run -d emulator-5554 --dart-define=CAMPUS_API_BASE_URL=http://127.0.0.1:8000
+```
+
+До запуска Flutter обнови backend (`feature/cloud`) и запусти NestJS,
+подключённый к MySQL. Описание формата: [backend/docs/room-layouts.md](https://github.com/Agarych-ilya/Campus-backend/blob/feature/cloud/docs/room-layouts.md).
+
 <a id="архитектура"></a>
 ## 🧩 Архитектура
 
