@@ -8,6 +8,8 @@ import 'package:campusapp/features/services/booking/data/classroom_booking_api.d
 import 'package:campusapp/features/services/booking/view/classroom_booking_screen.dart';
 import 'package:campusapp/features/services/booking/view/classroom_seat_map.dart';
 import 'package:campusapp/features/services/booking/view/amphitheater_seat_map.dart';
+import 'package:campusapp/features/services/booking/data/server_room_layout.dart';
+import 'package:campusapp/features/services/booking/view/server_room_seat_map.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -238,6 +240,97 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('server geometry controls capacity and supports an unfamiliar room',
+      () {
+    final json = {
+      'version': 1,
+      'room': 'С-401',
+      'university': 'МЭИ',
+      'building': 'С',
+      'name': 'С-401',
+      'description': 'Тестовая конфигурация',
+      'width': 300,
+      'height': 360,
+      'seats': [
+        {'row': 1, 'desk': 1, 'seat': 1,
+         'x': 20, 'y': 70, 'width': 27, 'height': 34},
+        {'row': 1, 'desk': 1, 'seat': 2,
+         'x': 50, 'y': 70, 'width': 27, 'height': 34},
+      ],
+      'elements': [
+        {'id': 'board', 'type': 'rect', 'x': 20, 'y': 15,
+         'width': 240, 'height': 36, 'text': 'Экран'},
+        {'id': '3-6-2', 'type': 'outlet', 'x': 90, 'y': 80,
+         'text': 'Розетка'},
+      ],
+    };
+    final layout = ServerRoomLayout.fromJson(json);
+    expect(layout.seats, hasLength(2));
+    expect(layout.elements, hasLength(2));
+    final availability = ClassroomAvailability.fromJson({
+      'room': 'С-401', 'date': '2026-11-11', 'slot': '1',
+      'occupied': [
+        {'row': 1, 'desk': 1, 'seat': 1, 'mine': false},
+      ],
+      'mine': null,
+      'layout': json,
+      'testMode': true,
+    });
+    expect(availability.capacity, 2);
+    expect(availability.available, 1);
+    expect(availability.layout!.room, 'С-401');
+    expect(() => ClassroomAvailability.fromJson({
+      'room': 'С-401', 'date': '2026-11-11', 'slot': '1',
+      'occupied': [
+        {'row': 2, 'desk': 1, 'seat': 1, 'mine': false},
+      ],
+      'layout': json,
+    }), throwsFormatException);
+  });
+
+  testWidgets('generic room renderer draws server-provided seats and outlets',
+      (tester) async {
+    final layout = ServerRoomLayout.fromJson({
+      'version': 1,
+      'room': 'М-307',
+      'width': 320, 'height': 330,
+      'seats': [
+        {'row': 3, 'desk': 6, 'seat': 1,
+          'x': 35, 'y': 100, 'width': 27, 'height': 34},
+        {'row': 3, 'desk': 6, 'seat': 2,
+          'x': 67, 'y': 100, 'width': 27, 'height': 34},
+      ],
+      'elements': [
+        {'id': '3-6-2', 'type': 'outlet',
+         'x': 110, 'y': 100, 'text': 'Розетка справа'},
+        {'id': 'board', 'type': 'rect', 'x': 25, 'y': 15,
+         'width': 250, 'height': 42, 'text': 'Доска'},
+      ],
+    });
+    ClassroomSeat? picked;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(
+        child: ServerRoomSeatMap(
+          layout: layout,
+          occupied: const {},
+          mine: null,
+          selected: null,
+          onSelected: (seat) => picked = seat,
+        ),
+      )),
+    ));
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('server-room-map')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-3-6-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-seat-3-6-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-outlet-3-6-2')), findsOneWidget);
+    final seat = find.byKey(const ValueKey('room-seat-3-6-2'));
+    await tester.ensureVisible(seat);
+    await tester.tap(seat);
+    expect(picked, const ClassroomSeat(row: 3, desk: 6, seat: 2));
+    expect(tester.takeException(), isNull);
+  });
+
   test('availability identifies full seats, reserved seats and mine', () {
     final data = ClassroomAvailability.fromJson({
       'room': 'М-307',
@@ -298,6 +391,21 @@ void main() {
     expect(tapped, isNull); // occupied seats cannot be selected
     await tester.tap(find.byKey(const ValueKey('room-seat-1-1-2')));
     expect(tapped, const ClassroomSeat(row: 1, desk: 1, seat: 2));
+  });
+
+  test('room catalogue is read from backend instead of a hardcoded list',
+      () async {
+    final api = ClassroomBookingApi(
+      client: MockClient((request) async {
+        expect(request.url.path, '/services/room-bookings/rooms');
+        return http.Response(
+          '[{"room":"М-307"},{"room":"В-308"},{"room":"С-401"}]',
+          200,
+        );
+      }),
+    );
+    expect(await api.bookableRooms(), {'М-307', 'В-308', 'С-401'});
+    api.dispose();
   });
 
   test('API uses the selected seat, date and slot and handles conflicts',
@@ -630,7 +738,7 @@ void main() {
     expect(find.text('М-307'), findsOneWidget);
     expect(find.textContaining('54 посадочных места'), findsOneWidget);
     expect(find.byKey(const ValueKey('booking-free-count')), findsOneWidget);
-    expect(find.textContaining('Тестовое бронирование для М-307 и В-308'), findsOneWidget);
+    expect(find.textContaining('Тестовое бронирование CampusApp'), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-3-9-2')), findsOneWidget);
   });
 }
