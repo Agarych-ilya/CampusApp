@@ -33,6 +33,11 @@ class LocalCloudStore {
   Future<Map<String, dynamic>> _read() async {
     final root = await _root();
     final file = File('${root.path}/index.json');
+    final backup = File('${root.path}/index.backup');
+    // Recover the last complete index after a power loss mid-rename.
+    if (!await file.exists() && await backup.exists()) {
+      await backup.rename(file.path);
+    }
     if (!await file.exists()) {
       return {'nextId': -1, 'files': <dynamic>[], 'folders': <dynamic>[]};
     }
@@ -48,9 +53,17 @@ class LocalCloudStore {
     final root = await _root();
     final temp = File('${root.path}/index.tmp');
     final target = File('${root.path}/index.json');
+    final backup = File('${root.path}/index.backup');
     await temp.writeAsString(jsonEncode(index), flush: true);
-    if (await target.exists()) await target.delete();
-    await temp.rename(target.path);
+    if (await backup.exists()) await backup.delete();
+    if (await target.exists()) await target.rename(backup.path);
+    try {
+      await temp.rename(target.path);
+    } catch (_) {
+      if (await backup.exists()) await backup.rename(target.path);
+      rethrow;
+    }
+    if (await backup.exists()) await backup.delete();
   }
 
   int _nextId(Map<String, dynamic> index) {
