@@ -40,7 +40,12 @@ class CloudFile {
     required this.mine,
     required this.saved,
     required this.image,
+    this.localPath,
   });
+
+  /// A local-only item is stored inside the app sandbox, never in Campus Cloud.
+  final String? localPath;
+  bool get local => localPath != null;
 
   final int id;
   final String name;
@@ -79,7 +84,9 @@ class CloudFolder {
     required this.visibility,
     required this.group,
     required this.mine,
+    this.local = false,
   });
+  final bool local;
   final int id;
   final String name;
   final CloudVisibility visibility;
@@ -159,8 +166,15 @@ class CloudApi {
     return data.map(CloudFile.fromJson).toList();
   }
 
-  Future<List<CloudFolder>> getFolders({String mode = 'mine'}) async {
-    final data = await _request('GET', '/folders?mode=$mode');
+  Future<List<CloudFolder>> getFolders({
+    String mode = 'mine',
+    String query = '',
+  }) async {
+    final uri = Uri(path: '/folders', queryParameters: {
+      'mode': mode,
+      if (query.trim().isNotEmpty) 'q': query.trim(),
+    });
+    final data = await _request('GET', uri.toString());
     if (data is! List) throw const FormatException('Неверный список папок');
     return data.map(CloudFolder.fromJson).toList();
   }
@@ -272,6 +286,26 @@ class CloudApi {
 
   Future<void> deleteFile(int id) async {
     await _request('DELETE', '/files/$id', write: true);
+  }
+
+  /// Explicitly download a server-owned item into a temporary file,
+  /// for an opt-in migration to local-only private storage.
+  Future<File> downloadToTemporary(CloudFile file) async {
+    final response = await http.get(
+      Uri.parse('$_base/files/${file.id}/download'),
+      headers: await _headers(),
+    ).timeout(const Duration(seconds: 90));
+    if (response.statusCode != 200) throw _error(response);
+    if (response.bodyBytes.length > 20 * 1024 * 1024) {
+      throw Exception('Лимит файла: 20 МБ');
+    }
+    final dir = await getTemporaryDirectory();
+    final safe = file.name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_');
+    final target = File(
+      '${dir.path}/cloud_migrate_${DateTime.now().microsecondsSinceEpoch}_$safe',
+    );
+    await target.writeAsBytes(response.bodyBytes, flush: true);
+    return target;
   }
 
   Future<Uint8List> previewBytes(CloudFile file) async {
