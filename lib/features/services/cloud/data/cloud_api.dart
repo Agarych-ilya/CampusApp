@@ -128,7 +128,7 @@ class CloudMigrationItem {
     final id = (value['id'] as num).toInt();
     final size = (value['size'] as num).toInt();
     final name = value['name'] as String;
-    if (id <= 0 || size < 0 || size > 20 * 1024 * 1024 ||
+    if (id <= 0 || size <= 0 || size > 20 * 1024 * 1024 ||
         name.isEmpty) {
       throw const FormatException('Невозможно перенести этот файл');
     }
