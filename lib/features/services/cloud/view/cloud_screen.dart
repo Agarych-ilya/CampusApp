@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +7,16 @@ import 'package:flutter/services.dart';
 
 import '/features/services/style/service_palette.dart';
 import '../data/cloud_api.dart';
+import '../data/local_cloud_store.dart';
+import '../data/yandex_disk_importer.dart';
 
 class CloudScreen extends StatefulWidget {
-  const CloudScreen({super.key, this.api});
+  const CloudScreen({super.key, this.api, this.localStore, this.importer});
 
   /// Optional API injection for widget tests and offline previews.
   final CloudApi? api;
+  final LocalCloudStore? localStore;
+  final YandexDiskImporter? importer;
 
   @override
   State<CloudScreen> createState() => _CloudScreenState();
@@ -19,6 +24,8 @@ class CloudScreen extends StatefulWidget {
 
 class _CloudScreenState extends State<CloudScreen> {
   late final CloudApi _api;
+  late final LocalCloudStore _local;
+  late final YandexDiskImporter _yandex;
   final TextEditingController _search = TextEditingController();
   Timer? _debounce;
 
@@ -36,6 +43,8 @@ class _CloudScreenState extends State<CloudScreen> {
   void initState() {
     super.initState();
     _api = widget.api ?? CloudApi();
+    _local = widget.localStore ?? LocalCloudStore();
+    _yandex = widget.importer ?? YandexDiskImporter();
     _load();
     _search.addListener(() {
       _debounce?.cancel();
@@ -51,6 +60,7 @@ class _CloudScreenState extends State<CloudScreen> {
     _requestId++;
     _debounce?.cancel();
     _search.dispose();
+    if (widget.importer == null) _yandex.dispose();
     super.dispose();
   }
 
@@ -62,19 +72,40 @@ class _CloudScreenState extends State<CloudScreen> {
     });
     try {
       final q = _search.text.trim();
-      // Always browse the same accessible universe. Search is just a filter.
-      final folderId = q.isEmpty ? _currentFolder?.id : null;
-      final files = await _api.getFiles(
-        mode: 'search', query: q, folderId: folderId,
+      final folder = q.isEmpty ? _currentFolder : null;
+      final localFiles = await _local.files(
+        query: q, folderId: folder?.local == true ? folder?.id : null,
       );
-      final folders = q.isEmpty && _currentFolder == null
-          ? await _api.getFolders(mode: 'all')
-          : <CloudFolder>[];
+      final localFolders = folder == null
+          ? await _local.folders(query: q) : <CloudFolder>[];
+
+      var remoteFiles = <CloudFile>[];
+      var remoteFolders = <CloudFolder>[];
+      String? remoteError;
+      try {
+        if (folder?.local != true) {
+          remoteFiles = await _api.getFiles(
+            mode: 'search',
+            query: q,
+            folderId: folder?.id,
+          );
+        }
+        if (folder == null) {
+          remoteFolders = await _api.getFolders(mode: 'all', query: q);
+        }
+      } catch (error) {
+        remoteError = _cleanError(error);
+      }
       if (!mounted || request != _requestId) return;
       setState(() {
-        _files = files;
-        _folders = folders;
+        _files = [
+          if (folder == null || folder.local) ...localFiles,
+          ...remoteFiles,
+        ];
+        _folders = [...localFolders, ...remoteFolders];
         _loading = false;
+        _error = remoteError != null &&
+            _files.isEmpty && _folders.isEmpty ? remoteError : null;
       });
     } catch (error) {
       if (!mounted || request != _requestId) return;
@@ -159,10 +190,17 @@ class _CloudScreenState extends State<CloudScreen> {
       ),
     );
     if (!mounted || name == null) return;
-    await _perform(
-      () async { await _api.createFolder(name, CloudVisibility.private); },
-      'Папка создана. Доступ по умолчанию: личное.',
-    );
+    final visibility = await _pickVisibility();
+    if (!mounted || visibility == null) return;
+    await _perform(() async {
+      if (visibility == CloudVisibility.private) {
+        await _local.createFolder(name);
+      } else {
+        await _api.createFolder(name, visibility);
+      }
+    }, visibility == CloudVisibility.private
+        ? 'Личная папка создана на устройстве'
+        : 'Папка создана в общем облаке');
   }
 
   Future<void> _renameFolder(CloudFolder folder) async {
@@ -176,7 +214,13 @@ class _CloudScreenState extends State<CloudScreen> {
     );
     if (!mounted || name == null || name == folder.name) return;
     await _perform(
-      () async { await _api.renameFolder(folder.id, name); },
+      () async {
+        if (folder.local) {
+          await _local.renameFolder(folder.id, name);
+        } else {
+          await _api.renameFolder(folder.id, name);
+        }
+      },
       'Название папки изменено',
     );
   }
@@ -184,6 +228,20 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _changeFolderAccess(CloudFolder folder) async {
     final access = await _pickVisibility(current: folder.visibility);
     if (!mounted || access == null || access == folder.visibility) return;
+    if (folder.local) {
+      _message(
+        'Личную папку нельзя открыть через сервер автоматически. '
+        'Создай общую папку и загрузи в неё нужные файлы.',
+      );
+      return;
+    }
+    if (access == CloudVisibility.private) {
+      _message(
+        'Серверную папку нельзя сделать локальной одним переключателем. '
+        'Скачай файлы на устройство, затем убери общую папку.',
+      );
+      return;
+    }
     await _perform(
       () async { await _api.changeFolderVisibility(folder.id, access); },
       'Доступ к папке: ${access.label.toLowerCase()}',
@@ -219,20 +277,31 @@ class _CloudScreenState extends State<CloudScreen> {
         return;
       }
       CloudVisibility access = CloudVisibility.private;
-      // Uploading into somebody else's shared folder is not permitted.
-      final folderId = !_isSearching && _currentFolder?.mine == true
-          ? _currentFolder?.id : null;
-      if (folderId == null) {
+      final folder = !_isSearching && _currentFolder?.mine == true
+          ? _currentFolder : null;
+      if (folder != null) {
+        access = folder.visibility;
+      } else {
         final chosen = await _pickVisibility();
         if (chosen == null) return;
         access = chosen;
       }
-      await _perform(
-        () => _api.uploadFile(
-          file.path!, folderId: folderId, visibility: access,
-        ),
-        'Файл загружен в облако',
-      );
+      await _perform(() async {
+        if (access == CloudVisibility.private && (folder == null || folder.local)) {
+          await _local.saveFile(
+            file.path!, name: file.name,
+            folderId: folder?.id,
+          );
+        } else {
+          await _api.uploadFile(
+            file.path!,
+            folderId: folder?.local == true ? null : folder?.id,
+            visibility: access,
+          );
+        }
+      }, access == CloudVisibility.private
+          ? 'Файл сохранён только на устройстве'
+          : 'Файл загружен в Campus Cloud');
     } catch (error) {
       _message(_cleanError(error), error: true);
     }
