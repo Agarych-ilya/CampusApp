@@ -96,4 +96,49 @@ void main() {
     );
     client.close();
   });
+  test('works with modern Yandex 360 public links', () async {
+    final directory = await Directory.systemTemp.createTemp('yandex360_');
+    addTearDown(() => directory.delete(recursive: true));
+    final client = MockClient((request) async {
+      if (request.url.path == '/v1/disk/public/resources') {
+        expect(request.url.queryParameters['public_key'],
+            'https://disk.360.yandex.ru/d/modern');
+        return http.Response(
+            '{"type":"file","name":"lecture.pdf","size":4}', 200);
+      }
+      if (request.url.path == '/v1/disk/public/resources/download') {
+        return http.Response(
+            '{"href":"https://downloader.disk.yandex.ru/file"}', 200);
+      }
+      return http.Response('DATA', 200);
+    });
+    final importer = YandexDiskImporter(
+      client: client, temporaryDirectory: () async => directory,
+    );
+    final result = await importer.download(
+        'https://disk.360.yandex.ru/d/modern');
+    expect(result.name, 'lecture.pdf');
+    expect(await result.file.readAsString(), 'DATA');
+    client.close();
+  });
+
+  test('displays the real Yandex error when downloads are disabled', () async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/v1/disk/public/resources') {
+        return http.Response('{"type":"file","name":"lecture.pdf"}', 200);
+      }
+      return http.Response(
+        '{"error":"Forbidden","description":"Download forbidden by owner"}',
+        403,
+      );
+    });
+    final importer = YandexDiskImporter(client: client);
+    await expectLater(
+      importer.download('https://disk.yandex.ru/d/restricted'),
+      throwsA(predicate((e) => e.toString().contains(
+          'Download forbidden by owner (HTTP 403)'))),
+    );
+    client.close();
+  });
+
 }
