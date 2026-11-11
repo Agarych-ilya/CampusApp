@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:campusapp/features/services/cloud/data/cloud_api.dart';
+import 'package:campusapp/features/services/cloud/data/local_cloud_store.dart';
 import 'package:campusapp/features/services/cloud/view/cloud_screen.dart';
 
 class _FakeCloudApi extends CloudApi {
@@ -10,6 +13,8 @@ class _FakeCloudApi extends CloudApi {
   int accessChanges = 0;
   String lastMode = '';
   String lastQuery = '';
+  String folderQuery = '';
+  int uploads = 0;
   CloudFolder folder = const CloudFolder(
     id: 7,
     name: 'Физика',
@@ -55,9 +60,22 @@ class _FakeCloudApi extends CloudApi {
   }
 
   @override
-  Future<List<CloudFolder>> getFolders({String mode = 'mine'}) async {
+  Future<List<CloudFolder>> getFolders({
+    String mode = 'mine',
+    String query = '',
+  }) async {
     expect(mode, 'all');
-    return [folder];
+    folderQuery = query;
+    return folder.name.toLowerCase().contains(query.toLowerCase())
+        ? [folder] : [];
+  }
+
+  @override
+  Future<void> uploadFile(
+    String path, {int? folderId,
+    CloudVisibility visibility = CloudVisibility.private}
+  ) async {
+    uploads++;
   }
 
   @override
@@ -129,7 +147,12 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
     final api = _FakeCloudApi();
-    await tester.pumpWidget(MaterialApp(home: CloudScreen(api: api)));
+    final root = await Directory.systemTemp.createTemp('campus_cloud_test_');
+    addTearDown(() => root.delete(recursive: true));
+    final store = LocalCloudStore(rootProvider: () async => root);
+    await tester.pumpWidget(MaterialApp(
+      home: CloudScreen(api: api, localStore: store),
+    ));
     await tester.pumpAndSettle();
 
     expect(api.lastMode, 'search');
@@ -165,7 +188,12 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
     final api = _FakeCloudApi();
-    await tester.pumpWidget(MaterialApp(home: CloudScreen(api: api)));
+    final root = await Directory.systemTemp.createTemp('campus_cloud_test_');
+    addTearDown(() => root.delete(recursive: true));
+    final store = LocalCloudStore(rootProvider: () async => root);
+    await tester.pumpWidget(MaterialApp(
+      home: CloudScreen(api: api, localStore: store),
+    ));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Настроить папку'));
@@ -196,4 +224,58 @@ void main() {
     expect(api.folder.visibility, CloudVisibility.group);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('search matches folder names and shows the folder result',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _FakeCloudApi();
+    final root = await Directory.systemTemp.createTemp('campus_cloud_folder_');
+    addTearDown(() => root.delete(recursive: true));
+    final store = LocalCloudStore(rootProvider: () async => root);
+    await tester.pumpWidget(MaterialApp(
+      home: CloudScreen(api: api, localStore: store),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Физика');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(api.folderQuery, 'Физика');
+    expect(find.text('Найденные папки'), findsOneWidget);
+    expect(find.text('Физика'), findsOneWidget);
+    expect(find.text('Чужой конспект.pdf'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('private files and folders stay entirely in local storage', () async {
+    final root = await Directory.systemTemp.createTemp('campus_private_test_');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File('${root.path}/source.txt');
+    await source.writeAsString('Университетская лабораторная');
+    final local = LocalCloudStore(rootProvider: () async => root);
+    final folder = await local.createFolder('Мои заметки');
+    expect(folder.local, isTrue);
+    expect(folder.id, lessThan(0));
+    final stored = await local.saveFile(
+      source.path, name: 'Секрет.txt', folderId: folder.id,
+    );
+    expect(stored.local, isTrue);
+    expect(stored.localPath, isNot(source.path));
+    expect(await File(stored.localPath!).readAsString(),
+        'Университетская лабораторная');
+    expect((await local.files(query: 'секрет')).single.name, 'Секрет.txt');
+    expect((await local.folders(query: 'заметки')).single.name, 'Мои заметки');
+
+    // Local metadata and bytes survive re-creation of the store object.
+    final reopened = LocalCloudStore(rootProvider: () async => root);
+    expect((await reopened.files()).single.local, isTrue);
+    await reopened.deleteFile(stored);
+    expect(await File(stored.localPath!).exists(), isFalse);
+    await reopened.deleteFolder(folder.id);
+    expect(await reopened.folders(), isEmpty);
+  });
+
 }
