@@ -93,9 +93,7 @@ class ServerRoomLayoutElement {
       y2: _readDouble(value, 'y2', fallback: 0),
       cx: _readDouble(value, 'cx', fallback: 0),
       cy: _readDouble(value, 'cy', fallback: 0),
-      text: (value['text']?.toString() ?? '').substring(
-        0, (value['text']?.toString() ?? '').length.clamp(0, 200),
-      ),
+      text: _shortText(value['text']),
       color: value['color']?.toString() ?? '',
     );
   }
@@ -162,6 +160,11 @@ class ServerRoomLayout {
       elements: elements,
     );
   }
+}
+
+String _shortText(Object? value) {
+  final text = value?.toString() ?? '';
+  return text.length <= 200 ? text : text.substring(0, 200);
 }
 
 int _readInt(Map source, String key) {
