@@ -10,6 +10,7 @@ class ServerRoomLayoutSeat {
     required this.width,
     required this.height,
     required this.rotation,
+    required this.label,
   });
 
   final int row;
@@ -20,6 +21,7 @@ class ServerRoomLayoutSeat {
   final double width;
   final double height;
   final double rotation;
+  final String label;
 
   String get id => '$row-$desk-$seat';
 
@@ -41,6 +43,7 @@ class ServerRoomLayoutSeat {
     return ServerRoomLayoutSeat(
       row: row, desk: desk, seat: seat,
       x: x, y: y, width: width, height: height, rotation: rotation,
+      label: _shortText(value['label']),
     );
   }
 }
@@ -125,6 +128,16 @@ class ServerRoomLayout {
 
   bool includesSeat(int row, int desk, int seat) =>
       seatIds.contains('$row-$desk-$seat');
+
+  String? seatLabel(int row, int desk, int seat) {
+    for (final position in seats) {
+      if (position.row == row && position.desk == desk &&
+          position.seat == seat && position.label.isNotEmpty) {
+        return position.label;
+      }
+    }
+    return null;
+  }
 
   factory ServerRoomLayout.fromJson(Object? value) {
     if (value is! Map || value['version'] != 1) {
