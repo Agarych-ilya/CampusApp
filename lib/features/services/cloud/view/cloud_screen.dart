@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -286,7 +285,9 @@ class _CloudScreenState extends State<CloudScreen> {
       'Удалить папку?',
       'Папку «${folder.name}» можно удалить только после '
       'перемещения всех собственных файлов.',
-    )) return;
+    )) {
+      return;
+    }
     await _perform(() => _api.deleteFolder(folder.id), 'Папка удалена');
   }
 
@@ -305,7 +306,9 @@ class _CloudScreenState extends State<CloudScreen> {
       'Создать ссылку на файл?',
       'Любой, у кого есть ссылка, сможет скачать «${file.name}», '
       'даже если файл личный. Предыдущая ссылка перестанет работать.',
-    )) return;
+    )) {
+      return;
+    }
     if (!mounted) return;
     setState(() => _busy = true);
     try {
@@ -777,7 +780,7 @@ class _CloudScreenState extends State<CloudScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            ServicePalette.accent.withOpacity(0.21),
+                            ServicePalette.accent.withValues(alpha: 0.21),
                             colors.surfaceContainerHigh,
                           ],
                           begin: Alignment.topLeft,
@@ -1026,7 +1029,7 @@ class _CloudThumbnailState extends State<_CloudThumbnail> {
       child: Container(
         width: 64,
         height: 64,
-        color: ServicePalette.accent.withOpacity(0.13),
+        color: ServicePalette.accent.withValues(alpha: 0.13),
         child: _bytes == null
             ? Icon(widget.fallbackIcon,
                 color: ServicePalette.accent, size: 30)
