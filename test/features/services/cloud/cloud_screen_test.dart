@@ -15,6 +15,9 @@ class _FakeCloudApi extends CloudApi {
   String lastQuery = '';
   String folderQuery = '';
   int uploads = 0;
+  int fileRenames = 0;
+  int folderLinks = 0;
+  String myFileName = 'Моя лабораторная.pdf';
   CloudFolder folder = const CloudFolder(
     id: 7,
     name: 'Физика',
@@ -25,7 +28,7 @@ class _FakeCloudApi extends CloudApi {
 
   CloudFile _file(bool mine, {bool saved = false}) => CloudFile(
         id: mine ? 1 : 2,
-        name: mine ? 'Моя лабораторная.pdf' : 'Чужой конспект.pdf',
+        name: mine ? myFileName : 'Чужой конспект.pdf',
         available: true,
         size: 30720,
         mime: 'application/pdf',
@@ -103,6 +106,25 @@ class _FakeCloudApi extends CloudApi {
       mine: true,
     );
     return folder;
+  }
+
+  @override
+  Future<void> renameFile(int id, String name) async {
+    expect(id, 1);
+    fileRenames++;
+    myFileName = name;
+  }
+
+  @override
+  Future<Uri> createFolderShareLink(int id) async {
+    expect(id, folder.id);
+    folderLinks++;
+    return Uri.parse('https://campus.example/cloud/f/testtoken');
+  }
+
+  @override
+  Future<void> revokeFolderShareLink(int id) async {
+    expect(id, folder.id);
   }
 
   @override
@@ -270,6 +292,12 @@ void main() {
         'Университетская лабораторная');
     expect((await local.files(query: 'секрет')).single.name, 'Секрет.txt');
     expect((await local.folders(query: 'заметки')).single.name, 'Мои заметки');
+    expect(await local.files(rootOnly: true), isEmpty);
+    expect((await local.files(folderId: folder.id)).single.id, stored.id);
+    await local.renameFile(stored.id, 'Лабораторная.txt');
+    expect((await local.files()).single.name, 'Лабораторная.txt');
+    await expectLater(local.renameFile(stored.id, 'fake.pdf'),
+        throwsFormatException);
 
     // Local metadata and bytes survive re-creation of the store object.
     final reopened = LocalCloudStore(rootProvider: () async => root);
@@ -278,6 +306,36 @@ void main() {
     expect(await File(stored.localPath!).exists(), isFalse);
     await reopened.deleteFolder(folder.id);
     expect(await reopened.folders(), isEmpty);
+  });
+
+  testWidgets('owners can rename a file without changing its storage',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _FakeCloudApi();
+    final root = await Directory.systemTemp.createTemp('campus_file_rename_');
+    addTearDown(() => root.delete(recursive: true));
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(
+      api: api,
+      localStore: LocalCloudStore(rootProvider: () async => root),
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Действия с файлом').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Переименовать').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Лекция.pdf');
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+
+    expect(api.fileRenames, 1);
+    expect(find.text('Лекция.pdf'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('local-only files and matching local folders are searchable',
