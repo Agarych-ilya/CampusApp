@@ -4,6 +4,7 @@ import '/features/services/style/service_palette.dart';
 import '../data/classroom_booking_api.dart';
 import 'classroom_seat_map.dart';
 import 'amphitheater_seat_map.dart';
+import 'server_room_seat_map.dart';
 
 /// Demonstration booking only; not an official university room reservation.
 class ClassroomBookingScreen extends StatefulWidget {
@@ -13,6 +14,7 @@ class ClassroomBookingScreen extends StatefulWidget {
     required this.lessonDate,
     required this.lessonTime,
     this.initialRoom,
+    this.allowedRooms,
   });
 
   final ClassroomBookingApi? api;
@@ -21,6 +23,8 @@ class ClassroomBookingScreen extends StatefulWidget {
   final String lessonTime;
   /// Raw room name from the timetable, e.g. "С-401 (Корпус С)".
   final String? initialRoom;
+  /// A server-fetched catalogue; old clients retain M-307/V-308 fallback.
+  final Set<String>? allowedRooms;
 
   @override
   State<ClassroomBookingScreen> createState() => _ClassroomBookingScreenState();
@@ -81,9 +85,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
       }
     }
     if (widget.initialRoom != null &&
-        !isBookableClassroom(widget.initialRoom)) {
-      _unavailableReason = 'Тестовое бронирование доступно '
-          'только для М-307 и В-308.';
+        !isBookableClassroom(widget.initialRoom) &&
+        !(widget.allowedRooms?.contains(_room) ?? false)) {
+      _unavailableReason =
+          'Для этой аудитории схема бронирования пока не настроена.';
     }
     if (_unavailableReason == null) _load();
   }
@@ -303,16 +308,19 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              _room == 'В-308'
-                                  ? 'Амфитеатр · 4 ряда по 10 и 6 рядов по 8 мест'
-                                  : '3 ряда · 9 парт в ряду · 2 места за партой',
+                              snapshot?.layout?.description ??
+                                  (_room == 'В-308'
+                                      ? 'Амфитеатр · 4 ряда по 10 и 6 рядов по 8 мест'
+                                      : '3 ряда · 9 парт в ряду · 2 места за партой'),
                               style: TextStyle(color: muted, fontSize: 12),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _room == 'В-308'
-                                  ? '176 мест · слева и справа от прохода'
-                                  : '54 посадочных места',
+                              snapshot != null
+                                  ? '${snapshot.capacity} посадочных мест'
+                                  : (_room == 'В-308'
+                                      ? '176 посадочных мест'
+                                      : '54 посадочных места'),
                               style: TextStyle(color: muted, fontSize: 12),
                             ),
                           ],
@@ -323,7 +331,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Тестовое бронирование для М-307 и В-308. '
+                  'Тестовое бронирование CampusApp. '
                   'Оно не связано с официальной занятостью '
                   'аудиторий МЭИ.',
                   style: TextStyle(color: muted, fontSize: 12, height: 1.35),
@@ -427,7 +435,16 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  if (_room == 'В-308')
+                  if (snapshot.layout != null)
+                    ServerRoomSeatMap(
+                      layout: snapshot.layout!,
+                      occupied: snapshot.occupied,
+                      mine: mine,
+                      selected: _selected,
+                      disabled: _working,
+                      onSelected: (seat) => setState(() => _selected = seat),
+                    )
+                  else if (_room == 'В-308')
                     AmphitheaterSeatMap(
                       occupied: snapshot.occupied,
                       mine: mine,
