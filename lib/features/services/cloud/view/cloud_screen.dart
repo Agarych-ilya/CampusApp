@@ -512,7 +512,7 @@ class _CloudScreenState extends State<CloudScreen> {
               folder.name, CloudVisibility.private,
             );
           }
-          await _local.markPendingPublication(folder.id, serverFolder.id);
+          await _local.markPendingPublication(folder.id, serverFolder!.id);
         }
 
         final destination = serverFolder!;
