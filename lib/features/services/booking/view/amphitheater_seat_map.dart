@@ -6,7 +6,9 @@ import '../data/classroom_booking_api.dart';
 import '/features/services/style/service_palette.dart';
 
 /// The V-308 amphitheater has two curved banks and a central aisle.
-/// Upper four rows: 10 seats per side. Lower six: 8 seats per side.
+/// Upper four tiers: 10 seats per side. Lower six: 8 seats per side.
+/// Visible row labels run bottom-to-top (1 next to lecturer, 10 at the back).
+/// API coordinates remain top-to-bottom for existing reservations.
 /// Existing seat identifiers stay unchanged:
 /// row = tier (1..10), desk = seat number (1..10), seat = side (1/2).
 ///
@@ -47,10 +49,10 @@ class _AuditoriumGeometry {
   static double rowTop(int row) =>
       98.0 + (row - 1) * 63.0 + (row >= 5 ? 26.0 : 0.0);
 
-  // Shorter blue rows retract toward the outside walls, not away from
-  // the central aisle. Their inner-most seats align with the red rows.
+  // The 8-place rows align with the OUTER ends of the 10-place rows.
+  // Their missing two inner seats form a widening central recess.
   static double x(int side, int index, int count) =>
-      (side == 1 ? left + (10 - count) * seatStep : right) +
+      (side == 1 ? left : right + (10 - count) * seatStep) +
       index * seatStep;
 
   static double arcOffset(int index, int count) {
@@ -97,6 +99,52 @@ class _CurvedRowGuides extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CurvedRowGuides oldDelegate) => false;
+}
+
+/// A recessed central aisle that gets wider where rows have only 8 places.
+/// Painted behind seats; it never blocks touch hit-testing.
+class _RecessedAislePainter extends CustomPainter {
+  const _RecessedAislePainter({required this.fill, required this.edge});
+
+  final Color fill;
+  final Color edge;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final aisle = Path()
+      ..moveTo(393, 91)
+      ..lineTo(437, 91)
+      ..lineTo(437, 327)
+      ..cubicTo(439, 351, 490, 361, 493, 390)
+      ..lineTo(493, 747)
+      ..lineTo(337, 747)
+      ..lineTo(337, 390)
+      ..cubicTo(340, 361, 391, 351, 393, 327)
+      ..close();
+
+    canvas.drawShadow(aisle, Colors.black.withOpacity(0.15), 5, false);
+    canvas.drawPath(aisle, Paint()..color = fill);
+    canvas.drawPath(
+      aisle,
+      Paint()
+        ..color = edge
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+
+    // Centerline helps make the recess legible when the whole map is zoomed out.
+    canvas.drawLine(
+      const Offset(415, 104),
+      const Offset(415, 732),
+      Paint()
+        ..color = edge.withOpacity(0.45)
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RecessedAislePainter oldDelegate) =>
+      oldDelegate.fill != fill || oldDelegate.edge != edge;
 }
 
 class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
@@ -265,7 +313,7 @@ class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
       width: 40,
       child: Center(
         child: Text(
-          '$row',
+          '${11 - row}',
           style: TextStyle(
             color: color,
             fontSize: 16,
@@ -321,46 +369,13 @@ class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
           ),
-          const Positioned(
-            key: ValueKey('amphitheater-red-zone'),
-            top: 63,
-            left: 70,
-            width: 690,
-            child: Text(
-              'КРАСНАЯ ЗОНА · 4 РЯДА × 20 МЕСТ',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _red,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const Positioned(
-            key: ValueKey('amphitheater-blue-zone'),
-            top: 348,
-            left: 70,
-            width: 690,
-            child: Text(
-              'СИНЯЯ ЗОНА · 6 РЯДОВ × 16 МЕСТ',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _blue,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Positioned(
-            left: 393,
-            top: 91,
-            width: 44,
-            height: 648,
+          Positioned.fill(
             child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh.withOpacity(0.55),
-                  borderRadius: BorderRadius.circular(22),
+              child: CustomPaint(
+                key: const ValueKey('amphitheater-central-recess'),
+                painter: _RecessedAislePainter(
+                  fill: scheme.surfaceContainerHigh.withOpacity(0.82),
+                  edge: scheme.outlineVariant,
                 ),
               ),
             ),
