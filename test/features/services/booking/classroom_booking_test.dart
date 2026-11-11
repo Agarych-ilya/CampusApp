@@ -106,7 +106,9 @@ void main() {
     ));
     expect(find.byKey(const ValueKey('amphitheater-red-zone')), findsNothing);
     expect(find.byKey(const ValueKey('amphitheater-blue-zone')), findsNothing);
-    expect(find.byKey(const ValueKey('amphitheater-central-recess')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-upper-aisle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-central-rectangle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-central-recess')), findsNothing);
     expect(find.byKey(const ValueKey('amphitheater-row-10')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-4-10-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-4-10-2')), findsOneWidget);
@@ -176,6 +178,27 @@ void main() {
     );
     expect((redLeftOuter.dx - blueLeftOuter.dx).abs(), lessThan(0.1));
     expect((redRightOuter.dx - blueRightOuter.dx).abs(), lessThan(0.1));
+
+    // The central lower structure is a real rectangle: its sides are straight
+    // and are separated from the eight-seat banks by two side walkways.
+    final upper = tester.getRect(
+      find.byKey(const ValueKey('amphitheater-upper-aisle')),
+    );
+    final lower = tester.getRect(
+      find.byKey(const ValueKey('amphitheater-central-rectangle')),
+    );
+    final lowerLeftInner = tester.getRect(
+      find.byKey(const ValueKey('room-seat-5-1-1')),
+    );
+    final lowerRightInner = tester.getRect(
+      find.byKey(const ValueKey('room-seat-5-1-2')),
+    );
+    expect(lower.width, greaterThan(upper.width));
+    expect(lower.top, closeTo(upper.bottom, 0.5));
+    expect(lower.left, greaterThan(lowerLeftInner.right));
+    expect(lower.right, lessThan(lowerRightInner.left));
+    expect(lower.left - lowerLeftInner.right, greaterThan(8));
+    expect(lowerRightInner.left - lower.right, greaterThan(8));
 
     // Seat identity stays API-compatible, labels run from the lecturer up.
     expect(
