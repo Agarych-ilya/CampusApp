@@ -203,14 +203,8 @@ void main() {
       api: api, localStore: fixture.store,
     )));
     await tester.pumpAndSettle();
-    expect(find.text('UBS'), findsNWidgets(2));
-
-    await tester.tap(find.byTooltip('Настроить папку').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Объединить с облачной копией'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Продолжить'));
-    await tester.pumpAndSettle();
+    expect(find.text('UBS'), findsOneWidget);
+    await _switchToPublic(tester);
 
     expect(api.createdFolders, 0);
     expect(api.uploads, 0);
@@ -234,15 +228,11 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Настроить папку').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Объединить с облачной копией'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Продолжить'));
-    await tester.pumpAndSettle();
+    expect(find.text('UBS'), findsOneWidget);
+    await _switchToPublic(tester);
 
     expect(await fixture.store.folders(), hasLength(1));
-    expect(find.text('UBS'), findsNWidgets(2));
+    expect(find.text('UBS'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
