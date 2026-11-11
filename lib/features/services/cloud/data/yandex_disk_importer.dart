@@ -9,12 +9,16 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// Shared directories are downloaded as ZIP archives (max 20 MiB).
 class YandexDiskImporter {
-  YandexDiskImporter({http.Client? client})
-      : _client = client ?? http.Client(),
-        _ownsClient = client == null;
+  YandexDiskImporter({
+    http.Client? client,
+    Future<Directory> Function()? temporaryDirectory,
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null,
+       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
 
   final http.Client _client;
   final bool _ownsClient;
+  final Future<Directory> Function() _temporaryDirectory;
   static const int maxBytes = 20 * 1024 * 1024;
 
   static bool _shareHost(String hostname) =>
@@ -90,7 +94,7 @@ class YandexDiskImporter {
         !_downloadHost(source.host) || source.userInfo.isNotEmpty) {
       throw const FormatException('Небезопасный адрес скачивания');
     }
-    final temp = await getTemporaryDirectory();
+    final temp = await _temporaryDirectory();
     final output = File(
       '${temp.path}/yandex_import_${DateTime.now().microsecondsSinceEpoch}_$name',
     );
