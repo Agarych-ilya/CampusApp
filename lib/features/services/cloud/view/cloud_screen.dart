@@ -32,6 +32,9 @@ class _CloudScreenState extends State<CloudScreen> {
 
   List<CloudFile> _files = [];
   List<CloudFolder> _folders = [];
+  // Legacy local/cloud duplicates are one logical folder in the browser.
+  // The backing copies remain intact until their contents are verified.
+  Map<int, CloudFolder> _serverMirrors = {};
   CloudFolder? _currentFolder;
   bool _loading = true;
   bool _busy = false;
@@ -86,6 +89,10 @@ class _CloudScreenState extends State<CloudScreen> {
       var remoteFiles = <CloudFile>[];
       var remoteFolders = <CloudFolder>[];
       final pendingServerIds = await _local.pendingServerFolderIds();
+      final paired = <int, CloudFolder>{};
+      final rootLocalFolders = folder == null
+          ? await _local.folders()
+          : <CloudFolder>[];
       String? remoteError;
       try {
         if (folder?.local != true) {
@@ -94,23 +101,55 @@ class _CloudScreenState extends State<CloudScreen> {
             query: q,
             folderId: folder?.id,
           );
+        } else {
+          final mirror = _serverMirrors[folder!.id];
+          if (mirror != null) {
+            remoteFiles = await _api.getFiles(
+              mode: 'search', query: q, folderId: mirror.id,
+            );
+          }
         }
         if (folder == null) {
-          remoteFolders = (await _api.getFolders(mode: 'all', query: q))
-              .where((item) =>
-                  !pendingServerIds.contains(item.id) ||
-                  item.visibility != CloudVisibility.private)
-              .toList();
+          final allRemote = await _api.getFolders(mode: 'all', query: '');
+          final own = allRemote.where((item) => item.mine).toList();
+          for (final local in rootLocalFolders) {
+            final possible = own.where((candidate) =>
+                candidate.name == local.name).toList();
+            final pending = await _local.pendingPublication(local.id);
+            if (pending != null) {
+              final linked = possible.where(
+                (candidate) => candidate.id == pending,
+              ).toList();
+              if (linked.length == 1) paired[local.id] = linked.single;
+            } else if (possible.length == 1 &&
+                possible.single.visibility != CloudVisibility.private) {
+              // An unambiguous same-name owner pair created by old releases.
+              paired[local.id] = possible.single;
+            }
+          }
+          final pairedRemoteIds =
+              paired.values.map((item) => item.id).toSet();
+          remoteFolders = allRemote.where((item) =>
+              item.name.toLowerCase().contains(q.toLowerCase()) &&
+              !pairedRemoteIds.contains(item.id) &&
+              !pendingServerIds.contains(item.id)).toList();
         }
       } catch (error) {
         remoteError = _cleanError(error);
       }
       if (!mounted || request != _requestId) return;
       setState(() {
+        final localKeys = localFiles
+            .map((file) => '${file.name}\u0000${file.size}')
+            .toSet();
         _files = [
           if (folder == null || folder.local) ...localFiles,
-          ...remoteFiles,
+          // A published mirror must not show every identical file twice.
+          ...remoteFiles.where((file) =>
+              folder?.local != true ||
+              !localKeys.contains('${file.name}\u0000${file.size}')),
         ];
+        _serverMirrors = folder == null ? paired : _serverMirrors;
         _folders = [...localFolders, ...remoteFolders];
         _loading = false;
         _error = remoteError != null &&
@@ -297,29 +336,6 @@ class _CloudScreenState extends State<CloudScreen> {
       () => _api.revokeFolderShareLink(folder.id),
       'Ссылка на папку отозвана',
     );
-  }
-
-  Future<void> _mergeExistingCopies(CloudFolder folder) async {
-    if (!folder.local || _busy) return;
-    try {
-      final remote = (await _api.getFolders(mode: 'mine')).where((item) =>
-          item.mine && item.name == folder.name &&
-          item.visibility != CloudVisibility.private).toList();
-      if (!mounted) return;
-      if (remote.length != 1) {
-        _message(
-          remote.isEmpty
-              ? 'Нет опубликованной папки с названием «${folder.name}»'
-              : 'Найдено несколько опубликованных папок. '
-                  'Переименуй лишние, чтобы выбрать нужную.',
-          error: true,
-        );
-        return;
-      }
-      await _publishLocalFolder(folder, remote.single.visibility);
-    } catch (error) {
-      _message(_cleanError(error), error: true);
-    }
   }
 
   Future<void> _changeFolderAccess(CloudFolder folder) async {
@@ -1124,7 +1140,6 @@ class _CloudScreenState extends State<CloudScreen> {
                       onSelected: (value) {
                         if (value == 'rename') _renameFolder(folder);
                         if (value == 'access') _changeFolderAccess(folder);
-                        if (value == 'merge') _mergeExistingCopies(folder);
                         if (value == 'link') _createFolderLink(folder);
                         if (value == 'revoke') _revokeFolderLink(folder);
                         if (value == 'delete') _deleteFolder(folder);
@@ -1136,11 +1151,6 @@ class _CloudScreenState extends State<CloudScreen> {
                         const PopupMenuItem(
                           value: 'access', child: Text('Настроить доступ'),
                         ),
-                        if (folder.local)
-                          const PopupMenuItem(
-                            value: 'merge',
-                            child: Text('Объединить с облачной копией'),
-                          ),
                         PopupMenuItem(
                           value: 'link',
                           child: Text(folder.local
