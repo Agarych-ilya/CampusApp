@@ -359,7 +359,9 @@ class _RoomElementsPainter extends CustomPainter {
         case 'line':
           canvas.drawLine(
             Offset(item.x, item.y), Offset(item.x2, item.y2),
-            Paint()..color = color..strokeWidth = 2,
+            Paint()
+              ..color = color
+              ..strokeWidth = 2,
           );
           break;
         case 'label':
