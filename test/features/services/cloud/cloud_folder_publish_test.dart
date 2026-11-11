@@ -87,6 +87,29 @@ class _PublishApi extends CloudApi {
     return published!;
   }
 
+  @override
+  Future<CloudFolderMigration> folderMigrationManifest(int id) async {
+    expect(id, published?.id);
+    return CloudFolderMigration(
+      id: id,
+      name: published!.name,
+      files: remote.map((file) => CloudMigrationItem(
+        id: file.id, name: file.name, size: file.size, owned: true,
+      )).toList(),
+    );
+  }
+
+  @override
+  Future<void> finishFolderMigration(
+    int id, List<int> copiedFileIds,
+  ) async {
+    expect(id, published?.id);
+    expect(copiedFileIds.toSet(),
+        remote.map((file) => file.id).toSet());
+    remote.clear();
+    published = null;
+  }
+
   Future<void> seedOldPublishedCopy(
       String name, File source, String fileName) async {
     published = CloudFolder(
@@ -235,4 +258,37 @@ void main() {
     expect(find.text('UBS'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('switching an existing combined folder back to Private '
+      'keeps the original local folder', (tester) async {
+    await _setViewport(tester);
+    final root = await Directory.systemTemp.createTemp('mirror_private_');
+    addTearDown(() => root.delete(recursive: true));
+    final fixture = await _setupPrivate(root);
+    final api = _PublishApi(root);
+    await api.seedOldPublishedCopy(
+      'UBS', fixture.original, 'notes.txt',
+    );
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(
+      api: api, localStore: fixture.store,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('UBS'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Настроить папку').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Настроить доступ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Личное').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Сделать папку личной?'), findsOneWidget);
+    await tester.tap(find.text('Продолжить'));
+    await tester.pumpAndSettle();
+
+    expect(api.published, isNull);
+    expect((await fixture.store.folders()).single.id,
+        fixture.folder.id);
+    expect(find.text('UBS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }
