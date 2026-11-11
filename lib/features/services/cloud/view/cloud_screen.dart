@@ -24,7 +24,6 @@ class _CloudScreenState extends State<CloudScreen> {
 
   List<CloudFile> _files = [];
   List<CloudFolder> _folders = [];
-  String _mode = 'mine';
   CloudFolder? _currentFolder;
   bool _loading = true;
   bool _busy = false;
@@ -63,13 +62,13 @@ class _CloudScreenState extends State<CloudScreen> {
     });
     try {
       final q = _search.text.trim();
-      final mode = q.isNotEmpty ? 'search' : _mode;
+      // Always browse the same accessible universe. Search is just a filter.
       final folderId = q.isEmpty ? _currentFolder?.id : null;
       final files = await _api.getFiles(
-        mode: mode, query: q, folderId: folderId,
+        mode: 'search', query: q, folderId: folderId,
       );
       final folders = q.isEmpty && _currentFolder == null
-          ? await _api.getFolders(mode: _mode)
+          ? await _api.getFolders(mode: 'all')
           : <CloudFolder>[];
       if (!mounted || request != _requestId) return;
       setState(() {
@@ -117,15 +116,6 @@ class _CloudScreenState extends State<CloudScreen> {
     }
   }
 
-  void _switchMode(String mode) {
-    if (_mode == mode && _currentFolder == null) return;
-    setState(() {
-      _mode = mode;
-      _currentFolder = null;
-    });
-    _load();
-  }
-
   Future<CloudVisibility?> _pickVisibility({
     CloudVisibility current = CloudVisibility.private,
   }) async {
@@ -160,54 +150,44 @@ class _CloudScreenState extends State<CloudScreen> {
     );
   }
 
-  Future<void> _createFolder({CloudFolder? existing}) async {
-    final input = TextEditingController(text: existing?.name ?? '');
+  Future<void> _createFolder() async {
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(existing == null ? 'Новая папка' : 'Переименовать папку'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          maxLength: 160,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'Например, ТАУ · лабораторные',
-            prefixIcon: Icon(Icons.folder_outlined),
-          ),
-          onSubmitted: (name) =>
-              Navigator.pop(context, name.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: const Text('Продолжить'),
-          ),
-        ],
+      builder: (_) => const _FolderNameDialog(
+        title: 'Новая папка',
+        actionText: 'Создать',
       ),
     );
-    // The controller is no longer attached to the dialog.
-    input.dispose();
     if (!mounted || name == null) return;
-    if (name.isEmpty) {
-      _message('Укажи название папки', error: true);
-      return;
-    }
-    final access = await _pickVisibility(
-      current: existing?.visibility ?? CloudVisibility.private,
+    await _perform(
+      () async { await _api.createFolder(name, CloudVisibility.private); },
+      'Папка создана. Доступ по умолчанию: личное.',
     );
-    if (!mounted || access == null) return;
-    await _perform(() async {
-      if (existing == null) {
-        await _api.createFolder(name, access);
-      } else {
-        await _api.editFolder(existing, name, access);
-      }
-    }, existing == null ? 'Папка создана' : 'Папка обновлена');
+  }
+
+  Future<void> _renameFolder(CloudFolder folder) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _FolderNameDialog(
+        title: 'Переименовать папку',
+        actionText: 'Сохранить',
+        initialName: folder.name,
+      ),
+    );
+    if (!mounted || name == null || name == folder.name) return;
+    await _perform(
+      () async { await _api.renameFolder(folder.id, name); },
+      'Название папки изменено',
+    );
+  }
+
+  Future<void> _changeFolderAccess(CloudFolder folder) async {
+    final access = await _pickVisibility(current: folder.visibility);
+    if (!mounted || access == null || access == folder.visibility) return;
+    await _perform(
+      () async { await _api.changeFolderVisibility(folder.id, access); },
+      'Доступ к папке: ${access.label.toLowerCase()}',
+    );
   }
 
   Future<bool> _confirm(String title, String message) async =>
@@ -239,7 +219,8 @@ class _CloudScreenState extends State<CloudScreen> {
         return;
       }
       CloudVisibility access = CloudVisibility.private;
-      final folderId = _mode == 'mine' && !_isSearching
+      // Uploading into somebody else's shared folder is not permitted.
+      final folderId = !_isSearching && _currentFolder?.mine == true
           ? _currentFolder?.id : null;
       if (folderId == null) {
         final chosen = await _pickVisibility();
@@ -589,12 +570,16 @@ class _CloudScreenState extends State<CloudScreen> {
                       tooltip: 'Настроить папку',
                       icon: const Icon(Icons.more_horiz, size: 20),
                       onSelected: (value) {
-                        if (value == 'edit') _createFolder(existing: folder);
+                        if (value == 'rename') _renameFolder(folder);
+                        if (value == 'access') _changeFolderAccess(folder);
                         if (value == 'delete') _deleteFolder(folder);
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(
-                          value: 'edit', child: Text('Название и доступ'),
+                          value: 'rename', child: Text('Переименовать'),
+                        ),
+                        PopupMenuItem(
+                          value: 'access', child: Text('Настроить доступ'),
                         ),
                         PopupMenuItem(
                           value: 'delete', child: Text('Удалить папку'),
@@ -813,7 +798,7 @@ class _CloudScreenState extends State<CloudScreen> {
                     TextField(
                       controller: _search,
                       decoration: InputDecoration(
-                        hintText: 'Найти конспект, лабораторную, файл…',
+                        hintText: 'Поиск по всем файлам…',
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: q.isEmpty ? null : IconButton(
                           icon: const Icon(Icons.close),
@@ -829,59 +814,41 @@ class _CloudScreenState extends State<CloudScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Поиск по твоим, общедоступным и материалам группы',
+                          'Поиск по всем доступным файлам: твоим, группы и общим',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
                         ),
                       )
-                    else ...[
+                    else if (_currentFolder != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ActionChip(
+                          avatar: const Icon(Icons.arrow_back, size: 18),
+                          label: Text('Все папки / ${_currentFolder!.name}',
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onPressed: () {
+                            setState(() => _currentFolder = null);
+                            _load();
+                          },
+                        ),
+                      )
+                    else
                       Row(children: [
-                        Expanded(child: ChoiceChip(
-                          label: const Center(child: Text('Мои файлы')),
-                          avatar: const Icon(Icons.person_outline, size: 18),
-                          selected: _mode == 'mine',
-                          onSelected: (_) => _switchMode('mine'),
-                        )),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _createFolder,
+                          icon: const Icon(Icons.create_new_folder_outlined),
+                          label: const Text('Новая папка'),
+                        ),
                         const SizedBox(width: 10),
-                        Expanded(child: ChoiceChip(
-                          label: const Center(child: Text('Общее')),
-                          avatar: const Icon(Icons.groups_outlined, size: 18),
-                          selected: _mode == 'discover',
-                          onSelected: (_) => _switchMode('discover'),
-                        )),
+                        Text('${_folders.length} папок',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant)),
                       ]),
-                      const SizedBox(height: 14),
-                      if (_currentFolder != null)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: ActionChip(
-                            avatar: const Icon(Icons.arrow_back, size: 18),
-                            label: Text('Все папки / ${_currentFolder!.name}',
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            onPressed: () {
-                              setState(() => _currentFolder = null);
-                              _load();
-                            },
-                          ),
-                        )
-                      else if (_mode == 'mine')
-                        Row(children: [
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : () => _createFolder(),
-                            icon: const Icon(Icons.create_new_folder_outlined),
-                            label: const Text('Новая папка'),
-                          ),
-                          const SizedBox(width: 10),
-                          Text('${_folders.length} папок',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colors.onSurfaceVariant)),
-                        ]),
-                    ],
                     if (_folders.isNotEmpty && !_isSearching &&
                         _currentFolder == null) ...[
                       const SizedBox(height: 20),
-                      Text(_mode == 'mine' ? 'Мои папки' : 'Общие папки',
+                      Text('Папки',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900)),
                       const SizedBox(height: 12),
@@ -899,8 +866,7 @@ class _CloudScreenState extends State<CloudScreen> {
                         _isSearching ? 'Результаты поиска'
                             : _currentFolder != null
                                 ? 'Файлы в папке'
-                                : _mode == 'mine'
-                                    ? 'Мои материалы' : 'Материалы студентов',
+                                : 'Все файлы',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w900),
                       )),
@@ -1051,6 +1017,71 @@ class _CloudThumbnailState extends State<_CloudThumbnail> {
                 },
               ),
       ),
+    );
+  }
+}
+
+
+/// A route-owned controller: disposed only when Flutter unmounts its dialog.
+/// Disposing it immediately after showDialog returns is unsafe while the
+/// reverse transition / inherited widgets may still have active descendants.
+class _FolderNameDialog extends StatefulWidget {
+  const _FolderNameDialog({
+    required this.title,
+    required this.actionText,
+    this.initialName = '',
+  });
+
+  final String title;
+  final String actionText;
+  final String initialName;
+
+  @override
+  State<_FolderNameDialog> createState() => _FolderNameDialogState();
+}
+
+class _FolderNameDialogState extends State<_FolderNameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    if (name.isEmpty) return;
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 160,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          labelText: 'Название папки',
+          hintText: 'Например, ТАУ · лабораторные',
+          prefixIcon: Icon(Icons.folder_outlined),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(widget.actionText),
+        ),
+      ],
     );
   }
 }
