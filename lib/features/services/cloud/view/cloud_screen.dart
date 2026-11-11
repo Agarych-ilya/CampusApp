@@ -301,6 +301,12 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Future<void> _createLink(CloudFile file) async {
     if (_busy) return;
+    if (!await _confirm(
+      'Создать ссылку на файл?',
+      'Любой, у кого есть ссылка, сможет скачать «${file.name}», '
+      'даже если файл личный. Предыдущая ссылка перестанет работать.',
+    )) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
       final url = await _api.createShareLink(file.id);
