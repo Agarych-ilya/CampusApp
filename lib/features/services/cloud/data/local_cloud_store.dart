@@ -262,6 +262,13 @@ class LocalCloudStore {
   }
 
   /// A partially uploaded server folder is tracked for safe retries.
+  Future<Set<int>> pendingServerFolderIds() async {
+    final index = await _read();
+    return (index['folders'] as List).whereType<Map>()
+        .map((item) => (item['pendingServerFolderId'] as num?)?.toInt())
+        .whereType<int>().toSet();
+  }
+
   Future<int?> pendingPublication(int localFolderId) async {
     final index = await _read();
     for (final item in (index['folders'] as List).whereType<Map>()) {
