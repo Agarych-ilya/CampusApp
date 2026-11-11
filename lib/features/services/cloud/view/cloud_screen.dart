@@ -35,6 +35,7 @@ class _CloudScreenState extends State<CloudScreen> {
   CloudFolder? _currentFolder;
   bool _loading = true;
   bool _busy = false;
+  String? _migrationStatus;
   String? _error;
   int _requestId = 0;
 
@@ -329,6 +330,10 @@ class _CloudScreenState extends State<CloudScreen> {
     if (!mounted || !approved) return;
     await _perform(() async {
       final manifest = await _api.folderMigrationManifest(folder.id);
+      if (mounted) {
+        setState(() => _migrationStatus =
+            'Подготовка переноса · ${manifest.files.length} файлов');
+      }
       if (manifest.id != folder.id) {
         throw const FormatException('Получены данные другой папки');
       }
@@ -352,6 +357,10 @@ class _CloudScreenState extends State<CloudScreen> {
             ),
           );
           staged[item.id] = temp;
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Скачано ${staged.length} из ${manifest.files.length}');
+          }
           if (await temp.length() != item.size) {
             throw FileSystemException(
               'Файл скачался не полностью: ${item.name}',
@@ -360,7 +369,11 @@ class _CloudScreenState extends State<CloudScreen> {
         }
 
         // Idempotent if the backend was unreachable after a prior copy.
+        if (mounted) setState(() => _migrationStatus =
+            'Сохранение файлов на устройстве');
         await _local.importServerFolder(manifest, staged);
+        if (mounted) setState(() => _migrationStatus =
+            'Отзыв ссылок и удаление серверной копии');
         try {
           await _api.finishFolderMigration(
             folder.id, manifest.files.map((file) => file.id).toList(),
@@ -384,6 +397,7 @@ class _CloudScreenState extends State<CloudScreen> {
         }
       }
     }, 'Папка теперь только на устройстве. Ссылки отозваны.');
+    if (mounted) setState(() => _migrationStatus = null);
   }
 
   /// Sharing a local folder produces a server COPY, preserving the local
@@ -1180,6 +1194,15 @@ class _CloudScreenState extends State<CloudScreen> {
                         )),
                       ]),
                     ),
+                    if (_migrationStatus != null) ...[
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 8),
+                      Text(
+                        _migrationStatus!,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     const SizedBox(height: 19),
                     TextField(
                       controller: _search,
