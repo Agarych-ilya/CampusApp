@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '/core/config/api_config.dart';
 import '/features/services/listings/data/listings_api.dart';
+import 'server_room_layout.dart';
 
 /// Take the physical room code from the schedule:
 /// "С-401 (Корпус С)" -> "С-401". Online lessons return null.
@@ -77,16 +78,22 @@ class ClassroomSeat {
   @override
   int get hashCode => Object.hash(row, desk, seat);
 
-  factory ClassroomSeat.fromJson(Object? value, {String room = 'М-307'}) {
+  factory ClassroomSeat.fromJson(Object? value, {
+    String room = 'М-307',
+    bool fromServerLayout = false,
+  }) {
     if (value is! Map) {
       throw const FormatException('Некорректное место');
     }
     final row = value['row'], desk = value['desk'], seat = value['seat'];
     if (row is! num || desk is! num || seat is! num ||
         row.toInt() != row || desk.toInt() != desk || seat.toInt() != seat ||
-        !isValidClassroomSeat(
-          room, row.toInt(), desk.toInt(), seat.toInt(),
-        )) {
+        !(fromServerLayout
+            ? row > 0 && row <= 100 && desk > 0 && desk <= 100 &&
+              seat > 0 && seat <= 20
+            : isValidClassroomSeat(
+                room, row.toInt(), desk.toInt(), seat.toInt(),
+              ))) {
       throw const FormatException('Некорректный номер места');
     }
     return ClassroomSeat(
@@ -153,8 +160,10 @@ class ClassroomAvailability {
     required this.mine,
     required this.slots,
     required this.testMode,
+    this.layout,
   });
 
+  final ServerRoomLayout? layout;
   final String room;
   final String date;
   final String slot;
@@ -163,7 +172,7 @@ class ClassroomAvailability {
   final List<ClassroomTimeSlot> slots;
   final bool testMode;
 
-  int get capacity => classroomSeatCapacity(room);
+  int get capacity => layout?.seats.length ?? classroomSeatCapacity(room);
   int get available => capacity - occupied.length;
 
   bool isOccupied(ClassroomSeat seat) => occupied.contains(seat);
@@ -174,17 +183,32 @@ class ClassroomAvailability {
       throw const FormatException('Некорректный ответ сервера');
     }
     final room = value['room']?.toString() ?? '';
-    if (!isBookableClassroom(room)) {
-      throw const FormatException('Неизвестная аудитория в ответе сервера');
-    }
-    final rawSeats = value['occupied'] as List;
-    final occupied = rawSeats
-        .map((seat) => ClassroomSeat.fromJson(seat, room: room))
-        .toSet();
-    final rawMine = value['mine'];
-    final mine = rawMine == null
+    final rawLayout = value['layout'];
+    final layout = rawLayout == null
         ? null
-        : ClassroomSeat.fromJson(rawMine, room: room);
+        : ServerRoomLayout.fromJson(rawLayout);
+    if (layout != null && layout.room != room) {
+      throw const FormatException('Схема относится к другой аудитории');
+    }
+    // New rooms are accepted when explicitly described by the backend.
+    if (!isBookableClassroom(room) && layout == null) {
+      throw const FormatException('Сервер не прислал схему аудитории');
+    }
+    ClassroomSeat parseSeat(Object? item) {
+      final seat = ClassroomSeat.fromJson(
+        item,
+        room: room,
+        fromServerLayout: layout != null,
+      );
+      if (layout != null &&
+          !layout.includesSeat(seat.row, seat.desk, seat.seat)) {
+        throw const FormatException('Сервер прислал несуществующее место');
+      }
+      return seat;
+    }
+    final occupied = (value['occupied'] as List).map(parseSeat).toSet();
+    final rawMine = value['mine'];
+    final mine = rawMine == null ? null : parseSeat(rawMine);
     final rawSlots = value['slots'];
     return ClassroomAvailability(
       room: room,
@@ -196,6 +220,7 @@ class ClassroomAvailability {
           ? rawSlots.map(ClassroomTimeSlot.fromJson).toList()
           : classroomDemoSlots,
       testMode: value['testMode'] == true,
+      layout: layout,
     );
   }
 }
@@ -253,11 +278,28 @@ class ClassroomBookingApi {
   }
 
   void _validateRoom(String room) {
-    if (!isBookableClassroom(room)) {
-      throw const ClassroomBookingException(
-        'Пока бронирование доступно только для М-307 и В-308',
-      );
+    // The server room catalogue and stored layout are authoritative.
+    // Keep input validation, not a hardcoded list of supported rooms.
+    if (room != classroomCodeFromLesson(room)) {
+      throw const ClassroomBookingException('Некорректный номер аудитории');
     }
+  }
+
+  /// List rooms from MySQL, so new rooms can appear without a Flutter release.
+  Future<Set<String>> bookableRooms() async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/services/room-bookings/rooms'),
+    ).timeout(const Duration(seconds: 12));
+    if (response.statusCode != 200) {
+      throw ClassroomBookingException(_message(response));
+    }
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    if (data is! List) throw const FormatException('Неверный каталог аудиторий');
+    return data
+        .whereType<Map>()
+        .map((item) => item['room']?.toString() ?? '')
+        .where((room) => classroomCodeFromLesson(room) == room)
+        .toSet();
   }
 
   Future<ClassroomAvailability> load({
