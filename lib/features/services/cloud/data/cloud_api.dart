@@ -105,6 +105,70 @@ class CloudFolder {
   }
 }
 
+class CloudMigrationItem {
+  const CloudMigrationItem({
+    required this.id,
+    required this.name,
+    required this.size,
+    required this.owned,
+  });
+
+  final int id;
+  final String name;
+  final int size;
+  /// A saved bookmark can be copied locally, but its foreign original stays.
+  final bool owned;
+
+  factory CloudMigrationItem.fromJson(Object? value) {
+    if (value is! Map ||
+        value['id'] is! num || value['name'] is! String ||
+        value['size'] is! num || value['owned'] is! bool) {
+      throw const FormatException('Некорректный список файлов для переноса');
+    }
+    final id = (value['id'] as num).toInt();
+    final size = (value['size'] as num).toInt();
+    final name = value['name'] as String;
+    if (id <= 0 || size < 0 || size > 20 * 1024 * 1024 ||
+        name.isEmpty) {
+      throw const FormatException('Невозможно перенести этот файл');
+    }
+    return CloudMigrationItem(
+      id: id, name: name, size: size,
+      owned: value['owned'] as bool,
+    );
+  }
+}
+
+class CloudFolderMigration {
+  const CloudFolderMigration({
+    required this.id,
+    required this.name,
+    required this.files,
+  });
+
+  final int id;
+  final String name;
+  final List<CloudMigrationItem> files;
+
+  factory CloudFolderMigration.fromJson(Object? value) {
+    if (value is! Map || value['folderId'] is! num ||
+        value['name'] is! String || value['files'] is! List) {
+      throw const FormatException('Некорректная схема переноса папки');
+    }
+    final files = (value['files'] as List)
+        .map(CloudMigrationItem.fromJson).toList();
+    if (files.length > 500 ||
+        files.map((item) => item.id).toSet().length != files.length) {
+      throw const FormatException('Повторяющиеся файлы в папке');
+    }
+    return CloudFolderMigration(
+      id: (value['folderId'] as num).toInt(),
+      name: value['name'] as String,
+      files: files,
+    );
+  }
+}
+
 class CloudApi {
   static const String baseUrl = ApiConfig.baseUrl;
   static const String _base = '$baseUrl/cloud';
@@ -217,6 +281,25 @@ class CloudApi {
       body: {'visibility': visibility.key},
     );
     return CloudFolder.fromJson(data);
+  }
+
+  /// CSRF-protected manifest of every server file and bookmark in a folder.
+  Future<CloudFolderMigration> folderMigrationManifest(int id) async {
+    final value = await _request(
+      'GET', '/folders/$id/migration', write: true,
+    );
+    return CloudFolderMigration.fromJson(value);
+  }
+
+  /// Called only after verified durable local copies of every manifest item.
+  /// The backend rejects changes in the folder's file ID set.
+  Future<void> finishFolderMigration(
+    int id, List<int> copiedFileIds,
+  ) async {
+    await _request(
+      'POST', '/folders/$id/migrate-to-device', write: true,
+      body: {'fileIds': copiedFileIds},
+    );
   }
 
   Future<void> deleteFolder(int id) async {
