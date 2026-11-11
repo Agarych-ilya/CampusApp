@@ -308,6 +308,43 @@ class _CloudScreenState extends State<CloudScreen> {
     }
   }
 
+  Future<void> _importYandex() async {
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) => const _YandexLinkDialog(),
+    );
+    if (!mounted || url == null) return;
+    final folder = !_isSearching && _currentFolder?.mine == true
+        ? _currentFolder : null;
+    CloudVisibility visibility = folder?.visibility ?? CloudVisibility.private;
+    if (folder == null) {
+      final selected = await _pickVisibility();
+      if (!mounted || selected == null) return;
+      visibility = selected;
+    }
+    await _perform(() async {
+      final imported = await _yandex.download(url);
+      try {
+        if (visibility == CloudVisibility.private) {
+          await _local.saveFile(
+            imported.file.path, name: imported.name,
+            folderId: folder?.local == true ? folder?.id : null,
+          );
+        } else {
+          await _api.uploadFile(
+            imported.file.path,
+            folderId: folder?.local == true ? null : folder?.id,
+            visibility: visibility,
+          );
+        }
+      } finally {
+        if (await imported.file.exists()) await imported.file.delete();
+      }
+    }, visibility == CloudVisibility.private
+        ? 'Импортировано только на устройство (папка — ZIP)'
+        : 'Импортировано в Campus Cloud (папка — ZIP)');
+  }
+
   Future<void> _save(CloudFile file) async {
     await _perform(
       () => _api.saveFile(file.id),
@@ -596,6 +633,15 @@ class _CloudScreenState extends State<CloudScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.link_outlined),
+              title: const Text('Импорт по ссылке Яндекс Диска'),
+              subtitle: const Text('Публичный файл или папка как ZIP'),
+              onTap: () {
+                Navigator.pop(context);
+                _importYandex();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.create_new_folder_outlined),
               title: const Text('Создать папку'),
               onTap: () {
@@ -690,6 +736,7 @@ class _CloudScreenState extends State<CloudScreen> {
         borderRadius: BorderRadius.circular(18),
         onTap: () {
           setState(() => _currentFolder = folder);
+          if (_isSearching) _search.clear();
           _load();
         },
         child: SizedBox(
@@ -943,7 +990,7 @@ class _CloudScreenState extends State<CloudScreen> {
                     TextField(
                       controller: _search,
                       decoration: InputDecoration(
-                        hintText: 'Поиск по всем файлам…',
+                        hintText: 'Поиск по файлам и папкам…',
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: q.isEmpty ? null : IconButton(
                           icon: const Icon(Icons.close),
@@ -959,7 +1006,7 @@ class _CloudScreenState extends State<CloudScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Поиск по всем доступным файлам: твоим, группы и общим',
+                          'Файлы и папки: личные, группы и общедоступные',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -990,10 +1037,10 @@ class _CloudScreenState extends State<CloudScreen> {
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant)),
                       ]),
-                    if (_folders.isNotEmpty && !_isSearching &&
+                    if (_folders.isNotEmpty &&
                         _currentFolder == null) ...[
                       const SizedBox(height: 20),
-                      Text('Папки',
+                      Text(_isSearching ? 'Найденные папки' : 'Папки',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900)),
                       const SizedBox(height: 12),
@@ -1049,7 +1096,7 @@ class _CloudScreenState extends State<CloudScreen> {
                   ]),
                 ),
               )
-            else if (_files.isEmpty)
+            else if (_files.isEmpty && _folders.isEmpty)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 38, 24, 140),
