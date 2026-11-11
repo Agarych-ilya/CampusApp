@@ -63,7 +63,11 @@ class LocalCloudStore {
       if (await backup.exists()) await backup.rename(target.path);
       rethrow;
     }
-    if (await backup.exists()) await backup.delete();
+    // The new index is committed. Cleanup failure must never cause callers
+    // to roll back its files, leaving valid metadata pointing to deleted data.
+    try {
+      if (await backup.exists()) await backup.delete();
+    } catch (_) {}
   }
 
   int _nextId(Map<String, dynamic> index) {
