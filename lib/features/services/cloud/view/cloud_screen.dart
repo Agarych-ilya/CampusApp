@@ -9,14 +9,17 @@ import '/features/services/style/service_palette.dart';
 import '../data/cloud_api.dart';
 
 class CloudScreen extends StatefulWidget {
-  const CloudScreen({super.key});
+  const CloudScreen({super.key, this.api});
+
+  /// Optional API injection for widget tests and offline previews.
+  final CloudApi? api;
 
   @override
   State<CloudScreen> createState() => _CloudScreenState();
 }
 
 class _CloudScreenState extends State<CloudScreen> {
-  final CloudApi _api = CloudApi();
+  late final CloudApi _api;
   final TextEditingController _search = TextEditingController();
   Timer? _debounce;
 
@@ -34,6 +37,7 @@ class _CloudScreenState extends State<CloudScreen> {
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? CloudApi();
     _load();
     _search.addListener(() {
       _debounce?.cancel();
