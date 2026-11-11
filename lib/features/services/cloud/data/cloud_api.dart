@@ -224,15 +224,20 @@ class CloudApi {
   }
 
   Future<void> uploadFile(
-    String path, {int? folderId, CloudVisibility visibility = CloudVisibility.private}
-  ) async {
+    String path, {
+    int? folderId,
+    CloudVisibility visibility = CloudVisibility.private,
+    String? filename,
+  }) async {
     final request = http.MultipartRequest(
       'POST', Uri.parse('$_base/upload'),
     );
     request.headers.addAll(await _headers(write: true));
     if (folderId != null) request.fields['folderId'] = '$folderId';
     request.fields['visibility'] = visibility.key;
-    request.files.add(await http.MultipartFile.fromPath('file', path));
+    request.files.add(await http.MultipartFile.fromPath(
+      'file', path, filename: filename,
+    ));
     final response = await http.Response.fromStream(
       await request.send().timeout(const Duration(seconds: 90)),
     ).timeout(const Duration(seconds: 90));
