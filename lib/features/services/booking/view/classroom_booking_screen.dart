@@ -176,7 +176,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
     final room = _room;
     final accepted = await _confirm(
       'Подтвердить место?',
-      '${seat.labelForRoom(room)}\nАудитория $room · ${_formatDate(date)}\n'
+      '${_seatLabel(seat)}\nАудитория $room · ${_formatDate(date)}\n'
           '${_time(slot)}\n\nЭто тестовая бронь CampusApp.',
       'Забронировать',
     );
@@ -191,7 +191,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
         _availability = result;
         _selected = null;
       });
-      _notify('Место забронировано: ${seat.labelForRoom(room)}');
+      _notify('Место забронировано: ${_seatLabel(seat)}');
     } on ClassroomBookingException catch (error) {
       _notify(error.message);
       if (error.conflict) await _load();
@@ -232,6 +232,10 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
       if (mounted) setState(() => _working = false);
     }
   }
+
+  String _seatLabel(ClassroomSeat seat) =>
+      _availability?.layout?.seatLabel(seat.row, seat.desk, seat.seat) ??
+      seat.labelForRoom(_room);
 
   String _time(String slot) {
     final slots = _availability?.slots ?? classroomDemoSlots;
@@ -474,7 +478,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                               color: ServicePalette.amber),
                           const SizedBox(width: 9),
                           Expanded(
-                            child: Text('Твоя бронь: ${mine.labelForRoom(_room)}',
+                            child: Text('Твоя бронь: ${_seatLabel(mine)}',
                                 style: TextStyle(color: onSurface)),
                           ),
                         ],
@@ -491,7 +495,7 @@ class _ClassroomBookingScreenState extends State<ClassroomBookingScreen> {
                     if (_selected != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
-                        child: Text('Выбрано: ${_selected!.labelForRoom(_room)}',
+                        child: Text('Выбрано: ${_seatLabel(_selected!)}',
                             style: TextStyle(
                               color: onSurface, fontWeight: FontWeight.w700,
                             )),
