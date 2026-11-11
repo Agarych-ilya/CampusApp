@@ -340,13 +340,23 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Future<void> _changeFolderAccess(CloudFolder folder) async {
     if (_busy) return;
-    final access = await _pickVisibility(current: folder.visibility);
-    if (!mounted || access == null ||
-        (access == folder.visibility && !(access == CloudVisibility.private &&
-            !folder.local))) return;
+    final mirror = folder.local ? _serverMirrors[folder.id] : null;
+    final current = mirror?.visibility ?? folder.visibility;
+    final access = await _pickVisibility(current: current);
+    if (!mounted || access == null) return;
+    if (access == current && mirror == null &&
+        !(access == CloudVisibility.private && !folder.local)) return;
+
     if (folder.local) {
-      if (access == CloudVisibility.private) return;
-      await _publishLocalFolder(folder, access);
+      if (mirror != null) {
+        if (access == CloudVisibility.private) {
+          await _makeMirrorPrivate(folder, mirror);
+        } else {
+          await _publishLocalFolder(folder, access, existingMirror: mirror);
+        }
+      } else if (access != CloudVisibility.private) {
+        await _publishLocalFolder(folder, access);
+      }
       return;
     }
     if (access == CloudVisibility.private) {
@@ -357,6 +367,80 @@ class _CloudScreenState extends State<CloudScreen> {
       () async { await _api.changeFolderVisibility(folder.id, access); },
       'Доступ к папке: ${access.label.toLowerCase()}',
     );
+  }
+
+  /// A folder that already has local and server copies can become private
+  /// without creating yet another local folder. Only remove the server copy
+  /// after comparing every owned byte and preserving the existing local data.
+  Future<void> _makeMirrorPrivate(
+    CloudFolder local, CloudFolder remote,
+  ) async {
+    final approved = await _confirm(
+      'Сделать папку личной?',
+      'Будет оставлена одна папка «${local.name}» на устройстве. '
+      'Серверные файлы и ссылки будут удалены только после проверки, '
+      'что локальная версия содержит те же данные.',
+    );
+    if (!mounted || !approved) return;
+    await _perform(() async {
+      try {
+        final localFiles = await _local.files(folderId: local.id);
+        final manifest = await _api.folderMigrationManifest(remote.id);
+        if (manifest.files.length != localFiles.length) {
+          throw Exception(
+            'Содержимое серверной и личной папок различается. '
+            'Файлы не удалены.',
+          );
+        }
+        final unmatched = [...localFiles];
+        for (var i = 0; i < manifest.files.length; i++) {
+          final item = manifest.files[i];
+          final index = unmatched.indexWhere((file) =>
+              file.name == item.name && file.size == item.size &&
+              file.localPath != null);
+          if (index < 0) {
+            throw Exception('Не найден локальный файл: ${item.name}');
+          }
+          final candidate = unmatched.removeAt(index);
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Проверка ${i + 1} из ${manifest.files.length}');
+          }
+          final downloaded = await _api.downloadToTemporary(CloudFile(
+            id: item.id,
+            name: item.name,
+            size: item.size,
+            available: true,
+            mime: 'application/octet-stream',
+            folderId: remote.id,
+            visibility: remote.visibility,
+            group: remote.group,
+            mine: item.owned,
+            saved: !item.owned,
+            image: false,
+          ));
+          try {
+            if (!await _sameBytes(
+              File(candidate.localPath!), downloaded,
+            )) {
+              throw Exception(
+                'Файл «${item.name}» отличается. '
+                'Обе копии сохранены без изменений.',
+              );
+            }
+          } finally {
+            if (await downloaded.exists()) {
+              try { await downloaded.delete(); } catch (_) {}
+            }
+          }
+        }
+        await _api.finishFolderMigration(
+          remote.id, manifest.files.map((item) => item.id).toList(),
+        );
+      } finally {
+        if (mounted) setState(() => _migrationStatus = null);
+      }
+    }, 'Папка «${local.name}» теперь только на устройстве.');
   }
 
   /// Do not remove anything on the server before every file has been
@@ -468,8 +552,9 @@ class _CloudScreenState extends State<CloudScreen> {
   /// A private server staging folder allows retries without exposing a
   /// partially uploaded collection to other students.
   Future<void> _publishLocalFolder(
-    CloudFolder folder, CloudVisibility access,
-  ) async {
+    CloudFolder folder, CloudVisibility access, {
+    CloudFolder? existingMirror,
+  }) async {
     if (_busy || access == CloudVisibility.private) return;
     final approved = await _confirm(
       'Перенести папку в облако?',
@@ -493,9 +578,25 @@ class _CloudScreenState extends State<CloudScreen> {
         final pendingId = await _local.pendingPublication(folder.id);
         final serverFolders = await _api.getFolders(mode: 'mine');
         CloudFolder? serverFolder;
-        var existingPublishedCopy = false;
+        var existingPublishedCopy = existingMirror != null;
 
-        if (pendingId != null) {
+        if (existingMirror != null) {
+          final matches = serverFolders.where((candidate) =>
+              candidate.id == existingMirror.id && candidate.mine).toList();
+          if (matches.length != 1) {
+            throw Exception(
+              'Серверная версия папки недоступна. '
+              'Оригинал на устройстве сохранён.',
+            );
+          }
+          serverFolder = matches.single;
+          if (pendingId != null && pendingId != serverFolder.id) {
+            throw Exception('Папка уже переносится на другой сервер');
+          }
+          if (pendingId == null) {
+            await _local.markPendingPublication(folder.id, serverFolder.id);
+          }
+        } else if (pendingId != null) {
           for (final candidate in serverFolders) {
             if (candidate.id == pendingId && candidate.mine) {
               serverFolder = candidate;
