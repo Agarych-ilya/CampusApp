@@ -278,4 +278,40 @@ void main() {
     expect(await reopened.folders(), isEmpty);
   });
 
+  testWidgets('local-only files and matching local folders are searchable',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final root = await Directory.systemTemp.createTemp('campus_ui_local_');
+    addTearDown(() => root.delete(recursive: true));
+    final store = LocalCloudStore(rootProvider: () async => root);
+    final folder = await store.createFolder('Секретная папка');
+    final source = File('${root.path}/private.txt');
+    await source.writeAsString('only local bytes');
+    await store.saveFile(source.path,
+        name: 'личный конспект.txt', folderId: folder.id);
+    final api = _FakeCloudApi();
+
+    await tester.pumpWidget(MaterialApp(
+      home: CloudScreen(api: api, localStore: store),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Секретная папка'), findsOneWidget);
+    expect(find.text('личный конспект.txt'), findsOneWidget);
+    expect(find.text('На устройстве'), findsWidgets);
+    expect(api.uploads, 0);
+
+    await tester.enterText(find.byType(TextField).first, 'секретная');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.text('Секретная папка'), findsOneWidget);
+    expect(find.text('личный конспект.txt'), findsNothing);
+    expect(tester.takeException(), isNull);
+    expect(api.uploads, 0);
+  });
+
 }
