@@ -308,7 +308,8 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _createFolderLink(CloudFolder folder) async {
     final actual = folder.local
         ? (_serverMirrors[folder.id] ?? folder) : folder;
-    if (actual.local) {
+    if (actual.local || (folder.local &&
+        actual.visibility == CloudVisibility.private)) {
       _message(
         'Эта папка хранится только на телефоне. '
         'Для ссылки создай общую папку и загрузи в неё файлы.',
@@ -1281,11 +1282,15 @@ class _CloudScreenState extends State<CloudScreen> {
                         ),
                         PopupMenuItem(
                           value: 'link',
-                          child: Text(folder.local && mirror == null
+                          child: Text(folder.local &&
+                                  (mirror == null ||
+                                   mirror.visibility == CloudVisibility.private)
                               ? 'Как поделиться папкой?'
                               : 'Скопировать ссылку на папку'),
                         ),
-                        if (!folder.local || mirror != null)
+                        if (!folder.local ||
+                            (mirror != null &&
+                             mirror.visibility != CloudVisibility.private))
                           const PopupMenuItem(
                             value: 'revoke',
                             child: Text('Отозвать ссылку на папку'),
@@ -1302,7 +1307,9 @@ class _CloudScreenState extends State<CloudScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
                 _scopeTag(visibleScope, group: mirror?.group ?? folder.group,
-                    local: folder.local && mirror == null),
+                    local: folder.local &&
+                        (mirror == null ||
+                         mirror.visibility == CloudVisibility.private)),
               ],
             ),
           ),
