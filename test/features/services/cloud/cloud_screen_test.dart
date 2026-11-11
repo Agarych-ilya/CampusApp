@@ -72,9 +72,11 @@ class _FakeCloudApi extends CloudApi {
 
   @override
   Future<void> uploadFile(
-    String path, {int? folderId,
-    CloudVisibility visibility = CloudVisibility.private}
-  ) async {
+    String path, {
+    int? folderId,
+    CloudVisibility visibility = CloudVisibility.private,
+    String? filename,
+  }) async {
     uploads++;
   }
 
