@@ -67,7 +67,7 @@ void main() {
     expect(isValidClassroomSeat('В-308', 11, 1, 1), isFalse);
     expect(
       const ClassroomSeat(row: 5, desk: 8, seat: 2).labelForRoom('В-308'),
-      'Ряд 5, правая сторона, место 8',
+      'Ряд 6, правая сторона, место 8',
     );
   });
 
@@ -104,8 +104,9 @@ void main() {
         ),
       ),
     ));
-    expect(find.byKey(const ValueKey('amphitheater-red-zone')), findsOneWidget);
-    expect(find.byKey(const ValueKey('amphitheater-blue-zone')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amphitheater-red-zone')), findsNothing);
+    expect(find.byKey(const ValueKey('amphitheater-blue-zone')), findsNothing);
+    expect(find.byKey(const ValueKey('amphitheater-central-recess')), findsOneWidget);
     expect(find.byKey(const ValueKey('amphitheater-row-10')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-4-10-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-seat-4-10-2')), findsOneWidget);
@@ -158,6 +159,35 @@ void main() {
     expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(find.byKey(const ValueKey('amphitheater-side-left')),
         findsNothing);
+
+    // Shorter lower rows are aligned with the OUTER edges of upper rows,
+    // leaving the widening central recess free of seats.
+    final redLeftOuter = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-1-10-1')),
+    );
+    final blueLeftOuter = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-5-8-1')),
+    );
+    final redRightOuter = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-1-10-2')),
+    );
+    final blueRightOuter = tester.getTopLeft(
+      find.byKey(const ValueKey('room-seat-5-8-2')),
+    );
+    expect((redLeftOuter.dx - blueLeftOuter.dx).abs(), lessThan(0.1));
+    expect((redRightOuter.dx - blueRightOuter.dx).abs(), lessThan(0.1));
+
+    // Seat identity stays API-compatible, labels run from the lecturer up.
+    expect(
+      const ClassroomSeat(row: 10, desk: 1, seat: 1)
+          .labelForRoom('В-308'),
+      contains('Ряд 1'),
+    );
+    expect(
+      const ClassroomSeat(row: 1, desk: 1, seat: 1)
+          .labelForRoom('В-308'),
+      contains('Ряд 10'),
+    );
 
     // Rows are actually curved: the edge of the bank is lower
     // than the middle of the same tier.
@@ -236,6 +266,10 @@ void main() {
     expect(row2Desk1.dx, greaterThan(row1Desk1.dx));
     expect((row1Desk9.dx - row1Desk1.dx).abs(), lessThan(1));
     expect(find.byKey(const ValueKey('room-vertical-rows')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-outlet-3-6-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-outlet-3-8-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-outlet-3-6-1')), findsNothing);
+    expect(find.byKey(const ValueKey('room-outlet-2-8-2')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('room-seat-1-1-1')));
     expect(tapped, isNull); // occupied seats cannot be selected
@@ -377,7 +411,7 @@ void main() {
     );
     expect(mine.available, 175);
     expect(mine.mine?.labelForRoom('В-308'),
-        'Ряд 5, правая сторона, место 8');
+        'Ряд 6, правая сторона, место 8');
     final restored = await api.cancel(date: date, slot: '3', room: 'В-308');
     expect(restored.available, 176);
     expect(calls.map((call) => call.method).toList(),
