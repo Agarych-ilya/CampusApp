@@ -1165,7 +1165,9 @@ class _CloudThumbnailState extends State<_CloudThumbnail> {
   void initState() {
     super.initState();
     if (widget.file.image && widget.file.available) {
-      _bytes = widget.api.previewBytes(widget.file);
+      _bytes = widget.file.local
+          ? File(widget.file.localPath!).readAsBytes()
+          : widget.api.previewBytes(widget.file);
     }
   }
 
@@ -1175,7 +1177,10 @@ class _CloudThumbnailState extends State<_CloudThumbnail> {
     if (oldWidget.file.id != widget.file.id ||
         oldWidget.file.image != widget.file.image) {
       _bytes = widget.file.image && widget.file.available
-          ? widget.api.previewBytes(widget.file) : null;
+          ? (widget.file.local
+              ? File(widget.file.localPath!).readAsBytes()
+              : widget.api.previewBytes(widget.file))
+          : null;
     }
   }
 
@@ -1272,6 +1277,68 @@ class _FolderNameDialogState extends State<_FolderNameDialog> {
         FilledButton(
           onPressed: _submit,
           child: Text(widget.actionText),
+        ),
+      ],
+    );
+  }
+}
+
+class _YandexLinkDialog extends StatefulWidget {
+  const _YandexLinkDialog();
+
+  @override
+  State<_YandexLinkDialog> createState() => _YandexLinkDialogState();
+}
+
+class _YandexLinkDialogState extends State<_YandexLinkDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final url = _controller.text.trim();
+    if (url.isNotEmpty) Navigator.of(context).pop(url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Импорт из Яндекс Диска'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Вставь публичную ссылку на файл или папку. '
+            'Закрытые ссылки без публичного доступа не поддерживаются. '
+            'Папка импортируется ZIP-архивом до 20 МБ.',
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            maxLength: 2048,
+            decoration: const InputDecoration(
+              hintText: 'https://disk.yandex.ru/d/...',
+              labelText: 'Ссылка Яндекс Диска',
+              prefixIcon: Icon(Icons.link_outlined),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Импортировать'),
         ),
       ],
     );
