@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import '../data/classroom_booking_api.dart';
 import '/features/services/style/service_palette.dart';
 
-/// The V-308 amphitheater has two curved banks and a central aisle.
+/// The V-308 amphitheater has two curved banks, a narrow upper aisle and
+/// a central rectangular block in the lower half with side walkways.
 /// Upper four tiers: 10 seats per side. Lower six: 8 seats per side.
 /// Visible row labels run bottom-to-top (1 next to lecturer, 10 at the back).
 /// API coordinates remain top-to-bottom for existing reservations.
@@ -49,8 +50,9 @@ class _AuditoriumGeometry {
   static double rowTop(int row) =>
       98.0 + (row - 1) * 63.0 + (row >= 5 ? 26.0 : 0.0);
 
-  // The 8-place rows align with the OUTER ends of the 10-place rows.
-  // Their missing two inner seats form a widening central recess.
+  // Both banks keep their outside edge aligned across the entire hall.
+  // In the eight-place rows the two missing inner places leave room for
+  // walkways alongside the rectangular block, not a wider central aisle.
   static double x(int side, int index, int count) =>
       (side == 1 ? left : right + (10 - count) * seatStep) +
       index * seatStep;
@@ -101,50 +103,19 @@ class _CurvedRowGuides extends CustomPainter {
   bool shouldRepaint(covariant _CurvedRowGuides oldDelegate) => false;
 }
 
-/// A recessed central aisle that gets wider where rows have only 8 places.
-/// Painted behind seats; it never blocks touch hit-testing.
-class _RecessedAislePainter extends CustomPainter {
-  const _RecessedAislePainter({required this.fill, required this.edge});
+// The upper four tiers have a narrow central aisle. The lower six tiers
+// have a separate rectangular central block with walkways on BOTH sides.
+// The block is deliberately narrower than the gap between the lower banks.
+class _CentralBlockGeometry {
+  static const upperLeft = 393.0;
+  static const upperTop = 91.0;
+  static const upperWidth = 44.0;
+  static const upperHeight = 265.0;
 
-  final Color fill;
-  final Color edge;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final aisle = Path()
-      ..moveTo(393, 91)
-      ..lineTo(437, 91)
-      ..lineTo(437, 327)
-      ..cubicTo(439, 351, 490, 361, 493, 390)
-      ..lineTo(493, 747)
-      ..lineTo(337, 747)
-      ..lineTo(337, 390)
-      ..cubicTo(340, 361, 391, 351, 393, 327)
-      ..close();
-
-    canvas.drawShadow(aisle, Colors.black.withOpacity(0.15), 5, false);
-    canvas.drawPath(aisle, Paint()..color = fill);
-    canvas.drawPath(
-      aisle,
-      Paint()
-        ..color = edge
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
-
-    // Centerline helps make the recess legible when the whole map is zoomed out.
-    canvas.drawLine(
-      const Offset(415, 104),
-      const Offset(415, 732),
-      Paint()
-        ..color = edge.withOpacity(0.45)
-        ..strokeWidth = 1.5,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RecessedAislePainter oldDelegate) =>
-      oldDelegate.fill != fill || oldDelegate.edge != edge;
+  static const lowerLeft = 358.0;
+  static const lowerTop = upperTop + upperHeight;
+  static const lowerWidth = 114.0;
+  static const lowerHeight = 400.0;
 }
 
 class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
@@ -369,13 +340,40 @@ class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
           ),
-          Positioned.fill(
+          // The narrow aisle between the four upper tiers.
+          Positioned(
+            left: _CentralBlockGeometry.upperLeft,
+            top: _CentralBlockGeometry.upperTop,
+            width: _CentralBlockGeometry.upperWidth,
+            height: _CentralBlockGeometry.upperHeight,
             child: IgnorePointer(
-              child: CustomPaint(
-                key: const ValueKey('amphitheater-central-recess'),
-                painter: _RecessedAislePainter(
-                  fill: scheme.surfaceContainerHigh.withOpacity(0.82),
-                  edge: scheme.outlineVariant,
+              child: Container(
+                key: const ValueKey('amphitheater-upper-aisle'),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHigh.withOpacity(0.72),
+                  border: Border(
+                    left: BorderSide(color: scheme.outlineVariant, width: 2),
+                    right: BorderSide(color: scheme.outlineVariant, width: 2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // A straight-sided, rectangular block for the six lower tiers.
+          // The empty strips to its left and right are WALKWAYS, not part
+          // of the block. All seat coordinates remain untouched.
+          Positioned(
+            left: _CentralBlockGeometry.lowerLeft,
+            top: _CentralBlockGeometry.lowerTop,
+            width: _CentralBlockGeometry.lowerWidth,
+            height: _CentralBlockGeometry.lowerHeight,
+            child: IgnorePointer(
+              child: Container(
+                key: const ValueKey('amphitheater-central-rectangle'),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHigh.withOpacity(0.86),
+                  border: Border.all(color: scheme.outlineVariant, width: 2.5),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
             ),
