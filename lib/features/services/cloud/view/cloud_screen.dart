@@ -139,15 +139,11 @@ class _CloudScreenState extends State<CloudScreen> {
       }
       if (!mounted || request != _requestId) return;
       setState(() {
-        final localKeys = localFiles
-            .map((file) => '${file.name}\u0000${file.size}')
-            .toSet();
         _files = [
           if (folder == null || folder.local) ...localFiles,
-          // A published mirror must not show every identical file twice.
-          ...remoteFiles.where((file) =>
-              folder?.local != true ||
-              !localKeys.contains('${file.name}\u0000${file.size}')),
+          // Different copies may have the same name and size but different
+          // bytes. Keep both accessible until an explicit verified transfer.
+          ...remoteFiles,
         ];
         _serverMirrors = folder == null ? paired : _serverMirrors;
         _folders = [...localFolders, ...remoteFolders];
@@ -264,7 +260,20 @@ class _CloudScreenState extends State<CloudScreen> {
     await _perform(
       () async {
         if (folder.local) {
-          await _local.renameFolder(folder.id, name);
+          final mirror = _serverMirrors[folder.id];
+          if (mirror != null) {
+            await _api.renameFolder(mirror.id, name);
+          }
+          try {
+            await _local.renameFolder(folder.id, name);
+          } catch (_) {
+            if (mirror != null) {
+              try {
+                await _api.renameFolder(mirror.id, folder.name);
+              } catch (_) {}
+            }
+            rethrow;
+          }
         } else {
           await _api.renameFolder(folder.id, name);
         }
@@ -874,6 +883,18 @@ class _CloudScreenState extends State<CloudScreen> {
     }
     await _perform(() async {
       if (folder.local) {
+        final mirror = _serverMirrors[folder.id];
+        if (mirror != null) {
+          // These two records are one logical folder. Never delete only one
+          // without checking both are empty, otherwise a duplicate reappears.
+          if ((await _local.files(folderId: folder.id)).isNotEmpty ||
+              (await _api.getFiles(
+                mode: 'mine', folderId: mirror.id,
+              )).isNotEmpty) {
+            throw Exception('Сначала перемести файлы из папки');
+          }
+          await _api.deleteFolder(mirror.id);
+        }
         await _local.deleteFolder(folder.id);
       } else {
         await _api.deleteFolder(folder.id);
