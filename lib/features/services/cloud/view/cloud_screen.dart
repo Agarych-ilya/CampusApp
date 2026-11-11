@@ -535,14 +535,16 @@ class _CloudScreenState extends State<CloudScreen> {
     }
   }
 
-  Widget _scopeTag(CloudVisibility visibility) {
+  Widget _scopeTag(CloudVisibility visibility, {String? group}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(_scopeIcon(visibility), size: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant),
         const SizedBox(width: 3),
-        Text(visibility.label, style: TextStyle(
+        Text(visibility == CloudVisibility.group &&
+                group != null && group.isNotEmpty
+            ? group : visibility.label, style: TextStyle(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 11,
         )),
@@ -596,7 +598,7 @@ class _CloudScreenState extends State<CloudScreen> {
                     maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
-                _scopeTag(folder.visibility),
+                _scopeTag(folder.visibility, group: folder.group),
               ],
             ),
           ),
@@ -639,7 +641,7 @@ class _CloudScreenState extends State<CloudScreen> {
                         color: colors.onSurfaceVariant, fontSize: 12,
                       )),
                       const SizedBox(height: 4),
-                      _scopeTag(file.visibility),
+                      _scopeTag(file.visibility, group: file.group),
                     ],
                   ),
                 ),
