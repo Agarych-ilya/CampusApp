@@ -244,6 +244,106 @@ class LocalCloudStore {
     }
   }
 
+  /// A folder migration is published to the local catalogue only when ALL
+  /// bytes are copied and checked. If it fails, no partial folder is exposed.
+  /// The origin ID makes a retry idempotent after a failed backend finalization.
+  Future<CloudFolder> importServerFolder(
+    CloudFolderMigration manifest,
+    Map<int, File> downloaded,
+  ) async {
+    if (manifest.id <= 0 || manifest.files.length > 500 ||
+        downloaded.length != manifest.files.length ||
+        manifest.files.any((item) => !downloaded.containsKey(item.id))) {
+      throw const FormatException('Неполный список файлов для переноса');
+    }
+
+    final index = await _read();
+    final root = await _root();
+    final old = (index['folders'] as List).whereType<Map>().where(
+      (item) => item['sourceServerFolderId'] == manifest.id,
+    ).toList();
+    if (old.isNotEmpty) {
+      final folder = old.single;
+      final id = folder['id'] as int;
+      final entries = (index['files'] as List)
+          .whereType<Map>().where((entry) => entry['folderId'] == id)
+          .toList();
+      final sameContents = entries.length == manifest.files.length &&
+          manifest.files.every((item) => entries.any((entry) =>
+              entry['sourceServerFileId'] == item.id &&
+              entry['name'] == item.name &&
+              entry['size'] == item.size &&
+              File('${root.path}/${entry['blob']}').existsSync()));
+      if (!sameContents) {
+        throw const FileSystemException(
+          'Серверная папка изменилась после предыдущей локальной копии. '
+          'Проверь файлы вручную перед повторным переносом',
+        );
+      }
+      return CloudFolder(
+        id: id, name: folder['name'] as String,
+        visibility: CloudVisibility.private,
+        group: null, mine: true, local: true,
+      );
+    }
+
+    final copied = <File>[];
+    try {
+      final staged = <Map<String, dynamic>>[];
+      for (final item in manifest.files) {
+        final source = downloaded[item.id]!;
+        final clean = _name(item.name);
+        final size = await source.length();
+        if (size != item.size || size <= 0 || size > _maxFileBytes) {
+          throw FileSystemException('Неверный размер: ${item.name}');
+        }
+        final blob = _randomBlob(clean);
+        final target = File('${root.path}/$blob');
+        await source.copy(target.path);
+        copied.add(target);
+        final copiedSize = await target.length();
+        if (copiedSize != item.size) {
+          throw FileSystemException('Копирование не завершено: ${item.name}');
+        }
+        final descriptor = await target.open(mode: FileMode.append);
+        try {
+          await descriptor.flush();
+        } finally {
+          await descriptor.close();
+        }
+        staged.add({
+          'name': clean, 'blob': blob, 'size': item.size,
+          'sourceServerFileId': item.id,
+        });
+      }
+      final folderId = _nextId(index);
+      (index['folders'] as List).add({
+        'id': folderId,
+        'name': _name(manifest.name),
+        'sourceServerFolderId': manifest.id,
+      });
+      for (final entry in staged) {
+        (index['files'] as List).add({
+          ...entry,
+          'id': _nextId(index),
+          'folderId': folderId,
+        });
+      }
+      // A single index write makes the complete new folder visible at once.
+      await _write(index);
+      return CloudFolder(
+        id: folderId, name: manifest.name,
+        visibility: CloudVisibility.private,
+        group: null, mine: true, local: true,
+      );
+    } catch (_) {
+      for (final file in copied) {
+        if (await file.exists()) {\n          try { await file.delete(); } catch (_) {}\n        }
+      }
+      rethrow;
+    }
+  }
+
   Future<void> deleteFile(CloudFile file) async {
     if (!file.local || file.id >= 0) {
       throw const FileSystemException('Это не локальный файл');
