@@ -298,6 +298,7 @@ class _CloudScreenState extends State<CloudScreen> {
             file.path!,
             folderId: folder?.local == true ? null : folder?.id,
             visibility: access,
+            filename: file.name,
           );
         }
       }, access == CloudVisibility.private
@@ -335,6 +336,7 @@ class _CloudScreenState extends State<CloudScreen> {
             imported.file.path,
             folderId: folder?.local == true ? null : folder?.id,
             visibility: visibility,
+            filename: imported.name,
           );
         }
       } finally {
@@ -408,7 +410,7 @@ class _CloudScreenState extends State<CloudScreen> {
         'Локальный оригинал останется на устройстве.',
       )) return;
       await _perform(() => _api.uploadFile(
-        file.localPath!, visibility: access,
+        file.localPath!, visibility: access, filename: file.name,
       ), 'Копия файла загружена на сервер');
       return;
     }
