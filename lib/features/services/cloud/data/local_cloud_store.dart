@@ -98,13 +98,16 @@ class LocalCloudStore {
     return 'item_$randomId${_extension(name)}';
   }
 
-  Future<List<CloudFile>> files({String query = '', int? folderId}) async {
+  Future<List<CloudFile>> files({
+    String query = '', int? folderId, bool rootOnly = false,
+  }) async {
     final root = await _root();
     final index = await _read();
     return (index['files'] as List).whereType<Map>().where((entry) {
       final name = entry['name']?.toString() ?? '';
-      final inFolder = folderId == null ||
-          entry['folderId'] == folderId;
+      final inFolder = folderId != null
+          ? entry['folderId'] == folderId
+          : !rootOnly || entry['folderId'] == null;
       return inFolder && name.toLowerCase().contains(query.toLowerCase());
     }).map((entry) {
       final name = entry['name'] as String;
@@ -162,6 +165,20 @@ class LocalCloudStore {
         .whereType<Map>().where((item) => item['id'] == id);
     if (folder.isEmpty) throw const FileSystemException('Папка не найдена');
     folder.first['name'] = _name(name);
+    await _write(index);
+  }
+
+  Future<void> renameFile(int id, String newName) async {
+    final index = await _read();
+    final records = (index['files'] as List)
+        .whereType<Map>().where((item) => item['id'] == id);
+    if (records.isEmpty) throw const FileSystemException('Файл не найден');
+    final file = records.first;
+    final cleaned = _name(newName);
+    if (_extension(cleaned) != _extension(file['name'] as String)) {
+      throw const FormatException('Расширение файла менять нельзя');
+    }
+    file['name'] = cleaned;
     await _write(index);
   }
 
