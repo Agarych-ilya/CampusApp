@@ -297,7 +297,9 @@ class _CloudScreenState extends State<CloudScreen> {
   }
 
   Future<void> _createFolderLink(CloudFolder folder) async {
-    if (folder.local) {
+    final actual = folder.local
+        ? (_serverMirrors[folder.id] ?? folder) : folder;
+    if (actual.local) {
       _message(
         'Эта папка хранится только на телефоне. '
         'Для ссылки создай общую папку и загрузи в неё файлы.',
@@ -312,7 +314,7 @@ class _CloudScreenState extends State<CloudScreen> {
     if (!mounted || _busy) return;
     setState(() => _busy = true);
     try {
-      final uri = await _api.createFolderShareLink(folder.id);
+      final uri = await _api.createFolderShareLink(actual.id);
       await Clipboard.setData(ClipboardData(text: uri.toString()));
       if (!mounted) return;
       _message('Ссылка на папку скопирована');
@@ -327,13 +329,15 @@ class _CloudScreenState extends State<CloudScreen> {
   }
 
   Future<void> _revokeFolderLink(CloudFolder folder) async {
-    if (folder.local) return;
+    final actual = folder.local
+        ? (_serverMirrors[folder.id] ?? folder) : folder;
+    if (actual.local) return;
     if (!await _confirm(
       'Отозвать ссылку на папку?',
       'Ранее отправленная ссылка перестанет работать.',
     )) return;
     await _perform(
-      () => _api.revokeFolderShareLink(folder.id),
+      () => _api.revokeFolderShareLink(actual.id),
       'Ссылка на папку отозвана',
     );
   }
@@ -1212,6 +1216,8 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Widget _folderCard(CloudFolder folder) {
     final colors = Theme.of(context).colorScheme;
+    final mirror = folder.local ? _serverMirrors[folder.id] : null;
+    final visibleScope = mirror?.visibility ?? folder.visibility;
     return Material(
       color: colors.surfaceContainerLow,
       borderRadius: BorderRadius.circular(18),
@@ -1254,11 +1260,11 @@ class _CloudScreenState extends State<CloudScreen> {
                         ),
                         PopupMenuItem(
                           value: 'link',
-                          child: Text(folder.local
+                          child: Text(folder.local && mirror == null
                               ? 'Как поделиться папкой?'
                               : 'Скопировать ссылку на папку'),
                         ),
-                        if (!folder.local)
+                        if (!folder.local || mirror != null)
                           const PopupMenuItem(
                             value: 'revoke',
                             child: Text('Отозвать ссылку на папку'),
@@ -1274,8 +1280,8 @@ class _CloudScreenState extends State<CloudScreen> {
                     maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
-                _scopeTag(folder.visibility, group: folder.group,
-                    local: folder.local),
+                _scopeTag(visibleScope, group: mirror?.group ?? folder.group,
+                    local: folder.local && mirror == null),
               ],
             ),
           ),
