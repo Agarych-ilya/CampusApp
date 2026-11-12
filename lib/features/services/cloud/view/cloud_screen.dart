@@ -334,11 +334,10 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _createFolderLink(CloudFolder folder) async {
     final actual = folder.local
         ? (_serverMirrors[folder.id] ?? folder) : folder;
-    if (actual.local || (folder.local &&
-        actual.visibility == CloudVisibility.private)) {
+    if (actual.local || actual.visibility == CloudVisibility.private) {
       _message(
-        'Эта папка хранится только на телефоне. '
-        'Для ссылки создай общую папку и загрузи в неё файлы.',
+        'У личной папки нет ссылки. Измени доступ на «Моя группа» '
+        'или «Всем», чтобы поделиться.',
       );
       return;
     }
@@ -1098,8 +1097,8 @@ class _CloudScreenState extends State<CloudScreen> {
     }
     if (!await _confirm(
       'Создать ссылку на файл?',
-      'Любой, у кого есть ссылка, сможет скачать «${file.name}», '
-      'даже если файл личный. Предыдущая ссылка перестанет работать.',
+      'Любой, у кого есть ссылка, сможет скачать «${file.name}». '
+      'Предыдущая ссылка перестанет работать.',
     )) {
       return;
     }
