@@ -424,6 +424,19 @@ class CloudApi {
     CloudVisibility visibility = CloudVisibility.private,
     String? filename,
   }) async {
+    await uploadFileReturningId(
+      path, folderId: folderId, visibility: visibility, filename: filename,
+    );
+  }
+
+  /// Returns the server ID so a private file can be moved to shared storage
+  /// exactly once, rather than uploaded as an untracked duplicate.
+  Future<int> uploadFileReturningId(
+    String path, {
+    int? folderId,
+    CloudVisibility visibility = CloudVisibility.private,
+    String? filename,
+  }) async {
     final size = await File(path).length();
     final name = (filename ?? path).toLowerCase();
     final image = name.endsWith('.png') || name.endsWith('.jpg') ||
@@ -451,6 +464,12 @@ class CloudApi {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _error(response);
     }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['id'] is! num ||
+        (decoded['id'] as num).toInt() <= 0) {
+      throw const FormatException('Сервер не подтвердил загрузку файла');
+    }
+    return (decoded['id'] as num).toInt();
   }
 
   Future<void> changeVisibility(
