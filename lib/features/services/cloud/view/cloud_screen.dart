@@ -1590,7 +1590,7 @@ class _CloudScreenState extends State<CloudScreen> {
                             ),
                           ] else
                             Text(
-                              'До 512 МБ · 500 файлов · 100 папок',
+                              'До 500 МБ · 500 файлов · 100 папок',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colors.onSurfaceVariant,
                               ),
