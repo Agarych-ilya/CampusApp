@@ -826,7 +826,8 @@ class _CloudScreenState extends State<CloudScreen> {
       for (final file in picked) {
         final path = File(file.path);
         final size = await path.length();
-        final limit = _isImageName(file.name)
+        final limit = access != CloudVisibility.private &&
+                _isImageName(file.name)
             ? CloudQuota.defaultMaxImageBytes
             : CloudQuota.defaultMaxFileBytes;
         if (size <= 0 || size > limit) {
