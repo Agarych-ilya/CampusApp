@@ -11,13 +11,27 @@ import '../data/cloud_api.dart';
 import '../data/local_cloud_store.dart';
 import '../data/yandex_disk_importer.dart';
 
-class CloudScreen extends StatefulWidget {
-  const CloudScreen({super.key, this.api, this.localStore, this.importer});
+/// A file selected from the native picker, or supplied by a widget test.
+class CloudPickedFile {
+  const CloudPickedFile({required this.path, required this.name});
+  final String path;
+  final String name;
+}
 
-  /// Optional API injection for widget tests and offline previews.
+class CloudScreen extends StatefulWidget {
+  const CloudScreen({
+    super.key,
+    this.api,
+    this.localStore,
+    this.importer,
+    this.pickFiles,
+  });
+
+  /// Optional dependencies for widget tests and offline previews.
   final CloudApi? api;
   final LocalCloudStore? localStore;
   final YandexDiskImporter? importer;
+  final Future<List<CloudPickedFile>> Function()? pickFiles;
 
   @override
   State<CloudScreen> createState() => _CloudScreenState();
@@ -783,46 +797,108 @@ class _CloudScreenState extends State<CloudScreen> {
   Future<void> _upload() async {
     if (_busy) return;
     try {
-      final file = await FilePicker.pickFile();
-      if (file == null) return;
-      if (file.path == null) {
-        _message('Не удалось получить путь файла', error: true);
-        return;
+      // file_picker 12.x returns List<PlatformFile>, not FilePickerResult.
+      final picked = widget.pickFiles != null
+          ? await widget.pickFiles!()
+          : [
+              for (final file in await FilePicker.pickFiles())
+                CloudPickedFile(path: file.path ?? '', name: file.name),
+            ];
+      if (picked.isEmpty) return;
+      if (picked.any((file) => file.path.isEmpty)) {
+        throw Exception('Не удалось получить путь одного из файлов');
       }
-      CloudVisibility access = CloudVisibility.private;
+
       final folder = !_isSearching && _currentFolder?.mine == true
           ? _currentFolder : null;
-      if (folder != null) {
-        access = folder.visibility;
-      } else {
-        final chosen = await _pickVisibility();
-        if (chosen == null) return;
-        access = chosen;
+      final mirror = folder?.local == true
+          ? _serverMirrors[folder!.id] : null;
+      CloudVisibility access = mirror?.visibility ??
+          folder?.visibility ?? CloudVisibility.private;
+      if (folder == null) {
+        final selected = await _pickVisibility();
+        if (!mounted || selected == null) return;
+        access = selected;
       }
-      if (access != CloudVisibility.private) {
-        final fileSize = await File(file.path!).length();
-        _quota?.validateUpload(
-          fileSize,
-          image: _isImageName(file.name),
-        );
-      }
-      await _perform(() async {
-        if (access == CloudVisibility.private) {
-          await _local.saveFile(
-            file.path!, name: file.name,
-            folderId: folder?.local == true ? folder?.id : null,
-          );
-        } else {
-          await _api.uploadFile(
-            file.path!,
-            folderId: folder?.local == true ? null : folder?.id,
-            visibility: access,
-            filename: file.name,
+
+      // Check the ENTIRE batch before storing or uploading the first file.
+      final batch = <({CloudPickedFile file, int size})>[];
+      for (final file in picked) {
+        final path = File(file.path);
+        final size = await path.length();
+        final limit = _isImageName(file.name)
+            ? CloudQuota.defaultMaxImageBytes
+            : CloudQuota.defaultMaxFileBytes;
+        if (size <= 0 || size > limit) {
+          throw Exception(
+            '«${file.name}»: ${_isImageName(file.name)
+                ? 'изображение не больше 5 МБ'
+                : 'файл не больше 20 МБ'}',
           );
         }
-      }, access == CloudVisibility.private
-          ? 'Файл сохранён только на устройстве'
-          : 'Файл загружен в Campus Cloud');
+        batch.add((file: file, size: size));
+      }
+      if (access != CloudVisibility.private) {
+        final quota = await _api.getQuota();
+        quota.validateBatch([
+          for (final item in batch)
+            (size: item.size, image: _isImageName(item.file.name)),
+        ]);
+      }
+      if (!mounted) return;
+
+      setState(() {
+        _busy = true;
+        _migrationStatus = 'Подготовка ${batch.length} файлов';
+      });
+      var completed = 0;
+      String? failure;
+      try {
+        for (final item in batch) {
+          if (!mounted) break;
+          setState(() => _migrationStatus =
+              '${access == CloudVisibility.private ? 'Сохранение' : 'Загрузка'} '
+              '${completed + 1} из ${batch.length}');
+          try {
+            if (access == CloudVisibility.private) {
+              await _local.saveFile(
+                item.file.path,
+                name: item.file.name,
+                folderId: folder?.local == true ? folder?.id : null,
+              );
+            } else {
+              await _api.uploadFile(
+                item.file.path,
+                folderId: mirror?.id ??
+                    (folder?.local == true ? null : folder?.id),
+                visibility: access,
+                filename: item.file.name,
+              );
+            }
+            completed++;
+          } catch (error) {
+            failure = '«${item.file.name}»: ${_cleanError(error)}';
+            break; // Never silently skip a failed file.
+          }
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _migrationStatus = null);
+          await _load(); // Refresh both file list and used cloud space.
+          if (mounted) setState(() => _busy = false);
+        }
+      }
+      if (!mounted) return;
+      if (failure == null) {
+        _message(access == CloudVisibility.private
+            ? 'Сохранено на устройстве: $completed'
+            : 'Загружено в облако: $completed');
+      } else {
+        _message(
+          'Добавлено $completed из ${batch.length}. $failure',
+          error: true,
+        );
+      }
     } catch (error) {
       _message(_cleanError(error), error: true);
     }
@@ -1165,7 +1241,8 @@ class _CloudScreenState extends State<CloudScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.upload_file_outlined),
-              title: const Text('Загрузить файл'),
+              title: const Text('Добавить файлы'),
+              subtitle: const Text('Можно выбрать сразу несколько'),
               onTap: () {
                 Navigator.pop(context);
                 _upload();
