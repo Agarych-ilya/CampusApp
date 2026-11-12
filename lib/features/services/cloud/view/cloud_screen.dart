@@ -1338,11 +1338,9 @@ class _CloudScreenState extends State<CloudScreen> {
         Icon(_scopeIcon(visibility), size: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant),
         const SizedBox(width: 3),
-        Text(local
-            ? 'На устройстве'
-            : (visibility == CloudVisibility.group &&
-                    group != null && group.isNotEmpty
-                ? group : visibility.label), style: TextStyle(
+        Text(visibility == CloudVisibility.group &&
+                group != null && group.isNotEmpty
+            ? group : visibility.label, style: TextStyle(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 11,
         )),
@@ -1513,9 +1511,7 @@ class _CloudScreenState extends State<CloudScreen> {
                       ),
                       PopupMenuItem(
                         value: 'scope',
-                        child: Text(file.local
-                            ? 'Загрузить в общее облако'
-                            : 'Настроить доступ'),
+                        child: const Text('Настроить доступ'),
                       ),
                       if (!file.local) ...[
                         const PopupMenuItem(
@@ -1659,52 +1655,56 @@ class _CloudScreenState extends State<CloudScreen> {
                             ),
                           ]),
                           const SizedBox(height: 13),
-                          Row(children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text('Занято',
                                       style: theme.textTheme.bodySmall?.copyWith(
                                         color: colors.onSurfaceVariant,
+                                        fontSize: 11,
                                       )),
-                                  const SizedBox(height: 3),
+                                  const SizedBox(height: 2),
                                   Text(
                                     _quota == null
                                         ? '—'
                                         : _storageAmount(_quota!.usedBytes),
                                     key: const ValueKey('cloud-used'),
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontSize: 23,
-                                      fontWeight: FontWeight.w900,
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      color: Colors.redAccent,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            Expanded(
-                              child: Column(
+                              const SizedBox(width: 20),
+                              Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text('Осталось',
                                       style: theme.textTheme.bodySmall?.copyWith(
                                         color: colors.onSurfaceVariant,
+                                        fontSize: 11,
                                       )),
-                                  const SizedBox(height: 3),
+                                  const SizedBox(height: 2),
                                   Text(
                                     _quota == null
                                         ? '—'
                                         : _storageAmount(_quota!.remainingBytes),
                                     key: const ValueKey('cloud-remaining'),
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontSize: 23,
-                                      fontWeight: FontWeight.w900,
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ]),
+                            ],
+                          ),
                           const SizedBox(height: 13),
                           LinearProgressIndicator(
                             key: const ValueKey('cloud-usage-bar'),
