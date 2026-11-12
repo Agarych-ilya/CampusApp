@@ -169,6 +169,86 @@ class CloudFolderMigration {
   }
 }
 
+/// Server-side Cloud Campus limits and current usage for the BARS student.
+/// Device-only personal documents do not consume this quota.
+class CloudQuota {
+  const CloudQuota({
+    required this.usedBytes,
+    required this.usedFiles,
+    required this.usedFolders,
+    required this.maxFileBytes,
+    required this.maxImageBytes,
+    required this.maxStorageBytes,
+    required this.maxFiles,
+    required this.maxFolders,
+  });
+
+  static const int defaultMaxFileBytes = 20 * 1024 * 1024;
+  static const int defaultMaxImageBytes = 5 * 1024 * 1024;
+
+  final int usedBytes;
+  final int usedFiles;
+  final int usedFolders;
+  final int maxFileBytes;
+  final int maxImageBytes;
+  final int maxStorageBytes;
+  final int maxFiles;
+  final int maxFolders;
+
+  double get usedFraction => maxStorageBytes <= 0
+      ? 0 : (usedBytes / maxStorageBytes).clamp(0.0, 1.0);
+
+  factory CloudQuota.fromJson(Object? value) {
+    if (value is! Map || value['limits'] is! Map) {
+      throw const FormatException('Некорректная информация о лимитах облака');
+    }
+    final limits = value['limits'] as Map;
+    int amount(Map from, String key) {
+      final result = from[key];
+      if (result is! num || result < 0 || !result.isFinite ||
+          result.toInt() != result) {
+        throw const FormatException('Некорректные лимиты облака');
+      }
+      return result.toInt();
+    }
+    final quota = CloudQuota(
+      usedBytes: amount(value, 'usedBytes'),
+      usedFiles: amount(value, 'usedFiles'),
+      usedFolders: amount(value, 'usedFolders'),
+      maxFileBytes: amount(limits, 'fileBytes'),
+      maxImageBytes: amount(limits, 'imageBytes'),
+      maxStorageBytes: amount(limits, 'totalBytes'),
+      maxFiles: amount(limits, 'files'),
+      maxFolders: amount(limits, 'folders'),
+    );
+    if (quota.maxFileBytes == 0 || quota.maxImageBytes == 0 ||
+        quota.maxStorageBytes == 0 || quota.maxFiles == 0 ||
+        quota.maxFolders == 0) {
+      throw const FormatException('Нулевые лимиты облака');
+    }
+    return quota;
+  }
+
+  /// Helpful client-side preflight. Backend still checks all limits on upload.
+  void validateUpload(int size, {required bool image}) {
+    if (size <= 0) {
+      throw Exception('Нельзя загрузить пустой файл');
+    }
+    final singleLimit = image ? maxImageBytes : maxFileBytes;
+    if (size > singleLimit) {
+      throw Exception(image
+          ? 'Изображение превышает лимит 5 МБ'
+          : 'Файл превышает лимит 20 МБ');
+    }
+    if (usedFiles >= maxFiles) {
+      throw Exception('Лимит облака: не больше $maxFiles файлов');
+    }
+    if (size > maxStorageBytes - usedBytes) {
+      throw Exception('Недостаточно свободного места в Cloud Campus');
+    }
+  }
+}
+
 class CloudApi {
   static const String baseUrl = ApiConfig.baseUrl;
   static const String _base = '$baseUrl/cloud';
@@ -210,6 +290,11 @@ class CloudApi {
     }
     if (response.bodyBytes.isEmpty) return null;
     return jsonDecode(utf8.decode(response.bodyBytes));
+  }
+
+  Future<CloudQuota> getQuota() async {
+    final response = await _request('GET', '/quota');
+    return CloudQuota.fromJson(response);
   }
 
   Future<List<CloudFile>> getFiles({
@@ -312,6 +397,18 @@ class CloudApi {
     CloudVisibility visibility = CloudVisibility.private,
     String? filename,
   }) async {
+    final size = await File(path).length();
+    final name = (filename ?? path).toLowerCase();
+    final image = name.endsWith('.png') || name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') || name.endsWith('.gif') ||
+        name.endsWith('.webp') || name.endsWith('.bmp');
+    final limit = image
+        ? CloudQuota.defaultMaxImageBytes : CloudQuota.defaultMaxFileBytes;
+    if (size <= 0 || size > limit) {
+      throw Exception(image
+          ? 'Изображение — максимум 5 МБ'
+          : 'Один файл — максимум 20 МБ');
+    }
     final request = http.MultipartRequest(
       'POST', Uri.parse('$_base/upload'),
     );
