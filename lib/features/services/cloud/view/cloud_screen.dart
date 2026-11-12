@@ -269,7 +269,7 @@ class _CloudScreenState extends State<CloudScreen> {
         await _api.createFolder(name, visibility);
       }
     }, visibility == CloudVisibility.private
-        ? 'Личная папка создана на устройстве'
+        ? 'Личная папка создана'
         : 'Папка создана в общем облаке');
   }
 
@@ -895,7 +895,7 @@ class _CloudScreenState extends State<CloudScreen> {
       if (!mounted) return;
       if (failure == null) {
         _message(access == CloudVisibility.private
-            ? 'Сохранено на устройстве: $completed'
+            ? 'Сохранено в личное: $completed'
             : 'Загружено в облако: $completed');
       } else {
         _message(
@@ -1081,7 +1081,7 @@ class _CloudScreenState extends State<CloudScreen> {
         } finally {
           if (await temporary.exists()) await temporary.delete();
         }
-      }, 'Файл теперь хранится только на устройстве');
+      }, 'Доступ изменён: личное');
       return;
     }
     await _perform(
@@ -1325,7 +1325,7 @@ class _CloudScreenState extends State<CloudScreen> {
   static String _scopeDescription(CloudVisibility visibility) {
     switch (visibility) {
       case CloudVisibility.private:
-        return 'Только на этом устройстве · не загружается на сервер';
+        return 'Доступно только тебе';
       case CloudVisibility.group:
         return 'Доступно студентам твоей группы БАРС';
       case CloudVisibility.public:
