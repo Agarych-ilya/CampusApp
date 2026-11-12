@@ -196,7 +196,7 @@ class CloudQuota {
   final int maxFolders;
 
   double get usedFraction => maxStorageBytes <= 0
-      ? 0 : (usedBytes / maxStorageBytes).clamp(0.0, 1.0);
+      ? 0.0 : (usedBytes / maxStorageBytes).clamp(0.0, 1.0).toDouble();
 
   factory CloudQuota.fromJson(Object? value) {
     if (value is! Map || value['limits'] is! Map) {
