@@ -385,7 +385,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Секретная папка'), findsOneWidget);
     expect(find.text('личный конспект.txt'), findsOneWidget);
-    expect(find.text('На устройстве'), findsWidgets);
+    expect(find.text('Личное'), findsWidgets);
+    expect(find.text('На устройстве'), findsNothing);
     expect(api.uploads, 0);
 
     await tester.enterText(find.byType(TextField).first, 'секретная');
