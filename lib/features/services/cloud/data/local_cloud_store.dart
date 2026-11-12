@@ -261,6 +261,68 @@ class LocalCloudStore {
     }
   }
 
+  Future<int?> pendingFilePublication(int localFileId) async {
+    final index = await _read();
+    final matches = (index['files'] as List).whereType<Map>()
+        .where((row) => row['id'] == localFileId).toList();
+    if (matches.length != 1) {
+      throw const FileSystemException('Личный файл не найден');
+    }
+    return (matches.single['pendingServerFileId'] as num?)?.toInt();
+  }
+
+  /// Remember a staged server copy for idempotent retries after network loss.
+  Future<void> markFilePublication(
+    int localFileId, int serverFileId,
+  ) async {
+    if (serverFileId <= 0) {
+      throw const FormatException('Неверный идентификатор серверного файла');
+    }
+    final index = await _read();
+    final rows = (index['files'] as List).whereType<Map>()
+        .where((item) => item['id'] == localFileId).toList();
+    if (rows.length != 1) {
+      throw const FileSystemException('Личный файл не найден');
+    }
+    final row = rows.single;
+    final current = (row['pendingServerFileId'] as num?)?.toInt();
+    if (current != null && current != serverFileId) {
+      throw const FileSystemException('У файла уже есть незавершённый перенос');
+    }
+    row['pendingServerFileId'] = serverFileId;
+    await _write(index);
+  }
+
+  Future<Set<int>> pendingServerFileIds() async {
+    final index = await _read();
+    return (index['files'] as List).whereType<Map>()
+        .map((row) => (row['pendingServerFileId'] as num?)?.toInt())
+        .whereType<int>().toSet();
+  }
+
+  Future<void> finishFilePublication(CloudFile file, int serverFileId) async {
+    final index = await _read();
+    final root = await _root();
+    final records = (index['files'] as List).whereType<Map>()
+        .where((row) => row['id'] == file.id).toList();
+    if (records.length != 1 ||
+        records.single['pendingServerFileId'] != serverFileId ||
+        records.single['name'] != file.name ||
+        records.single['size'] != file.size) {
+      throw const FileSystemException('Локальный файл изменился');
+    }
+    final blob = records.single['blob'] as String;
+    (index['files'] as List).removeWhere(
+        (row) => row is Map && row['id'] == file.id);
+    await _write(index);
+    try {
+      final saved = File('${root.path}/$blob');
+      if (await saved.exists()) await saved.delete();
+    } catch (_) {
+      // Indexed metadata is already committed to the server.
+    }
+  }
+
   /// A partially uploaded server folder is tracked for safe retries.
   Future<Set<int>> pendingServerFolderIds() async {
     final index = await _read();
