@@ -1299,6 +1299,15 @@ class _CloudScreenState extends State<CloudScreen> {
     return '$bytes Б';
   }
 
+  static String _storageAmount(int bytes) {
+    if (bytes == 0) return '0 МБ';
+    const oneMb = 1024 * 1024;
+    if (bytes < oneMb) return _size(bytes);
+    final megabytes = bytes / oneMb;
+    final digits = bytes % oneMb == 0 ? 0 : 1;
+    return '${megabytes.toStringAsFixed(digits)} МБ';
+  }
+
   static IconData _fileIcon(CloudFile file) {
     if (file.image) return Icons.image_outlined;
     final extension = file.name.split('.').last.toLowerCase();
@@ -1629,37 +1638,80 @@ class _CloudScreenState extends State<CloudScreen> {
                     Container(
                       key: const ValueKey('cloud-quota'),
                       width: double.infinity,
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.fromLTRB(15, 14, 15, 13),
                       decoration: BoxDecoration(
                         color: colors.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(17),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(children: [
                             const Icon(Icons.cloud_outlined,
-                                color: ServicePalette.accent, size: 19),
+                                color: ServicePalette.accent, size: 18),
                             const SizedBox(width: 8),
-                            Expanded(child: Text('Место в Campus Cloud',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ))),
                             Text(
-                              _quota == null
-                                  ? '— / 500 МБ'
-                                  : '${_size(_quota!.usedBytes)} / '
-                                      '${_size(_quota!.maxStorageBytes)}',
-                              style: theme.textTheme.bodySmall,
+                              'Место в Campus Cloud',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ]),
-                          const SizedBox(height: 10),
-                          // Show a neutral empty track when usage is unknown,
-                          // never misrepresent it as a verified zero.
+                          const SizedBox(height: 13),
+                          Row(children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Занято',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                      )),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _quota == null
+                                        ? '—'
+                                        : _storageAmount(_quota!.usedBytes),
+                                    key: const ValueKey('cloud-used'),
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontSize: 23,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('Осталось',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                      )),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _quota == null
+                                        ? '—'
+                                        : _storageAmount(_quota!.remainingBytes),
+                                    key: const ValueKey('cloud-remaining'),
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontSize: 23,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ]),
+                          const SizedBox(height: 13),
                           LinearProgressIndicator(
-                            value: _quota?.usedFraction ?? 0.0,
-                            minHeight: 6,
-                            borderRadius: BorderRadius.circular(8),
+                            key: const ValueKey('cloud-usage-bar'),
+                            value: _quota?.usedFraction ?? 0,
+                            minHeight: 14,
+                            borderRadius: BorderRadius.circular(12),
+                            backgroundColor:
+                                colors.outlineVariant.withValues(alpha: 0.65),
                             color: _quota == null
                                 ? colors.outlineVariant
                                 : ServicePalette.accent,
@@ -1667,18 +1719,10 @@ class _CloudScreenState extends State<CloudScreen> {
                           const SizedBox(height: 9),
                           Text(
                             _quota == null
-                                ? 'Нет данных об использовании · лимит 500 МБ'
-                                : '${_quota!.usedFiles} из ${_quota!.maxFiles} '
-                                    'файлов · ${_quota!.usedFolders} из '
-                                    '${_quota!.maxFolders} папок',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            'Один файл — до 20 МБ, изображение — до 5 МБ. '
-                            'Личное на устройстве в этот лимит не входит.',
+                                ? 'Нет данных об использовании'
+                                : '${_quota!.usedFiles}/${_quota!.maxFiles} файлов'
+                                    '  ·  '
+                                    '${_quota!.usedFolders}/${_quota!.maxFolders} папок',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant,
                             ),
