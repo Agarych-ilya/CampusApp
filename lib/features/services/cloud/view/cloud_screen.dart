@@ -32,6 +32,7 @@ class _CloudScreenState extends State<CloudScreen> {
 
   List<CloudFile> _files = [];
   List<CloudFolder> _folders = [];
+  CloudQuota? _quota;
   // Legacy local/cloud duplicates are one logical folder in the browser.
   // The backing copies remain intact until their contents are verified.
   Map<int, CloudFolder> _serverMirrors = {};
@@ -137,8 +138,16 @@ class _CloudScreenState extends State<CloudScreen> {
       } catch (error) {
         remoteError = _cleanError(error);
       }
+      // Quota errors must not hide locally stored files or the catalogue.
+      CloudQuota? quota;
+      try {
+        quota = await _api.getQuota();
+      } catch (_) {
+        // The backend still rejects over-limit uploads if quota is unavailable.
+      }
       if (!mounted || request != _requestId) return;
       setState(() {
+        if (quota != null) _quota = quota;
         _files = [
           if (folder == null || folder.local) ...localFiles,
           // Different copies may have the same name and size but different
@@ -764,6 +773,13 @@ class _CloudScreenState extends State<CloudScreen> {
         ),
       ) ?? false;
 
+  static bool _isImageName(String name) {
+    final ext = name.toLowerCase();
+    return ext.endsWith('.jpg') || ext.endsWith('.jpeg') ||
+        ext.endsWith('.png') || ext.endsWith('.webp') ||
+        ext.endsWith('.gif') || ext.endsWith('.bmp');
+  }
+
   Future<void> _upload() async {
     if (_busy) return;
     try {
@@ -782,6 +798,10 @@ class _CloudScreenState extends State<CloudScreen> {
         final chosen = await _pickVisibility();
         if (chosen == null) return;
         access = chosen;
+      }
+      if (access != CloudVisibility.private) {
+        _quota?.validateUpload(file.size,
+            image: _isImageName(file.name));
       }
       await _perform(() async {
         if (access == CloudVisibility.private) {
@@ -828,6 +848,10 @@ class _CloudScreenState extends State<CloudScreen> {
             folderId: folder?.local == true ? folder?.id : null,
           );
         } else {
+          _quota?.validateUpload(
+            await imported.file.length(),
+            image: _isImageName(imported.name),
+          );
           await _api.uploadFile(
             imported.file.path,
             folderId: folder?.local == true ? null : folder?.id,
@@ -1521,6 +1545,67 @@ class _CloudScreenState extends State<CloudScreen> {
                         )),
                       ]),
                     ),
+                    const SizedBox(height: 14),
+                    Container(
+                      key: const ValueKey('cloud-quota'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            const Icon(Icons.cloud_outlined,
+                                color: ServicePalette.accent, size: 19),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text('Место в Campus Cloud',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ))),
+                            if (_quota != null)
+                              Text(
+                                '${_size(_quota!.usedBytes)} / '
+                                '${_size(_quota!.maxStorageBytes)}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                          ]),
+                          const SizedBox(height: 10),
+                          if (_quota != null) ...[
+                            LinearProgressIndicator(
+                              value: _quota!.usedFraction,
+                              minHeight: 5,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            const SizedBox(height: 9),
+                            Text(
+                              '${_quota!.usedFiles} из ${_quota!.maxFiles} '
+                              'файлов · ${_quota!.usedFolders} из '
+                              '${_quota!.maxFolders} папок',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ] else
+                            Text(
+                              'До 512 МБ · 500 файлов · 100 папок',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'Один файл — до 20 МБ, изображение — до 5 МБ. '
+                            'Личное на устройстве в этот лимит не входит.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     if (_migrationStatus != null) ...[
                       const LinearProgressIndicator(),
                       const SizedBox(height: 8),
@@ -1581,35 +1666,50 @@ class _CloudScreenState extends State<CloudScreen> {
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant)),
                       ]),
-                    const SizedBox(height: 22),
+                    if (_currentFolder == null) ...[
+                      const SizedBox(height: 22),
+                      Row(children: [
+                        Expanded(child: Text('Папки',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ))),
+                        if (!_loading)
+                          Text('${_folders.length}',
+                              style: TextStyle(
+                                color: colors.onSurfaceVariant,
+                              )),
+                      ]),
+                      const SizedBox(height: 12),
+                      if (_folders.isNotEmpty)
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            for (final folder in _folders)
+                              _folderCard(folder),
+                          ],
+                        )
+                      else if (!_loading && _error == null && !_isSearching)
+                        Text('Папок пока нет',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            )),
+                    ],
+                    const SizedBox(height: 26),
                     Row(children: [
                       Expanded(child: Text(
-                        _isSearching ? 'Результаты поиска'
-                            : _currentFolder != null
-                                ? 'Файлы в папке'
-                                : 'Все файлы',
+                        _currentFolder != null ? 'Файлы в папке' : 'Файлы',
                         style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900),
+                          fontWeight: FontWeight.w900,
+                        ),
                       )),
                       if (!_loading)
-                        Text('${_files.length + _folders.length}',
+                        Text('${_files.length}',
                             style: TextStyle(
                               color: colors.onSurfaceVariant,
                             )),
                     ]),
                     const SizedBox(height: 12),
-                    // Folder cards belong to the same root file browser.
-                    // Files nested in a folder are not flattened here.
-                    if (_folders.isNotEmpty && _currentFolder == null) ...[
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          for (final folder in _folders) _folderCard(folder),
-                        ],
-                      ),
-                      if (_files.isNotEmpty) const SizedBox(height: 14),
-                    ],
                   ],
                 ),
               ),
@@ -1636,6 +1736,18 @@ class _CloudScreenState extends State<CloudScreen> {
                       child: const Text('Повторить'),
                     ),
                   ]),
+                ),
+              )
+            else if (_files.isEmpty && _folders.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
+                  child: Text(
+                    _isSearching
+                        ? 'Подходящих файлов нет'
+                        : 'Файлов вне папок пока нет',
+                    style: TextStyle(color: colors.onSurfaceVariant),
+                  ),
                 ),
               )
             else if (_files.isEmpty && _folders.isEmpty)
