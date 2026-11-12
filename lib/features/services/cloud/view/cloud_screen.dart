@@ -800,8 +800,11 @@ class _CloudScreenState extends State<CloudScreen> {
         access = chosen;
       }
       if (access != CloudVisibility.private) {
-        _quota?.validateUpload(file.size,
-            image: _isImageName(file.name));
+        final fileSize = await File(file.path!).length();
+        _quota?.validateUpload(
+          fileSize,
+          image: _isImageName(file.name),
+        );
       }
       await _perform(() async {
         if (access == CloudVisibility.private) {
