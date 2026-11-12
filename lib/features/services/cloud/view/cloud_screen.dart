@@ -1092,6 +1092,10 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Future<void> _createLink(CloudFile file) async {
     if (_busy) return;
+    if (file.local || file.visibility == CloudVisibility.private) {
+      _message('Чтобы поделиться файлом, измени доступ на «Моя группа» или «Всем».');
+      return;
+    }
     if (!await _confirm(
       'Создать ссылку на файл?',
       'Любой, у кого есть ссылка, сможет скачать «${file.name}», '
@@ -1550,14 +1554,14 @@ class _CloudScreenState extends State<CloudScreen> {
                         value: 'scope',
                         child: const Text('Настроить доступ'),
                       ),
-                      if (!file.local) ...[
+                      if (!file.local && file.visibility != CloudVisibility.private)
                         const PopupMenuItem(
                           value: 'link', child: Text('Скопировать ссылку'),
                         ),
+                      if (!file.local)
                         const PopupMenuItem(
                           value: 'revoke', child: Text('Отозвать ссылку'),
                         ),
-                      ],
                       const PopupMenuItem(
                         value: 'delete',
                         child: Text('Удалить навсегда',
