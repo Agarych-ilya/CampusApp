@@ -142,6 +142,27 @@ class _FakeCloudApi extends CloudApi {
 }
 
 void main() {
+  test('Cloud storage quota is 500 MB and progress matches used bytes', () {
+    final quota = CloudQuota.fromJson({
+      'usedBytes': 125 * 1024 * 1024,
+      'usedFiles': 12,
+      'usedFolders': 3,
+      'limits': {
+        'fileBytes': 20 * 1024 * 1024,
+        'imageBytes': 5 * 1024 * 1024,
+        'totalBytes': 500 * 1024 * 1024,
+        'files': 500,
+        'folders': 100,
+      },
+    });
+    expect(quota.maxStorageBytes, 500 * 1024 * 1024);
+    expect(quota.usedFraction, 0.25);
+    expect(() => quota.validateUpload(21 * 1024 * 1024, image: false),
+        throwsException);
+    expect(() => quota.validateUpload(6 * 1024 * 1024, image: true),
+        throwsException);
+  });
+
   test('CloudFile decodes access scope, thumbnail and saved flags', () {
     final file = CloudFile.fromJson({
       'id': 12,
