@@ -1708,7 +1708,7 @@ class _CloudScreenState extends State<CloudScreen> {
                           const SizedBox(height: 13),
                           LinearProgressIndicator(
                             key: const ValueKey('cloud-usage-bar'),
-                            value: _quota?.usedFraction ?? 0,
+                            value: _quota?.usedFraction ?? 0.0,
                             minHeight: 14,
                             borderRadius: BorderRadius.circular(12),
                             backgroundColor:
