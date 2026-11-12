@@ -1565,36 +1565,36 @@ class _CloudScreenState extends State<CloudScreen> {
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ))),
-                            if (_quota != null)
-                              Text(
-                                '${_size(_quota!.usedBytes)} / '
-                                '${_size(_quota!.maxStorageBytes)}',
-                                style: theme.textTheme.bodySmall,
-                              ),
+                            Text(
+                              _quota == null
+                                  ? '— / 500 МБ'
+                                  : '${_size(_quota!.usedBytes)} / '
+                                      '${_size(_quota!.maxStorageBytes)}',
+                              style: theme.textTheme.bodySmall,
+                            ),
                           ]),
                           const SizedBox(height: 10),
-                          if (_quota != null) ...[
-                            LinearProgressIndicator(
-                              value: _quota!.usedFraction,
-                              minHeight: 5,
-                              borderRadius: BorderRadius.circular(8),
+                          // Show a neutral empty track when usage is unknown,
+                          // never misrepresent it as a verified zero.
+                          LinearProgressIndicator(
+                            value: _quota?.usedFraction ?? 0.0,
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(8),
+                            color: _quota == null
+                                ? colors.outlineVariant
+                                : ServicePalette.accent,
+                          ),
+                          const SizedBox(height: 9),
+                          Text(
+                            _quota == null
+                                ? 'Нет данных об использовании · лимит 500 МБ'
+                                : '${_quota!.usedFiles} из ${_quota!.maxFiles} '
+                                    'файлов · ${_quota!.usedFolders} из '
+                                    '${_quota!.maxFolders} папок',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
                             ),
-                            const SizedBox(height: 9),
-                            Text(
-                              '${_quota!.usedFiles} из ${_quota!.maxFiles} '
-                              'файлов · ${_quota!.usedFolders} из '
-                              '${_quota!.maxFolders} папок',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ] else
-                            Text(
-                              'До 500 МБ · 500 файлов · 100 папок',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
+                          ),
                           const SizedBox(height: 5),
                           Text(
                             'Один файл — до 20 МБ, изображение — до 5 МБ. '
