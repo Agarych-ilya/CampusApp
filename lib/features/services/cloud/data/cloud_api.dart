@@ -248,10 +248,10 @@ class CloudQuota {
         '${maxFiles - usedFiles} из $maxFiles',
       );
     }
-    if (totalBytes > maxStorageBytes - usedBytes) {
+    if (totalBytes > remainingBytes) {
       throw Exception(
         'Недостаточно места для всех выбранных файлов: '
-        'свободно ${((maxStorageBytes - usedBytes) / (1024 * 1024)).toStringAsFixed(1)} МБ',
+        'свободно ${(remainingBytes / (1024 * 1024)).toStringAsFixed(1)} МБ',
       );
     }
   }
