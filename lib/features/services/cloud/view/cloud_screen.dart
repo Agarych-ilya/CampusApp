@@ -1371,7 +1371,7 @@ class _CloudScreenState extends State<CloudScreen> {
   }
 
   Widget _scopeTag(CloudVisibility visibility, {
-    String? group, bool local = false,
+    String? group,
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1459,10 +1459,7 @@ class _CloudScreenState extends State<CloudScreen> {
                     maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
-                _scopeTag(visibleScope, group: mirror?.group ?? folder.group,
-                    local: folder.local &&
-                        (mirror == null ||
-                         mirror.visibility == CloudVisibility.private)),
+                _scopeTag(visibleScope, group: mirror?.group ?? folder.group),
               ],
             ),
           ),
@@ -1505,8 +1502,7 @@ class _CloudScreenState extends State<CloudScreen> {
                         color: colors.onSurfaceVariant, fontSize: 12,
                       )),
                       const SizedBox(height: 4),
-                      _scopeTag(file.visibility, group: file.group,
-                          local: file.local),
+                      _scopeTag(file.visibility, group: file.group),
                     ],
                   ),
                 ),
