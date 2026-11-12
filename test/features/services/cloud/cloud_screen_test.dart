@@ -201,7 +201,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.lastMode, 'search');
-    expect(find.text('Все файлы'), findsOneWidget);
+    expect(find.text('Папки'), findsOneWidget);
+    expect(find.text('Файлы'), findsOneWidget);
     expect(find.text('Мои файлы'), findsNothing);
     expect(find.text('Общее'), findsNothing);
     expect(find.text('Моя лабораторная.pdf'), findsOneWidget);
@@ -289,7 +290,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
     expect(api.folderQuery, 'Физика');
-    expect(find.text('Результаты поиска'), findsOneWidget);
+    expect(find.text('Папки'), findsOneWidget);
+    expect(find.text('Файлы'), findsOneWidget);
     expect(find.text('Физика'), findsOneWidget);
     expect(find.text('Чужой конспект.pdf'), findsNothing);
     expect(tester.takeException(), isNull);
