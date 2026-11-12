@@ -229,6 +229,30 @@ class CloudQuota {
     return quota;
   }
 
+  /// Check a full multi-file selection before uploading anything.
+  /// The backend remains the authority in case another client uploads
+  /// files concurrently.
+  void validateBatch(List<({int size, bool image})> selection) {
+    if (selection.isEmpty) return;
+    var totalBytes = 0;
+    for (final item in selection) {
+      validateUpload(item.size, image: item.image);
+      totalBytes += item.size;
+    }
+    if (usedFiles + selection.length > maxFiles) {
+      throw Exception(
+        'В облаке не хватает свободных слотов: '
+        '${maxFiles - usedFiles} из $maxFiles',
+      );
+    }
+    if (totalBytes > maxStorageBytes - usedBytes) {
+      throw Exception(
+        'Недостаточно места для всех выбранных файлов: '
+        'свободно ${((maxStorageBytes - usedBytes) / (1024 * 1024)).toStringAsFixed(1)} МБ',
+      );
+    }
+  }
+
   /// Helpful client-side preflight. Backend still checks all limits on upload.
   void validateUpload(int size, {required bool image}) {
     if (size <= 0) {
