@@ -123,6 +123,15 @@ void main() {
     );
     expect(progress.value, 0.25);
     expect(progress.minHeight, 14);
+    final used = tester.widget<Text>(
+      find.byKey(const ValueKey('cloud-used')),
+    );
+    final remaining = tester.widget<Text>(
+      find.byKey(const ValueKey('cloud-remaining')),
+    );
+    expect(used.style?.color, Colors.redAccent);
+    expect(used.style?.fontSize, 17);
+    expect(remaining.style?.fontSize, 17);
     expect(tester.takeException(), isNull);
   });
 
