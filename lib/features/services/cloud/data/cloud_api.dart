@@ -195,6 +195,9 @@ class CloudQuota {
   final int maxFiles;
   final int maxFolders;
 
+  int get remainingBytes =>
+      usedBytes >= maxStorageBytes ? 0 : maxStorageBytes - usedBytes;
+
   double get usedFraction => maxStorageBytes <= 0
       ? 0.0 : (usedBytes / maxStorageBytes).clamp(0.0, 1.0).toDouble();
 
