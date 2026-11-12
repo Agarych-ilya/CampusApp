@@ -100,6 +100,7 @@ class _CloudScreenState extends State<CloudScreen> {
       );
       final localFolders = folder == null
           ? await _local.folders(query: q) : <CloudFolder>[];
+      final pendingFileIds = await _local.pendingServerFileIds();
 
       var remoteFiles = <CloudFile>[];
       var remoteFolders = <CloudFolder>[];
@@ -164,9 +165,11 @@ class _CloudScreenState extends State<CloudScreen> {
         if (quota != null) _quota = quota;
         _files = [
           if (folder == null || folder.local) ...localFiles,
-          // Different copies may have the same name and size but different
-          // bytes. Keep both accessible until an explicit verified transfer.
-          ...remoteFiles,
+          // Hide private staging uploads while their local original exists.
+          // Published files become visible after completing the transfer.
+          ...remoteFiles.where((remote) =>
+              !(pendingFileIds.contains(remote.id) &&
+                remote.visibility == CloudVisibility.private)),
         ];
         _serverMirrors = folder == null ? paired : _serverMirrors;
         _folders = [...localFolders, ...remoteFolders];
@@ -1017,13 +1020,51 @@ class _CloudScreenState extends State<CloudScreen> {
     if (file.local && access == CloudVisibility.private) return;
     if (file.local) {
       if (!await _confirm(
-        'Опубликовать файл?',
-        '«${file.name}» будет загружен с устройства на сервер CampusApp. '
-        'Локальный оригинал останется на устройстве.',
+        'Изменить доступ к файлу?',
+        'Файл «${file.name}» будет проверен и перенесён на сервер '
+        'с доступом «${access.label}». Он останется одним файлом '
+        'без локального дубликата.',
       )) return;
-      await _perform(() => _api.uploadFile(
-        file.localPath!, visibility: access, filename: file.name,
-      ), 'Копия файла загружена на сервер');
+      await _perform(() async {
+        // First upload privately, then verify every byte before making it
+        // visible to students and removing the original device copy.
+        var serverId = await _local.pendingFilePublication(file.id);
+        if (serverId == null) {
+          serverId = await _api.uploadFileReturningId(
+            file.localPath!, filename: file.name,
+            visibility: CloudVisibility.private,
+          );
+          await _local.markFilePublication(file.id, serverId);
+        }
+        final staged = CloudFile(
+          id: serverId,
+          name: file.name, available: true, size: file.size,
+          mime: file.mime, folderId: null,
+          visibility: CloudVisibility.private, group: null,
+          mine: true, saved: false, image: file.image,
+        );
+        final downloaded = await _api.downloadToTemporary(staged);
+        try {
+          if (!await _sameBytes(File(file.localPath!), downloaded)) {
+            throw Exception(
+              'Проверка «${file.name}» не пройдена. '
+              'Личный файл остаётся на устройстве.',
+            );
+          }
+        } finally {
+          if (await downloaded.exists()) {
+            try { await downloaded.delete(); } catch (_) {}
+          }
+        }
+        await _api.changeVisibility(serverId, access);
+        await _local.finishFilePublication(file, serverId);
+      }, 'Доступ изменён. Файл перенесён без дубликата');
+      return;
+    }
+    if (file.folderId != null) {
+      _message(
+        'Файл находится в папке. Измени доступ всей папки через её меню.',
+      );
       return;
     }
     if (access == CloudVisibility.private) {
