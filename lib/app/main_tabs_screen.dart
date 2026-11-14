@@ -69,116 +69,71 @@ class CampusGlassDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    const lavender = Color(0xFFB4A0FA);
+    final idle = dark ? const Color(0xFFACABB7)
+        : const Color(0xFF77717F);
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+      minimum: const EdgeInsets.fromLTRB(18, 7, 18, 13),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(42),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
             key: const ValueKey('campus-glass-dock'),
-            height: 68,
+            height: 77,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(32),
-              color: dark
-                  ? const Color(0xDA1B2636)
-                  : const Color(0xEAF6FAFF),
+              color: dark ? const Color(0xF1151418)
+                  : const Color(0xF5F5F2FA),
+              borderRadius: BorderRadius.circular(42),
               border: Border.all(
-                color: Colors.white.withOpacity(dark ? 0.18 : 0.65),
-                width: 1,
+                color: dark ? const Color(0xFF26242B)
+                    : const Color(0xFFDAD6E6),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(dark ? 0.24 : 0.08),
-                  blurRadius: 28, offset: const Offset(0, 12),
-                ),
-              ],
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-            child: LayoutBuilder(
-              builder: (context, bounds) {
-                final slotWidth = bounds.maxWidth / destinations.length;
-                return Stack(
-                  children: [
-                    AnimatedPositioned(
-                      key: const ValueKey('campus-glass-lens'),
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      left: currentIndex * slotWidth + 3,
-                      top: 2,
-                      bottom: 2,
-                      width: slotWidth - 6,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(23),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white.withOpacity(dark ? 0.17 : 0.70),
-                              scheme.primary.withOpacity(dark ? 0.24 : 0.17),
-                            ],
-                          ),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(dark ? 0.25 : 0.75),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: scheme.primary.withOpacity(0.12),
-                              blurRadius: 16,
+            child: Row(
+              children: [
+                for (var index = 0; index < destinations.length; index++)
+                  Expanded(
+                    child: Tooltip(
+                      message: destinations[index].label,
+                      child: Semantics(
+                        label: destinations[index].label,
+                        button: true,
+                        selected: currentIndex == index,
+                        child: InkWell(
+                          key: ValueKey('campus-glass-tab-$index'),
+                          borderRadius: BorderRadius.circular(36),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            onSelected(index);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: currentIndex == index
+                                  ? (dark ? const Color(0xFF30283F)
+                                      : const Color(0xFFE5DEFA))
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(36),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Row(
-              children: List.generate(destinations.length, (index) {
-                final item = destinations[index];
-                final selected = index == currentIndex;
-                return Expanded(
-                  child: Tooltip(
-                    message: item.label,
-                    child: Semantics(
-                      label: item.label,
-                      selected: selected,
-                      button: true,
-                      child: InkWell(
-                        key: ValueKey('campus-glass-tab-$index'),
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          onSelected(index);
-                        },
-                        borderRadius: BorderRadius.circular(25),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 230),
-                          curve: Curves.easeOutCubic,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: Colors.transparent,
+                            child: Icon(
+                              currentIndex == index
+                                  ? destinations[index].selected
+                                  : destinations[index].icon,
+                              size: 26,
+                              color: currentIndex == index ? lavender : idle,
                             ),
-                          ),
-                          child: Icon(
-                            selected ? item.selected : item.icon,
-                            size: selected ? 25 : 23,
-                            color: selected
-                                ? scheme.primary : scheme.onSurfaceVariant,
                           ),
                         ),
                       ),
                     ),
                   ),
-                );
-              }),
-                    ),
-                  ],
-                );
-              },
+              ],
             ),
           ),
         ),
