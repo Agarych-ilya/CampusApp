@@ -16,7 +16,14 @@ import '/features/schedule/data/group_storage.dart';
 import '../data/bars_auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.returnToPreviousScreen = false,
+  });
+
+  /// Reconnect BARS for an existing CampusApp user without clearing the
+  /// navigation stack or deleting a locally cached student profile.
+  final bool returnToPreviousScreen;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -373,9 +380,12 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      Navigator.of(
-        context,
-      ).pushNamedAndRemoveUntil(AppRoutes.main, (route) => false);
+      if (widget.returnToPreviousScreen) {
+        Navigator.of(context).pop(true);
+      } else {
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil(AppRoutes.main, (route) => false);
+      }
     } catch (e) {
       debugPrint('BARS save error: $e');
 
