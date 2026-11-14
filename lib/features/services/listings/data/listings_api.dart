@@ -217,12 +217,14 @@ class ListingsApi {
     return CampusListing.fromJson(jsonDecode(utf8.decode(r.bodyBytes)));
   }
 
-  Future<void> ensureSession() async {
+  Future<void> ensureSession({bool requireGroup = false}) async {
     if (hasSession) {
       try {
         final r = await _send('GET', '/session');
         final data = jsonDecode(utf8.decode(r.bodyBytes));
-        if (data is Map && data['authenticated'] == true) return;
+        if (data is Map && data['authenticated'] == true &&
+            (!requireGroup || (data['group'] is String &&
+                (data['group'] as String).trim().isNotEmpty))) return;
       } catch (_) {}
     }
     _cookie = null;
@@ -266,6 +268,11 @@ class ListingsApi {
     }
     _cookie = rawCookie.split(';').first;
     _csrf = csrf;
+    if (requireGroup &&
+        (result is! Map || result['group'] is! String ||
+         (result['group'] as String).trim().isEmpty)) {
+      throw Exception('БАРС не подтвердил твою учебную группу');
+    }
   }
 
   /// Reuse the already verified BARS identity for publishing and rating
@@ -275,6 +282,14 @@ class ListingsApi {
     return {
       'Cookie': _cookie!,
       'X-Listing-CSRF': _csrf!,
+    };
+  }
+
+  Future<Map<String, String>> scheduleNotesAuthHeaders({bool write = false}) async {
+    await ensureSession(requireGroup: true);
+    return {
+      'Cookie': _cookie!,
+      if (write) 'X-Listing-CSRF': _csrf!,
     };
   }
 

@@ -18,6 +18,33 @@ class ScheduleLoadException implements Exception {
 class ScheduleApi {
   final ScheduleCache _cache = ScheduleCache();
 
+  /// Autocomplete for other MPEI groups, served by the CampusApp backend.
+  Future<List<String>> searchGroups(String query) async {
+    final term = query.trim();
+    if (term.length < 2) return [];
+
+    for (final baseUrl in ApiConfig.scheduleBaseUrls) {
+      try {
+        final uri = Uri.parse('$baseUrl/schedule/groups').replace(
+          queryParameters: {'q': term},
+        );
+        final response = await http.get(uri).timeout(
+          const Duration(seconds: 12),
+        );
+        if (response.statusCode != 200) continue;
+
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is! List) continue;
+        return data.whereType<String>().toList();
+      } catch (_) {
+        // Try another configured local backend address.
+      }
+    }
+    throw const ScheduleLoadException(
+      'Поиск групп временно недоступен. Проверь подключение к серверу.',
+    );
+  }
+
   /// True if a server error forced us to show previously saved lessons.
   bool showingOfflineCopy = false;
 

@@ -1,367 +1,2041 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '/features/services/style/service_palette.dart';
-
 import '../data/cloud_api.dart';
+import '../data/local_cloud_store.dart';
+import '../data/yandex_disk_importer.dart';
+
+/// A file selected from the native picker, or supplied by a widget test.
+class CloudPickedFile {
+  const CloudPickedFile({required this.path, required this.name});
+  final String path;
+  final String name;
+}
 
 class CloudScreen extends StatefulWidget {
-  const CloudScreen({super.key});
+  const CloudScreen({
+    super.key,
+    this.api,
+    this.localStore,
+    this.importer,
+    this.pickFiles,
+  });
+
+  /// Optional dependencies for widget tests and offline previews.
+  final CloudApi? api;
+  final LocalCloudStore? localStore;
+  final YandexDiskImporter? importer;
+  final Future<List<CloudPickedFile>> Function()? pickFiles;
 
   @override
   State<CloudScreen> createState() => _CloudScreenState();
 }
 
 class _CloudScreenState extends State<CloudScreen> {
-  final CloudApi _cloudApi = CloudApi();
-  final TextEditingController _searchController = TextEditingController();
+  late final CloudApi _api;
+  late final LocalCloudStore _local;
+  late final YandexDiskImporter _yandex;
+  final TextEditingController _search = TextEditingController();
+  Timer? _debounce;
 
   List<CloudFile> _files = [];
-  bool _isLoading = true;
-  bool _isUploading = false;
+  List<CloudFolder> _folders = [];
+  CloudQuota? _quota;
+  // Legacy local/cloud duplicates are one logical folder in the browser.
+  // The backing copies remain intact until their contents are verified.
+  Map<int, CloudFolder> _serverMirrors = {};
+  CloudFolder? _currentFolder;
+  bool _loading = true;
+  bool _busy = false;
+  String? _migrationStatus;
   String? _error;
+  int _requestId = 0;
+
+  bool get _isSearching => _search.text.trim().isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-
-    _loadFiles();
-
-    _searchController.addListener(() {
+    _api = widget.api ?? CloudApi();
+    _local = widget.localStore ?? LocalCloudStore();
+    _yandex = widget.importer ?? YandexDiskImporter();
+    _load();
+    _search.addListener(() {
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(milliseconds: 350), () {
+        if (mounted) _load();
+      });
       setState(() {});
     });
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _requestId++;
+    _debounce?.cancel();
+    _search.dispose();
+    if (widget.importer == null) _yandex.dispose();
     super.dispose();
   }
 
-  List<CloudFile> get _filteredFiles {
-    final query = _searchController.text.trim().toLowerCase();
-
-    if (query.isEmpty) {
-      return _files;
-    }
-
-    return _files.where((file) {
-      return file.name.toLowerCase().contains(query);
-    }).toList();
-  }
-
-  Future<void> _loadFiles() async {
+  Future<void> _load() async {
+    final request = ++_requestId;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
+      final q = _search.text.trim();
+      final folder = q.isEmpty ? _currentFolder : null;
+      final localFiles = await _local.files(
+        query: q,
+        folderId: folder?.local == true ? folder?.id : null,
+        rootOnly: q.isEmpty && folder == null,
+      );
+      final localFolders = folder == null
+          ? await _local.folders(query: q) : <CloudFolder>[];
+      final pendingFileIds = await _local.pendingServerFileIds();
+
+      var remoteFiles = <CloudFile>[];
+      var remoteFolders = <CloudFolder>[];
+      final pendingServerIds = await _local.pendingServerFolderIds();
+      final paired = <int, CloudFolder>{};
+      final rootLocalFolders = folder == null
+          ? await _local.folders()
+          : <CloudFolder>[];
+      String? remoteError;
+      try {
+        if (folder?.local != true) {
+          remoteFiles = await _api.getFiles(
+            mode: 'search',
+            query: q,
+            folderId: folder?.id,
+          );
+        } else {
+          final mirror = _serverMirrors[folder!.id];
+          if (mirror != null) {
+            remoteFiles = await _api.getFiles(
+              mode: 'search', query: q, folderId: mirror.id,
+            );
+          }
+        }
+        if (folder == null) {
+          final allRemote = await _api.getFolders(mode: 'all', query: '');
+          final own = allRemote.where((item) => item.mine).toList();
+          for (final local in rootLocalFolders) {
+            final possible = own.where((candidate) =>
+                candidate.name == local.name).toList();
+            final pending = await _local.pendingPublication(local.id);
+            if (pending != null) {
+              final linked = possible.where(
+                (candidate) => candidate.id == pending,
+              ).toList();
+              if (linked.length == 1) paired[local.id] = linked.single;
+            } else if (possible.length == 1 &&
+                possible.single.visibility != CloudVisibility.private) {
+              // An unambiguous same-name owner pair created by old releases.
+              paired[local.id] = possible.single;
+            }
+          }
+          final pairedRemoteIds =
+              paired.values.map((item) => item.id).toSet();
+          remoteFolders = allRemote.where((item) =>
+              item.name.toLowerCase().contains(q.toLowerCase()) &&
+              !pairedRemoteIds.contains(item.id) &&
+              !pendingServerIds.contains(item.id)).toList();
+        }
+      } catch (error) {
+        remoteError = _cleanError(error);
+      }
+      // Quota errors must not hide locally stored files or the catalogue.
+      CloudQuota? quota;
+      try {
+        quota = await _api.getQuota();
+      } catch (_) {
+        // The backend still rejects over-limit uploads if quota is unavailable.
+      }
+      if (!mounted || request != _requestId) return;
       setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-
-      final files = await _cloudApi.getFiles();
-
-      if (!mounted) return;
-
-      setState(() {
-        _files = files;
+        if (quota != null) _quota = quota;
+        _files = [
+          if (folder == null || folder.local) ...localFiles,
+          // Hide private staging uploads while their local original exists.
+          // Published files become visible after completing the transfer.
+          ...remoteFiles.where((remote) =>
+              !(pendingFileIds.contains(remote.id) &&
+                remote.visibility == CloudVisibility.private)),
+        ];
+        _serverMirrors = folder == null ? paired : _serverMirrors;
+        _folders = [...localFolders, ...remoteFolders];
+        _loading = false;
+        _error = remoteError != null &&
+            _files.isEmpty && _folders.isEmpty ? remoteError : null;
       });
     } catch (error) {
-      if (!mounted) return;
-
+      if (!mounted || request != _requestId) return;
       setState(() {
-        _error = error.toString();
+        _loading = false;
+        _error = _cleanError(error);
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
-  Future<void> _pickAndUploadFile() async {
-    if (_isUploading) return;
+  String _cleanError(Object error) =>
+      error.toString().replaceFirst('Exception: ', '');
 
+  void _message(String value, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(value),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: error ? Colors.redAccent : null,
+      ));
+  }
+
+  Future<void> _perform(
+    Future<void> Function() operation, String success,
+  ) async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
-      final file = await FilePicker.pickFile();
+      await operation();
+      if (!mounted) return;
+      _message(success);
+      await _load();
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
-      if (file == null) {
-        return;
+  Future<CloudVisibility?> _pickVisibility({
+    CloudVisibility current = CloudVisibility.private,
+  }) async {
+    return showModalBottomSheet<CloudVisibility>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('Кто может видеть?',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text('Доступ проверяется сервером через БАРС'),
+              ),
+              for (final access in CloudVisibility.values)
+                ListTile(
+                  leading: Icon(_scopeIcon(access)),
+                  title: Text(access.label),
+                  subtitle: Text(_scopeDescription(access)),
+                  trailing: access == current
+                      ? const Icon(Icons.check, color: ServicePalette.accent)
+                      : null,
+                  onTap: () => Navigator.pop(context, access),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createFolder() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => const _FolderNameDialog(
+        title: 'Новая папка',
+        actionText: 'Создать',
+      ),
+    );
+    if (!mounted || name == null) return;
+    final visibility = await _pickVisibility();
+    if (!mounted || visibility == null) return;
+    await _perform(() async {
+      if (visibility == CloudVisibility.private) {
+        await _local.createFolder(name);
+      } else {
+        await _api.createFolder(name, visibility);
+      }
+    }, visibility == CloudVisibility.private
+        ? 'Личная папка создана'
+        : 'Папка создана в общем облаке');
+  }
+
+  Future<void> _renameFolder(CloudFolder folder) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _FolderNameDialog(
+        title: 'Переименовать папку',
+        actionText: 'Сохранить',
+        initialName: folder.name,
+      ),
+    );
+    if (!mounted || name == null || name == folder.name) return;
+    await _perform(
+      () async {
+        if (folder.local) {
+          final mirror = _serverMirrors[folder.id];
+          if (mirror != null) {
+            await _api.renameFolder(mirror.id, name);
+          }
+          try {
+            await _local.renameFolder(folder.id, name);
+          } catch (_) {
+            if (mirror != null) {
+              try {
+                await _api.renameFolder(mirror.id, folder.name);
+              } catch (_) {}
+            }
+            rethrow;
+          }
+        } else {
+          await _api.renameFolder(folder.id, name);
+        }
+      },
+      'Название папки изменено',
+    );
+  }
+
+  Future<void> _renameFile(CloudFile file) async {
+    if (!file.mine) {
+      _message('Изменять название может только владелец файла', error: true);
+      return;
+    }
+    final nextName = await showDialog<String>(
+      context: context,
+      builder: (_) => _FolderNameDialog(
+        title: 'Переименовать файл',
+        actionText: 'Сохранить',
+        initialName: file.name,
+      ),
+    );
+    if (!mounted || nextName == null || nextName == file.name) return;
+    await _perform(() async {
+      if (file.local) {
+        await _local.renameFile(file.id, nextName);
+      } else {
+        await _api.renameFile(file.id, nextName);
+      }
+    }, 'Название файла изменено');
+  }
+
+  Future<void> _createFolderLink(CloudFolder folder) async {
+    final actual = folder.local
+        ? (_serverMirrors[folder.id] ?? folder) : folder;
+    if (actual.local || actual.visibility == CloudVisibility.private) {
+      _message(
+        'У личной папки нет ссылки. Измени доступ на «Моя группа» '
+        'или «Всем», чтобы поделиться.',
+      );
+      return;
+    }
+    if (!await _confirm(
+      'Поделиться ссылкой на папку?',
+      'Все, у кого есть ссылка, смогут просматривать список и скачивать '
+      'файлы папки «${folder.name}», даже без входа в CampusApp.',
+    )) return;
+    if (!mounted || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final uri = await _api.createFolderShareLink(actual.id);
+      await Clipboard.setData(ClipboardData(text: uri.toString()));
+      if (!mounted) return;
+      _message('Ссылка на папку скопирована');
+      if (['localhost', '127.0.0.1', '10.0.2.2'].contains(uri.host)) {
+        _message('Для других устройств нужен публичный HTTPS-адрес backend.');
+      }
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _revokeFolderLink(CloudFolder folder) async {
+    final actual = folder.local
+        ? (_serverMirrors[folder.id] ?? folder) : folder;
+    if (actual.local) return;
+    if (!await _confirm(
+      'Отозвать ссылку на папку?',
+      'Ранее отправленная ссылка перестанет работать.',
+    )) return;
+    await _perform(
+      () => _api.revokeFolderShareLink(actual.id),
+      'Ссылка на папку отозвана',
+    );
+  }
+
+  Future<void> _changeFolderAccess(CloudFolder folder) async {
+    if (_busy) return;
+    final mirror = folder.local ? _serverMirrors[folder.id] : null;
+    final current = mirror?.visibility ?? folder.visibility;
+    final access = await _pickVisibility(current: current);
+    if (!mounted || access == null) return;
+    if (access == current && mirror == null &&
+        !(access == CloudVisibility.private && !folder.local)) return;
+
+    if (folder.local) {
+      if (mirror != null) {
+        if (access == CloudVisibility.private) {
+          await _makeMirrorPrivate(folder, mirror);
+        } else {
+          await _publishLocalFolder(folder, access, existingMirror: mirror);
+        }
+      } else if (access != CloudVisibility.private) {
+        await _publishLocalFolder(folder, access);
+      }
+      return;
+    }
+    if (access == CloudVisibility.private) {
+      await _moveFolderToDevice(folder);
+      return;
+    }
+    await _perform(
+      () async { await _api.changeFolderVisibility(folder.id, access); },
+      'Доступ к папке: ${access.label.toLowerCase()}',
+    );
+  }
+
+  /// A folder that already has local and server copies can become private
+  /// without creating yet another local folder. Only remove the server copy
+  /// after comparing every owned byte and preserving the existing local data.
+  Future<void> _makeMirrorPrivate(
+    CloudFolder local, CloudFolder remote,
+  ) async {
+    final approved = await _confirm(
+      'Сделать папку личной?',
+      'Будет оставлена одна папка «${local.name}» на устройстве. '
+      'Серверные файлы и ссылки будут удалены только после проверки, '
+      'что локальная версия содержит те же данные.',
+    );
+    if (!mounted || !approved) return;
+    await _perform(() async {
+      try {
+        final localFiles = await _local.files(folderId: local.id);
+        final manifest = await _api.folderMigrationManifest(remote.id);
+        if (manifest.files.length != localFiles.length) {
+          throw Exception(
+            'Содержимое серверной и личной папок различается. '
+            'Файлы не удалены.',
+          );
+        }
+        final unmatched = [...localFiles];
+        for (var i = 0; i < manifest.files.length; i++) {
+          final item = manifest.files[i];
+          final index = unmatched.indexWhere((file) =>
+              file.name == item.name && file.size == item.size &&
+              file.localPath != null);
+          if (index < 0) {
+            throw Exception('Не найден локальный файл: ${item.name}');
+          }
+          final candidate = unmatched.removeAt(index);
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Проверка ${i + 1} из ${manifest.files.length}');
+          }
+          final downloaded = await _api.downloadToTemporary(CloudFile(
+            id: item.id,
+            name: item.name,
+            size: item.size,
+            available: true,
+            mime: 'application/octet-stream',
+            folderId: remote.id,
+            visibility: remote.visibility,
+            group: remote.group,
+            mine: item.owned,
+            saved: !item.owned,
+            image: false,
+          ));
+          try {
+            if (!await _sameBytes(
+              File(candidate.localPath!), downloaded,
+            )) {
+              throw Exception(
+                'Файл «${item.name}» отличается. '
+                'Обе копии сохранены без изменений.',
+              );
+            }
+          } finally {
+            if (await downloaded.exists()) {
+              try { await downloaded.delete(); } catch (_) {}
+            }
+          }
+        }
+        await _api.finishFolderMigration(
+          remote.id, manifest.files.map((item) => item.id).toList(),
+        );
+      } finally {
+        if (mounted) setState(() => _migrationStatus = null);
+      }
+    }, 'Папка «${local.name}» теперь только на устройстве.');
+  }
+
+  /// Do not remove anything on the server before every file has been
+  /// downloaded, checked and committed to the app-private local store.
+  Future<void> _moveFolderToDevice(CloudFolder folder) async {
+    final approved = await _confirm(
+      'Сделать папку личной?',
+      'Все файлы папки «${folder.name}» будут сохранены на этом устройстве. '
+      'После успешного копирования серверная папка и её файлы удалятся, '
+      'все ссылки перестанут работать. Сохранённые чужие материалы '
+      'скопируются, но чужие оригиналы не удалятся. '
+      'Личные файлы не появятся на другом телефоне и могут пропасть '
+      'при удалении приложения. Продолжить?',
+    );
+    if (!mounted || !approved) return;
+    await _perform(() async {
+      final manifest = await _api.folderMigrationManifest(folder.id);
+      if (mounted) {
+        setState(() => _migrationStatus =
+            'Подготовка переноса · ${manifest.files.length} файлов');
+      }
+      if (manifest.id != folder.id) {
+        throw const FormatException('Получены данные другой папки');
+      }
+      final staged = <int, File>{};
+      try {
+        // This includes foreign bookmarks saved in the folder.
+        for (final item in manifest.files) {
+          final temp = await _api.downloadToTemporary(
+            CloudFile(
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              available: true,
+              mine: item.owned,
+              saved: !item.owned,
+              mime: 'application/octet-stream',
+              folderId: folder.id,
+              visibility: folder.visibility,
+              group: folder.group,
+              image: false,
+            ),
+          );
+          staged[item.id] = temp;
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Скачано ${staged.length} из ${manifest.files.length}');
+          }
+          if (await temp.length() != item.size) {
+            throw FileSystemException(
+              'Файл скачался не полностью: ${item.name}',
+            );
+          }
+        }
+
+        // Idempotent if the backend was unreachable after a prior copy.
+        if (mounted) setState(() => _migrationStatus =
+            'Сохранение файлов на устройстве');
+        await _local.importServerFolder(manifest, staged);
+        if (mounted) setState(() => _migrationStatus =
+            'Отзыв ссылок и удаление серверной копии');
+        try {
+          await _api.finishFolderMigration(
+            folder.id, manifest.files.map((file) => file.id).toList(),
+          );
+        } catch (_) {
+          throw Exception(
+            'Копия папки уже сохранена на устройстве, но завершить удаление '
+            'на сервере не удалось. Серверная папка и ссылки пока остались. '
+            'Повтори «Настроить доступ → Личное» после проверки сети.',
+          );
+        }
+        if (mounted && _currentFolder?.id == folder.id &&
+            _currentFolder?.local == false) {
+          setState(() => _currentFolder = null);
+        }
+      } finally {
+        for (final file in staged.values) {
+          if (await file.exists()) {
+            try { await file.delete(); } catch (_) {}
+          }
+        }
+      }
+    }, 'Папка теперь только на устройстве. Ссылки отозваны.');
+    if (mounted) setState(() => _migrationStatus = null);
+  }
+
+  Future<bool> _sameBytes(File leftFile, File rightFile) async {
+    if (await leftFile.length() != await rightFile.length()) return false;
+    final left = await leftFile.open();
+    final right = await rightFile.open();
+    try {
+      while (true) {
+        final a = await left.read(65536);
+        final b = await right.read(65536);
+        if (a.length != b.length) return false;
+        for (var i = 0; i < a.length; i++) {
+          if (a[i] != b[i]) return false;
+        }
+        if (a.isEmpty) return true;
+      }
+    } finally {
+      await left.close();
+      await right.close();
+    }
+  }
+
+  /// Resolve a deterministic, collision-safe name for a different file
+  /// that shares the same original filename. Preserve its file extension.
+  String _conflictFilename(String original, int index) {
+    final dot = original.lastIndexOf('.');
+    final hasExtension = dot > 0;
+    final base = hasExtension ? original.substring(0, dot) : original;
+    final extension = hasExtension ? original.substring(dot) : '';
+    final suffix = index == 1
+        ? ' (с устройства)'
+        : ' (с устройства $index)';
+    const maxNameLength = 160;
+    final maxBase = maxNameLength - suffix.length - extension.length;
+    if (maxBase <= 0) {
+      throw Exception('Слишком длинное расширение файла «$original»');
+    }
+    final prefix = base.length > maxBase
+        ? base.substring(0, maxBase) : base;
+    return '$prefix$suffix$extension';
+  }
+
+  String _uniquePublishedName(String original, Set<String> occupied) {
+    if (!occupied.contains(original)) return original;
+    for (var i = 1; i <= 999; i++) {
+      final candidate = _conflictFilename(original, i);
+      if (!occupied.contains(candidate)) return candidate;
+    }
+    throw Exception('Не удалось подобрать уникальное имя для «$original»');
+  }
+
+  /// Retry a previous interrupted upload without creating another copy,
+  /// including when a long base name had to be shortened.
+  bool _matchesPublishedName(String original, String candidate) {
+    if (candidate == original) return true;
+    final dot = original.lastIndexOf('.');
+    final extension = dot > 0 ? original.substring(dot) : '';
+    if (!candidate.endsWith(extension)) return false;
+    final suffix = RegExp(r' \(с устройства(?: ([1-9][0-9]*))?\)$');
+    final nameWithoutExtension = extension.isEmpty
+        ? candidate
+        : candidate.substring(0, candidate.length - extension.length);
+    final match = suffix.firstMatch(nameWithoutExtension);
+    if (match == null) return false;
+    final n = match.group(1) == null ? 1 : int.tryParse(match.group(1)!);
+    if (n == null || n < 1 || n > 999) return false;
+    return _conflictFilename(original, n) == candidate;
+  }
+
+  /// Change the storage location instead of making a second visible folder.
+  /// A private server staging folder allows retries without exposing a
+  /// partially uploaded collection to other students.
+  Future<void> _publishLocalFolder(
+    CloudFolder folder, CloudVisibility access, {
+    CloudFolder? existingMirror,
+  }) async {
+    if (_busy || access == CloudVisibility.private) return;
+    final approved = await _confirm(
+      'Перенести папку в облако?',
+      'Файлы «${folder.name}» будут загружены и проверены на сервере. '
+      'После успешной проверки локальная папка исчезнет из списка, '
+      'останется одна папка с доступом «${access.label}». '
+      'Если такая серверная копия уже есть, приложение сначала '
+      'проверит её содержимое. Продолжить?',
+    );
+    if (!mounted || !approved) return;
+    await _perform(() async {
+      try {
+        final files = await _local.files(folderId: folder.id);
+        for (final file in files) {
+          if (!file.available || file.localPath == null ||
+              await File(file.localPath!).length() != file.size) {
+            throw Exception('Не удалось прочитать файл: ${file.name}');
+          }
+        }
+
+        final pendingId = await _local.pendingPublication(folder.id);
+        final serverFolders = await _api.getFolders(mode: 'mine');
+        CloudFolder? serverFolder;
+        if (existingMirror != null) {
+          final matches = serverFolders.where((candidate) =>
+              candidate.id == existingMirror.id && candidate.mine).toList();
+          if (matches.length != 1) {
+            throw Exception(
+              'Серверная версия папки недоступна. '
+              'Оригинал на устройстве сохранён.',
+            );
+          }
+          serverFolder = matches.single;
+          if (pendingId != null && pendingId != serverFolder.id) {
+            throw Exception('Папка уже переносится на другой сервер');
+          }
+          if (pendingId == null) {
+            await _local.markPendingPublication(folder.id, serverFolder.id);
+          }
+        } else if (pendingId != null) {
+          for (final candidate in serverFolders) {
+            if (candidate.id == pendingId && candidate.mine) {
+              serverFolder = candidate;
+              break;
+            }
+          }
+          if (serverFolder == null) {
+            throw Exception(
+              'Не найдена папка незавершённого переноса на сервере. '
+              'Проверь доступ к backend перед повторением.',
+            );
+          }
+        } else {
+          final existing = serverFolders.where((candidate) =>
+              candidate.mine && candidate.name == folder.name &&
+              candidate.visibility == access).toList();
+          if (existing.length > 1) {
+            throw Exception(
+              'Найдено несколько общих папок с названием «${folder.name}». '
+              'Переименуй лишние папки, чтобы безопасно объединить данные.',
+            );
+          }
+          if (existing.length == 1) {
+            // Legacy duplicate created by the previous copy-only behavior:
+            // verify bytes before adopting the existing server folder.
+            serverFolder = existing.single;
+          } else {
+            serverFolder = await _api.createFolder(
+              folder.name, CloudVisibility.private,
+            );
+          }
+          await _local.markPendingPublication(folder.id, serverFolder!.id);
+        }
+
+        final destination = serverFolder!;
+        if (destination.name != folder.name) {
+          throw Exception('Название папки изменилось во время переноса');
+        }
+
+        var onServer = await _api.getFiles(
+          mode: 'mine', folderId: destination.id,
+        );
+        // A legacy published folder may contain *additional* files. Keep
+        // them, rather than requiring its contents to equal the local copy.
+        // Identically named but different files are both retained, with a
+        // suffix on the newly published version.
+        final assigned = <int, int>{};
+        final occupiedNames = onServer.map((file) => file.name).toSet();
+        final claimedServerIds = <int>{};
+
+        for (var i = 0; i < files.length; i++) {
+          final localFile = files[i];
+          CloudFile? match;
+          for (final candidate in onServer) {
+            if (!candidate.mine || !candidate.available ||
+                claimedServerIds.contains(candidate.id) ||
+                candidate.size != localFile.size ||
+                !_matchesPublishedName(localFile.name, candidate.name)) {
+              continue;
+            }
+            final temporary = await _api.downloadToTemporary(candidate);
+            try {
+              if (await _sameBytes(
+                File(localFile.localPath!), temporary,
+              )) {
+                match = candidate;
+                break;
+              }
+            } finally {
+              if (await temporary.exists()) {
+                try { await temporary.delete(); } catch (_) {}
+              }
+            }
+          }
+
+          if (match != null) {
+            claimedServerIds.add(match.id);
+            assigned[localFile.id] = match.id;
+            continue;
+          }
+
+          final targetName = _uniquePublishedName(
+            localFile.name, occupiedNames,
+          );
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Перенос файлов: ${i + 1} из ${files.length}');
+          }
+          // If the HTTP request succeeds on the server but its reply is
+          // lost, a retry will find the same bytes and will not reupload.
+          await _api.uploadFile(
+            localFile.localPath!,
+            filename: targetName,
+            folderId: destination.id,
+            visibility: CloudVisibility.private,
+          );
+          occupiedNames.add(targetName);
+          onServer = await _api.getFiles(
+            mode: 'mine', folderId: destination.id,
+          );
+          final uploaded = onServer.where((item) =>
+              item.mine && item.available &&
+              item.name == targetName && item.size == localFile.size &&
+              !claimedServerIds.contains(item.id)).toList();
+          if (uploaded.length != 1) {
+            throw Exception(
+              'Сервер не подтвердил файл «${localFile.name}». '
+              'Личная папка сохранена для повторной проверки.',
+            );
+          }
+          assigned[localFile.id] = uploaded.single.id;
+          claimedServerIds.add(uploaded.single.id);
+        }
+
+        // Every local original must have a matching readable server file,
+        // irrespective of how many older files are already in the folder.
+        onServer = await _api.getFiles(
+          mode: 'mine', folderId: destination.id,
+        );
+        for (var i = 0; i < files.length; i++) {
+          final localFile = files[i];
+          final remoteMatches = onServer.where((item) =>
+              item.id == assigned[localFile.id] &&
+              item.mine && item.available &&
+              item.size == localFile.size).toList();
+          if (remoteMatches.length != 1) {
+            throw Exception(
+              'Файл «${localFile.name}» отсутствует на сервере. '
+              'Локальная папка сохранена.',
+            );
+          }
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Проверка файлов: ${i + 1} из ${files.length}');
+          }
+          final temporary = await _api.downloadToTemporary(
+            remoteMatches.single,
+          );
+          try {
+            if (!await _sameBytes(
+              File(localFile.localPath!), temporary,
+            )) {
+              throw Exception(
+                'Содержимое файла «${localFile.name}» отличается '
+                'от серверной копии. Локальная папка сохранена.',
+              );
+            }
+          } finally {
+            if (await temporary.exists()) {
+              try { await temporary.delete(); } catch (_) {}
+            }
+          }
+        }
+
+        if (destination.visibility != access) {
+          if (mounted) {
+            setState(() => _migrationStatus = 'Открытие доступа к папке');
+          }
+          await _api.changeFolderVisibility(destination.id, access);
+        }
+
+        if (mounted) {
+          setState(() => _migrationStatus =
+              'Завершение переноса · удаление локальной копии');
+        }
+        await _local.finishPublishedFolder(folder.id, files, destination.id);
+        if (mounted && _currentFolder?.local == true &&
+            _currentFolder?.id == folder.id) {
+          setState(() => _currentFolder = null);
+        }
+      } finally {
+        if (mounted) setState(() => _migrationStatus = null);
+      }
+    }, 'Папка перенесена в облако. Дубликатов больше нет.');
+  }
+
+  Future<bool> _confirm(String title, String message) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Продолжить'),
+            ),
+          ],
+        ),
+      ) ?? false;
+
+  static bool _isImageName(String name) {
+    final ext = name.toLowerCase();
+    return ext.endsWith('.jpg') || ext.endsWith('.jpeg') ||
+        ext.endsWith('.png') || ext.endsWith('.webp') ||
+        ext.endsWith('.gif') || ext.endsWith('.bmp');
+  }
+
+  Future<void> _upload() async {
+    if (_busy) return;
+    try {
+      // file_picker 12.x returns List<PlatformFile>, not FilePickerResult.
+      final picked = widget.pickFiles != null
+          ? await widget.pickFiles!()
+          : [
+              for (final file in await FilePicker.pickFiles())
+                CloudPickedFile(path: file.path ?? '', name: file.name),
+            ];
+      if (picked.isEmpty) return;
+      if (picked.any((file) => file.path.isEmpty)) {
+        throw Exception('Не удалось получить путь одного из файлов');
       }
 
-      final path = file.path;
-
-      if (path == null) {
-        _showMessage('Не удалось получить путь к файлу');
-        return;
+      final folder = !_isSearching && _currentFolder?.mine == true
+          ? _currentFolder : null;
+      final mirror = folder?.local == true
+          ? _serverMirrors[folder!.id] : null;
+      CloudVisibility access = mirror?.visibility ??
+          folder?.visibility ?? CloudVisibility.private;
+      if (folder == null) {
+        final selected = await _pickVisibility();
+        if (!mounted || selected == null) return;
+        access = selected;
       }
+
+      // Check the ENTIRE batch before storing or uploading the first file.
+      final batch = <({CloudPickedFile file, int size})>[];
+      for (final file in picked) {
+        final path = File(file.path);
+        final size = await path.length();
+        final limit = access != CloudVisibility.private &&
+                _isImageName(file.name)
+            ? CloudQuota.defaultMaxImageBytes
+            : CloudQuota.defaultMaxFileBytes;
+        if (size <= 0 || size > limit) {
+          throw Exception(
+            '«${file.name}»: ${_isImageName(file.name)
+                ? 'изображение не больше 5 МБ'
+                : 'файл не больше 20 МБ'}',
+          );
+        }
+        batch.add((file: file, size: size));
+      }
+      if (access != CloudVisibility.private) {
+        final quota = await _api.getQuota();
+        quota.validateBatch([
+          for (final item in batch)
+            (size: item.size, image: _isImageName(item.file.name)),
+        ]);
+      }
+      if (!mounted) return;
 
       setState(() {
-        _isUploading = true;
+        _busy = true;
+        _migrationStatus = 'Подготовка ${batch.length} файлов';
       });
-
-      await _cloudApi.uploadFile(path);
-
-      if (!mounted) return;
-
-      _showMessage('Файл загружен');
-
-      await _loadFiles();
-    } catch (error) {
-      if (!mounted) return;
-
-      _showMessage('Ошибка загрузки: ${_cleanError(error)}', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-        });
+      var completed = 0;
+      String? failure;
+      try {
+        for (final item in batch) {
+          if (!mounted) break;
+          setState(() => _migrationStatus =
+              '${access == CloudVisibility.private ? 'Сохранение' : 'Загрузка'} '
+              '${completed + 1} из ${batch.length}');
+          try {
+            if (access == CloudVisibility.private) {
+              await _local.saveFile(
+                item.file.path,
+                name: item.file.name,
+                folderId: folder?.local == true ? folder?.id : null,
+              );
+            } else {
+              await _api.uploadFile(
+                item.file.path,
+                folderId: mirror?.id ??
+                    (folder?.local == true ? null : folder?.id),
+                visibility: access,
+                filename: item.file.name,
+              );
+            }
+            completed++;
+          } catch (error) {
+            failure = '«${item.file.name}»: ${_cleanError(error)}';
+            break; // Never silently skip a failed file.
+          }
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _migrationStatus = null);
+          await _load(); // Refresh both file list and used cloud space.
+          if (mounted) setState(() => _busy = false);
+        }
       }
+      if (!mounted) return;
+      if (failure == null) {
+        _message(access == CloudVisibility.private
+            ? 'Сохранено в личное: $completed'
+            : 'Загружено в облако: $completed');
+      } else {
+        _message(
+          'Добавлено $completed из ${batch.length}. $failure',
+          error: true,
+        );
+      }
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    }
+  }
+
+  Future<void> _importYandex() async {
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) => const _YandexLinkDialog(),
+    );
+    if (!mounted || url == null) return;
+    final folder = !_isSearching && _currentFolder?.mine == true
+        ? _currentFolder : null;
+    CloudVisibility visibility = folder?.visibility ?? CloudVisibility.private;
+    if (folder == null) {
+      final selected = await _pickVisibility();
+      if (!mounted || selected == null) return;
+      visibility = selected;
+    }
+    await _perform(() async {
+      final imported = await _yandex.download(url);
+      try {
+        if (visibility == CloudVisibility.private) {
+          await _local.saveFile(
+            imported.file.path, name: imported.name,
+            folderId: folder?.local == true ? folder?.id : null,
+          );
+        } else {
+          _quota?.validateUpload(
+            await imported.file.length(),
+            image: _isImageName(imported.name),
+          );
+          await _api.uploadFile(
+            imported.file.path,
+            folderId: folder?.local == true ? null : folder?.id,
+            visibility: visibility,
+            filename: imported.name,
+          );
+        }
+      } finally {
+        if (await imported.file.exists()) await imported.file.delete();
+      }
+    }, visibility == CloudVisibility.private
+        ? 'Импортировано только на устройство (папка — ZIP)'
+        : 'Импортировано в Campus Cloud (папка — ZIP)');
+  }
+
+  Future<void> _save(CloudFile file) async {
+    await _perform(
+      () => _api.saveFile(file.id),
+      '«${file.name}» сохранён в твою библиотеку',
+    );
+  }
+
+  Future<void> _removeSaved(CloudFile file) async {
+    await _perform(
+      () => _api.unsaveFile(file.id), 'Убрано из библиотеки',
+    );
+  }
+
+  Future<void> _deleteFile(CloudFile file) async {
+    final confirmed = await _confirm(
+      'Удалить навсегда?',
+      file.local
+          ? '«${file.name}» будет удалён с этого устройства без восстановления.'
+          : '«${file.name}» будет удалён с сервера и исчезнет '
+              'из сохранённого у других студентов.',
+    );
+    if (!confirmed) return;
+    await _perform(() async {
+      if (file.local) {
+        await _local.deleteFile(file);
+      } else {
+        await _api.deleteFile(file.id);
+      }
+    }, 'Файл удалён');
+  }
+
+  Future<void> _deleteFolder(CloudFolder folder) async {
+    if (!await _confirm(
+      'Удалить папку?',
+      'Папку «${folder.name}» можно удалить только после '
+      'перемещения всех собственных файлов.',
+    )) {
+      return;
+    }
+    await _perform(() async {
+      if (folder.local) {
+        final mirror = _serverMirrors[folder.id];
+        if (mirror != null) {
+          // These two records are one logical folder. Never delete only one
+          // without checking both are empty, otherwise a duplicate reappears.
+          if ((await _local.files(folderId: folder.id)).isNotEmpty ||
+              (await _api.getFiles(
+                mode: 'mine', folderId: mirror.id,
+              )).isNotEmpty) {
+            throw Exception('Сначала перемести файлы из папки');
+          }
+          await _api.deleteFolder(mirror.id);
+        }
+        await _local.deleteFolder(folder.id);
+      } else {
+        await _api.deleteFolder(folder.id);
+      }
+    }, 'Папка удалена');
+  }
+
+  Future<void> _changeScope(CloudFile file) async {
+    final access = await _pickVisibility(current: file.visibility);
+    if (!mounted || access == null ||
+        (access == file.visibility && access != CloudVisibility.private)) {
+      return;
+    }
+
+    if (file.local && access == CloudVisibility.private) return;
+    if (file.local) {
+      if (!await _confirm(
+        'Изменить доступ к файлу?',
+        'Файл «${file.name}» будет проверен и перенесён на сервер '
+        'с доступом «${access.label}». Он останется одним файлом '
+        'без локального дубликата.',
+      )) return;
+      await _perform(() async {
+        // First upload privately, then verify every byte before making it
+        // visible to students and removing the original device copy.
+        var serverId = await _local.pendingFilePublication(file.id);
+        if (serverId == null) {
+          serverId = await _api.uploadFileReturningId(
+            file.localPath!, filename: file.name,
+            visibility: CloudVisibility.private,
+          );
+          await _local.markFilePublication(file.id, serverId);
+        }
+        final staged = CloudFile(
+          id: serverId,
+          name: file.name, available: true, size: file.size,
+          mime: file.mime, folderId: null,
+          visibility: CloudVisibility.private, group: null,
+          mine: true, saved: false, image: file.image,
+        );
+        final downloaded = await _api.downloadToTemporary(staged);
+        try {
+          if (!await _sameBytes(File(file.localPath!), downloaded)) {
+            throw Exception(
+              'Проверка «${file.name}» не пройдена. '
+              'Личный файл остаётся на устройстве.',
+            );
+          }
+        } finally {
+          if (await downloaded.exists()) {
+            try { await downloaded.delete(); } catch (_) {}
+          }
+        }
+        await _api.changeVisibility(serverId, access);
+        await _local.finishFilePublication(file, serverId);
+      }, 'Доступ изменён. Файл перенесён без дубликата');
+      return;
+    }
+    if (file.folderId != null) {
+      _message(
+        'Файл находится в папке. Измени доступ всей папки через её меню.',
+      );
+      return;
+    }
+    if (access == CloudVisibility.private) {
+      if (!await _confirm(
+        'Переместить на устройство?',
+        'Файл будет скачан на телефон и удалён с сервера CampusApp. '
+        'Все ссылки и сохранения других студентов перестанут работать.',
+      )) return;
+      await _perform(() async {
+        final temporary = await _api.downloadToTemporary(file);
+        try {
+          await _local.saveFile(temporary.path, name: file.name);
+          await _api.deleteFile(file.id);
+        } finally {
+          if (await temporary.exists()) await temporary.delete();
+        }
+      }, 'Доступ изменён: личное');
+      return;
+    }
+    await _perform(
+      () => _api.changeVisibility(file.id, access),
+      'Доступ: ${access.label.toLowerCase()}',
+    );
+  }
+
+  Future<void> _createLink(CloudFile file) async {
+    if (_busy) return;
+    if (file.local || file.visibility == CloudVisibility.private) {
+      _message('Чтобы поделиться файлом, измени доступ на «Моя группа» или «Всем».');
+      return;
+    }
+    if (!await _confirm(
+      'Создать ссылку на файл?',
+      'Любой, у кого есть ссылка, сможет скачать «${file.name}». '
+      'Предыдущая ссылка перестанет работать.',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busy = true);
+    try {
+      final url = await _api.createShareLink(file.id);
+      await Clipboard.setData(ClipboardData(text: url.toString()));
+      if (!mounted) return;
+      _message('Ссылка скопирована. Можно отправить другому студенту.');
+      if (['localhost', '127.0.0.1', '10.0.2.2'].contains(url.host)) {
+        _message('Ссылка локальная: для доступа других нужен HTTPS-адрес сервера.');
+      }
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _revokeLink(CloudFile file) async {
+    if (!await _confirm('Отозвать ссылку?',
+        'Ранее созданная ссылка на «${file.name}» перестанет работать.')) {
+      return;
+    }
+    await _perform(() => _api.revokeShareLink(file.id), 'Ссылка отозвана');
+  }
+
+  Future<void> _moveFile(CloudFile file) async {
+    try {
+      final folders = file.local
+          ? await _local.folders()
+          : (await _api.getFolders(mode: 'mine'))
+              .where((folder) => folder.mine).toList();
+      if (!mounted) return;
+      const root = -1;
+      final selection = await showModalBottomSheet<int>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text('Переместить в папку',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.home_outlined),
+                title: const Text('Без папки'),
+                onTap: () => Navigator.pop(context, root),
+              ),
+              for (final folder in folders)
+                ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: Text(folder.name),
+                  subtitle: Text(folder.visibility.label),
+                  onTap: () => Navigator.pop(context, folder.id),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (!mounted || selection == null) return;
+      await _perform(() async {
+        if (file.local) {
+          await _local.moveFile(
+            file.id, selection == root ? null : selection,
+          );
+        } else {
+          await _api.moveFile(
+            file.id, folderId: selection == root ? null : selection,
+          );
+        }
+      }, 'Файл перемещён');
+    } catch (error) {
+      _message(_cleanError(error), error: true);
     }
   }
 
   Future<void> _openFile(CloudFile file) async {
     if (!file.available) {
-      _showMessage('Файл отсутствует на сервере', isError: true);
-
+      _message('Файл отсутствует в хранилище', error: true);
       return;
     }
-
-    _showMessage('Загружаем ${file.name}...');
-
-    try {
-      await _cloudApi.downloadAndOpenFile(file);
-    } catch (error) {
-      if (!mounted) return;
-
-      _showMessage(_cleanError(error), isError: true);
-    }
-  }
-
-  Future<void> _deleteFile(CloudFile file) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Удалить файл?'),
-          content: Text('«${file.name}» будет удалён из Cloud Campus.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context, false);
-              },
-              child: const Text('Отмена'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context, true);
-              },
-              child: const Text(
-                'Удалить',
-                style: TextStyle(color: Colors.redAccent),
+    if (file.image) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text(file.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: IconButton(
+                  tooltip: 'Закрыть',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await _cloudApi.deleteFile(file.id);
-
-      if (!mounted) return;
-
-      _showMessage('Файл удалён');
-
-      await _loadFiles();
-    } catch (error) {
-      if (!mounted) return;
-
-      _showMessage(_cleanError(error), isError: true);
-    }
-  }
-
-  String _cleanError(Object error) {
-    return error.toString().replaceFirst('Exception: ', '');
-  }
-
-  void _showMessage(String message, {bool isError = false}) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: isError ? Colors.redAccent : null,
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+                ),
+                child: FutureBuilder<Uint8List>(
+                  future: file.local
+                      ? File(file.localPath!).readAsBytes()
+                      : _api.previewBytes(file),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Padding(
+                        padding: const EdgeInsets.all(22),
+                        child: Text('Не удалось открыть: ${snapshot.error}'),
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const Padding(
+                        padding: EdgeInsets.all(60),
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+                    return InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 5,
+                      child: Image.memory(
+                        snapshot.data!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            const Text('Не удалось показать изображение'),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _download(file);
+                  },
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Скачать оригинал'),
+                ),
+              ),
+            ],
+          ),
         ),
       );
+    } else {
+      await _download(file);
+    }
   }
 
-  IconData _getFileIcon(String filename) {
-    final extension = filename.split('.').last.toLowerCase();
+  Future<void> _download(CloudFile file) async {
+    _message('Открываем «${file.name}»…');
+    try {
+      if (file.local) {
+        final result = await OpenFilex.open(file.localPath!);
+        if (result.type != ResultType.done) {
+          throw Exception('Не удалось открыть файл: ${result.message}');
+        }
+      } else {
+        await _api.downloadAndOpenFile(file);
+      }
+    } catch (error) {
+      _message(_cleanError(error), error: true);
+    }
+  }
 
+  void _createMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Добавить в Cloud Campus',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              subtitle: Text('Учебные материалы всегда под рукой'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_outlined),
+              title: const Text('Добавить файлы'),
+              subtitle: const Text('Можно выбрать сразу несколько'),
+              onTap: () {
+                Navigator.pop(context);
+                _upload();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link_outlined),
+              title: const Text('Импорт по ссылке Яндекс Диска'),
+              subtitle: const Text('Публичный файл или папка как ZIP'),
+              onTap: () {
+                Navigator.pop(context);
+                _importYandex();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: const Text('Создать папку'),
+              onTap: () {
+                Navigator.pop(context);
+                _createFolder();
+              },
+            ),
+            const SizedBox(height: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static IconData _scopeIcon(CloudVisibility visibility) {
+    switch (visibility) {
+      case CloudVisibility.private: return Icons.lock_outline;
+      case CloudVisibility.group: return Icons.groups_outlined;
+      case CloudVisibility.public: return Icons.public;
+    }
+  }
+
+  static String _scopeDescription(CloudVisibility visibility) {
+    switch (visibility) {
+      case CloudVisibility.private:
+        return 'Доступно только тебе';
+      case CloudVisibility.group:
+        return 'Доступно студентам твоей группы БАРС';
+      case CloudVisibility.public:
+        return 'Могут найти все студенты CampusApp';
+    }
+  }
+
+  static String _size(int bytes) {
+    if (bytes >= 1048576) {
+      return '${(bytes / 1048576).toStringAsFixed(1)} МБ';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} КБ';
+    return '$bytes Б';
+  }
+
+  static String _storageAmount(int bytes) {
+    if (bytes == 0) return '0 МБ';
+    const oneMb = 1024 * 1024;
+    if (bytes < oneMb) return _size(bytes);
+    final megabytes = bytes / oneMb;
+    final digits = bytes % oneMb == 0 ? 0 : 1;
+    return '${megabytes.toStringAsFixed(digits)} МБ';
+  }
+
+  static IconData _fileIcon(CloudFile file) {
+    if (file.image) return Icons.image_outlined;
+    final extension = file.name.split('.').last.toLowerCase();
     switch (extension) {
-      case 'pdf':
-        return Icons.picture_as_pdf_outlined;
-
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'webp':
-        return Icons.image_outlined;
-
+      case 'pdf': return Icons.picture_as_pdf_outlined;
       case 'doc':
-      case 'docx':
-        return Icons.description_outlined;
-
+      case 'docx': return Icons.description_outlined;
       case 'xls':
       case 'xlsx':
-      case 'csv':
-        return Icons.table_chart_outlined;
-
+      case 'csv': return Icons.table_chart_outlined;
       case 'ppt':
-      case 'pptx':
-        return Icons.slideshow_outlined;
-
+      case 'pptx': return Icons.slideshow_outlined;
       case 'zip':
-      case 'rar':
-      case '7z':
-        return Icons.folder_zip_outlined;
-
-      case 'mp3':
-      case 'wav':
-        return Icons.audio_file_outlined;
-
-      case 'mp4':
-      case 'mov':
-        return Icons.video_file_outlined;
-
-      default:
-        return Icons.insert_drive_file_outlined;
+      case 'rar': return Icons.folder_zip_outlined;
+      case 'mp4': return Icons.video_file_outlined;
+      case 'mp3': return Icons.audio_file_outlined;
+      default: return Icons.insert_drive_file_outlined;
     }
+  }
+
+  Widget _scopeTag(CloudVisibility visibility, {
+    String? group,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(_scopeIcon(visibility), size: 13,
+            color: Theme.of(context).colorScheme.onSurfaceVariant),
+        const SizedBox(width: 3),
+        Text(visibility == CloudVisibility.group &&
+                group != null && group.isNotEmpty
+            ? group : visibility.label, style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 11,
+        )),
+      ],
+    );
+  }
+
+  Widget _folderCard(CloudFolder folder) {
+    final colors = Theme.of(context).colorScheme;
+    final mirror = folder.local ? _serverMirrors[folder.id] : null;
+    final visibleScope = mirror?.visibility ?? folder.visibility;
+    return Material(
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        key: ValueKey('cloud-folder-${folder.id}'),
+        borderRadius: BorderRadius.circular(18),
+        onTap: () {
+          setState(() => _currentFolder = folder);
+          if (_isSearching) _search.clear();
+          _load();
+        },
+        child: SizedBox(
+          width: 154,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Icon(Icons.folder_rounded, size: 34,
+                      color: ServicePalette.accent),
+                  const Spacer(),
+                  if (folder.mine)
+                    PopupMenuButton<String>(
+                      tooltip: 'Настроить папку',
+                      icon: const Icon(Icons.more_horiz, size: 20),
+                      onSelected: (value) {
+                        if (value == 'rename') _renameFolder(folder);
+                        if (value == 'access') _changeFolderAccess(folder);
+                        if (value == 'link') _createFolderLink(folder);
+                        if (value == 'revoke') _revokeFolderLink(folder);
+                        if (value == 'delete') _deleteFolder(folder);
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'rename', child: Text('Переименовать'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'access', child: Text('Настроить доступ'),
+                        ),
+                        PopupMenuItem(
+                          value: 'link',
+                          child: Text(folder.local &&
+                                  (mirror == null ||
+                                   mirror.visibility == CloudVisibility.private)
+                              ? 'Как поделиться папкой?'
+                              : 'Скопировать ссылку на папку'),
+                        ),
+                        if (!folder.local ||
+                            (mirror != null &&
+                             mirror.visibility != CloudVisibility.private))
+                          const PopupMenuItem(
+                            value: 'revoke',
+                            child: Text('Отозвать ссылку на папку'),
+                          ),
+                        const PopupMenuItem(
+                          value: 'delete', child: Text('Удалить папку'),
+                        ),
+                      ],
+                    ),
+                ]),
+                const SizedBox(height: 12),
+                Text(folder.name,
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 7),
+                _scopeTag(visibleScope, group: mirror?.group ?? folder.group),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fileCard(CloudFile file) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      key: ValueKey('cloud-file-${file.id}'),
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(19),
+      child: InkWell(
+        onTap: () => _openFile(file),
+        borderRadius: BorderRadius.circular(19),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 7, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                _CloudThumbnail(
+                  key: ValueKey('cloud-preview-${file.id}'),
+                  api: _api,
+                  file: file,
+                  fallbackIcon: _fileIcon(file),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(file.name,
+                          maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 7),
+                      Text(_size(file.size), style: TextStyle(
+                        color: colors.onSurfaceVariant, fontSize: 12,
+                      )),
+                      const SizedBox(height: 4),
+                      _scopeTag(file.visibility, group: file.group),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Действия с файлом',
+                  enabled: !_busy,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'open': _openFile(file); break;
+                      case 'download': _download(file); break;
+                      case 'save': _save(file); break;
+                      case 'unsave': _removeSaved(file); break;
+                      case 'move': _moveFile(file); break;
+                      case 'rename': _renameFile(file); break;
+                      case 'scope': _changeScope(file); break;
+                      case 'link': _createLink(file); break;
+                      case 'revoke': _revokeLink(file); break;
+                      case 'delete': _deleteFile(file); break;
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'open', child: Text('Открыть'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'download', child: Text('Скачать'),
+                    ),
+                    if (!file.mine && !file.saved)
+                      const PopupMenuItem(
+                        value: 'save', child: Text('Сохранить себе'),
+                      ),
+                    if (!file.mine && file.saved)
+                      const PopupMenuItem(
+                        value: 'unsave', child: Text('Убрать из моих'),
+                      ),
+                    if (file.mine || file.saved)
+                      const PopupMenuItem(
+                        value: 'move', child: Text('Переместить в папку'),
+                      ),
+                    if (file.mine) ...[
+                      const PopupMenuItem(
+                        value: 'rename', child: Text('Переименовать'),
+                      ),
+                      PopupMenuItem(
+                        value: 'scope',
+                        child: const Text('Настроить доступ'),
+                      ),
+                      if (!file.local && file.visibility != CloudVisibility.private)
+                        const PopupMenuItem(
+                          value: 'link', child: Text('Скопировать ссылку'),
+                        ),
+                      if (!file.local)
+                        const PopupMenuItem(
+                          value: 'revoke', child: Text('Отозвать ссылку'),
+                        ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Удалить навсегда',
+                            style: TextStyle(color: Colors.redAccent)),
+                      ),
+                    ],
+                  ],
+                ),
+              ]),
+              if (!file.mine) ...[
+                const SizedBox(height: 5),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: file.saved
+                      ? TextButton.icon(
+                          onPressed: _busy ? null : () => _removeSaved(file),
+                          icon: const Icon(Icons.bookmark_added_outlined,
+                              size: 17),
+                          label: const Text('Сохранено у меня'),
+                        )
+                      : FilledButton.tonalIcon(
+                          onPressed: _busy ? null : () => _save(file),
+                          icon: const Icon(Icons.bookmark_add_outlined,
+                              size: 17),
+                          label: const Text('Сохранить себе'),
+                        ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = ServicePalette.theme(Theme.of(context));
-
+    final colors = theme.colorScheme;
+    final q = _search.text.trim();
     return ServicePalette.wrap(context, Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Cloud Campus',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        centerTitle: false,
+        title: const Text('Cloud Campus',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(
+            tooltip: 'Обновить облако',
+            onPressed: _busy ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
-
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isUploading ? null : _pickAndUploadFile,
+        onPressed: _busy ? null : _createMenu,
         backgroundColor: ServicePalette.accent,
         foregroundColor: Colors.white,
-        icon: _isUploading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
+        icon: _busy
+            ? const SizedBox(width: 18, height: 18,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  color: Colors.white,
-                ),
-              )
+                  strokeWidth: 2, color: Colors.white))
             : const Icon(Icons.add),
-        label: Text(
-          _isUploading ? 'Загрузка...' : 'Добавить файл',
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
+        label: const Text('Создать',
+            style: TextStyle(fontWeight: FontWeight.w800)),
       ),
-
       body: RefreshIndicator(
-        onRefresh: _loadFiles,
-        child: ListView(
+        onRefresh: _load,
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 110),
-          children: [
-            Text(
-              'Все учебные материалы в одном месте',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.55),
-              ),
-            ),
-
-            const SizedBox(height: 22),
-
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Поиск файлов',
-                prefixIcon: const Icon(Icons.search),
-
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                        icon: const Icon(Icons.close),
-                      )
-                    : null,
-
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 28),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Мои файлы',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-
-                if (!_isLoading)
-                  Text(
-                    '${_filteredFiles.length}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.45),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(19),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            ServicePalette.accent.withValues(alpha: 0.21),
+                            colors.surfaceContainerHigh,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Row(children: [
+                        const Icon(Icons.cloud_done_rounded,
+                            color: ServicePalette.accent, size: 38),
+                        const SizedBox(width: 15),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Твои знания всегда рядом',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w900)),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Сохраняй, делись с группой и находи материалы',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        )),
+                      ]),
                     ),
-                  ),
-              ],
+                    const SizedBox(height: 14),
+                    Container(
+                      key: const ValueKey('cloud-quota'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(15, 14, 15, 13),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            const Icon(Icons.cloud_outlined,
+                                color: ServicePalette.accent, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Место в Campus Cloud',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ]),
+                          const SizedBox(height: 13),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('Занято',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                        fontSize: 11,
+                                      )),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _quota == null
+                                        ? '—'
+                                        : _storageAmount(_quota!.usedBytes),
+                                    key: const ValueKey('cloud-used'),
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      color: Colors.redAccent,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 20),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('Осталось',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                        fontSize: 11,
+                                      )),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _quota == null
+                                        ? '—'
+                                        : _storageAmount(_quota!.remainingBytes),
+                                    key: const ValueKey('cloud-remaining'),
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 13),
+                          LinearProgressIndicator(
+                            key: const ValueKey('cloud-usage-bar'),
+                            value: _quota?.usedFraction ?? 0.0,
+                            minHeight: 14,
+                            borderRadius: BorderRadius.circular(12),
+                            backgroundColor:
+                                colors.outlineVariant.withValues(alpha: 0.65),
+                            color: _quota == null
+                                ? colors.outlineVariant
+                                : ServicePalette.accent,
+                          ),
+                          const SizedBox(height: 9),
+                          Text(
+                            _quota == null
+                                ? 'Нет данных об использовании'
+                                : '${_quota!.usedFiles}/${_quota!.maxFiles} файлов'
+                                    '  ·  '
+                                    '${_quota!.usedFolders}/${_quota!.maxFolders} папок',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_migrationStatus != null) ...[
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 8),
+                      Text(
+                        _migrationStatus!,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    const SizedBox(height: 19),
+                    TextField(
+                      controller: _search,
+                      decoration: InputDecoration(
+                        hintText: 'Поиск по файлам и папкам…',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: q.isEmpty ? null : IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: _search.clear,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (q.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Файлы и папки: личные, группы и общедоступные',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    else if (_currentFolder != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ActionChip(
+                          avatar: const Icon(Icons.arrow_back, size: 18),
+                          label: Text('Все папки / ${_currentFolder!.name}',
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onPressed: () {
+                            setState(() => _currentFolder = null);
+                            _load();
+                          },
+                        ),
+                      )
+                    else
+                      Row(children: [
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _createFolder,
+                          icon: const Icon(Icons.create_new_folder_outlined),
+                          label: const Text('Новая папка'),
+                        ),
+                        const SizedBox(width: 10),
+                        Text('${_folders.length} папок',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant)),
+                      ]),
+                    if (_currentFolder == null) ...[
+                      const SizedBox(height: 22),
+                      Row(children: [
+                        Expanded(child: Text('Папки',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ))),
+                        if (!_loading)
+                          Text('${_folders.length}',
+                              style: TextStyle(
+                                color: colors.onSurfaceVariant,
+                              )),
+                      ]),
+                      const SizedBox(height: 12),
+                      if (_folders.isNotEmpty)
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            for (final folder in _folders)
+                              _folderCard(folder),
+                          ],
+                        )
+                      else if (!_loading && _error == null && !_isSearching)
+                        Text('Папок пока нет',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            )),
+                    ],
+                    const SizedBox(height: 26),
+                    Row(children: [
+                      Expanded(child: Text(
+                        _currentFolder != null ? 'Файлы в папке' : 'Файлы',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      )),
+                      if (!_loading)
+                        Text('${_files.length}',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                            )),
+                    ]),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
             ),
-
-            const SizedBox(height: 14),
-
-            if (_isLoading)
-              const Padding(
-                padding: EdgeInsets.only(top: 70),
-                child: Center(
-                  child: CircularProgressIndicator(color: ServicePalette.accent),
+            if (_loading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(60),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
               )
             else if (_error != null)
-              _ErrorState(message: _error!, onRetry: _loadFiles)
-            else if (_filteredFiles.isEmpty)
-              _EmptyState(
-                hasSearch: _searchController.text.isNotEmpty,
-                onUpload: _pickAndUploadFile,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(children: [
+                    const Icon(Icons.cloud_off_outlined,
+                        size: 48, color: Colors.redAccent),
+                    const SizedBox(height: 12),
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton.tonal(
+                      onPressed: _load,
+                      child: const Text('Повторить'),
+                    ),
+                  ]),
+                ),
+              )
+            else if (_files.isEmpty && _folders.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
+                  child: Text(
+                    _isSearching
+                        ? 'Подходящих файлов нет'
+                        : 'Файлов вне папок пока нет',
+                    style: TextStyle(color: colors.onSurfaceVariant),
+                  ),
+                ),
+              )
+            else if (_files.isEmpty && _folders.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 38, 24, 140),
+                  child: Column(children: [
+                    Icon(_isSearching
+                        ? Icons.search_off_outlined
+                        : Icons.cloud_queue_outlined,
+                      size: 55, color: colors.onSurfaceVariant),
+                    const SizedBox(height: 15),
+                    Text(_isSearching
+                        ? 'Ничего не найдено'
+                        : 'Здесь пока нет файлов',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 7),
+                    Text(_isSearching
+                        ? 'Попробуй другое название'
+                        : 'Загрузи файл или найди доступные учебные материалы',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: colors.onSurfaceVariant)),
+                  ]),
+                ),
               )
             else
-              ..._filteredFiles.map(
-                (file) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _FileCard(
-                    file: file,
-                    icon: _getFileIcon(file.name),
-                    onOpen: () => _openFile(file),
-                    onDelete: () => _deleteFile(file),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _fileCard(_files[index]),
+                    ),
+                    childCount: _files.length,
                   ),
                 ),
               ),
@@ -372,243 +2046,209 @@ class _CloudScreenState extends State<CloudScreen> {
   }
 }
 
-class _FileCard extends StatelessWidget {
-  const _FileCard({
+/// Only visible images are fetched. Preview requests use the same BARS
+/// session as downloads, so a private file never becomes a public URL.
+class _CloudThumbnail extends StatefulWidget {
+  const _CloudThumbnail({
+    super.key,
+    required this.api,
     required this.file,
-    required this.icon,
-    required this.onOpen,
-    required this.onDelete,
+    required this.fallbackIcon,
   });
 
+  final CloudApi api;
   final CloudFile file;
-  final IconData icon;
-  final VoidCallback onOpen;
-  final VoidCallback onDelete;
+  final IconData fallbackIcon;
+
+  @override
+  State<_CloudThumbnail> createState() => _CloudThumbnailState();
+}
+
+class _CloudThumbnailState extends State<_CloudThumbnail> {
+  Future<Uint8List>? _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.file.image && widget.file.available) {
+      _bytes = widget.file.local
+          ? File(widget.file.localPath!).readAsBytes()
+          : widget.api.previewBytes(widget.file);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CloudThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.file.id != widget.file.id ||
+        oldWidget.file.image != widget.file.image) {
+      _bytes = widget.file.image && widget.file.available
+          ? (widget.file.local
+              ? File(widget.file.localPath!).readAsBytes()
+              : widget.api.previewBytes(widget.file))
+          : null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = ServicePalette.theme(Theme.of(context));
-
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: ServicePalette.accent.withOpacity(0.11),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: ServicePalette.accent, size: 27),
-              ),
-
-              const SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      file.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Row(
-                      children: [
-                        Icon(
-                          file.available
-                              ? Icons.cloud_done_outlined
-                              : Icons.cloud_off_outlined,
-                          size: 15,
-                          color: file.available
-                              ? Colors.green
-                              : Colors.redAccent,
-                        ),
-
-                        const SizedBox(width: 5),
-
-                        Text(
-                          file.available ? 'В облаке' : 'Недоступен',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'open') {
-                    onOpen();
+    final colors = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(13),
+      child: Container(
+        width: 64,
+        height: 64,
+        color: ServicePalette.accent.withValues(alpha: 0.13),
+        child: _bytes == null
+            ? Icon(widget.fallbackIcon,
+                color: ServicePalette.accent, size: 30)
+            : FutureBuilder<Uint8List>(
+                future: _bytes,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return Icon(widget.fallbackIcon,
+                        color: colors.onSurfaceVariant);
                   }
-
-                  if (value == 'delete') {
-                    onDelete();
-                  }
+                  return Image.memory(
+                    snapshot.data!,
+                    fit: BoxFit.cover,
+                    cacheWidth: 128,
+                    errorBuilder: (_, __, ___) =>
+                        Icon(widget.fallbackIcon,
+                            color: ServicePalette.accent),
+                  );
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'open',
-                    child: Row(
-                      children: [
-                        Icon(Icons.download_outlined),
-                        SizedBox(width: 12),
-                        Text('Скачать и открыть'),
-                      ],
-                    ),
-                  ),
-
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, color: Colors.redAccent),
-                        SizedBox(width: 12),
-                        Text(
-                          'Удалить',
-                          style: TextStyle(color: Colors.redAccent),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
-            ],
+      ),
+    );
+  }
+}
+
+
+/// A route-owned controller: disposed only when Flutter unmounts its dialog.
+/// Disposing it immediately after showDialog returns is unsafe while the
+/// reverse transition / inherited widgets may still have active descendants.
+class _FolderNameDialog extends StatefulWidget {
+  const _FolderNameDialog({
+    required this.title,
+    required this.actionText,
+    this.initialName = '',
+  });
+
+  final String title;
+  final String actionText;
+  final String initialName;
+
+  @override
+  State<_FolderNameDialog> createState() => _FolderNameDialogState();
+}
+
+class _FolderNameDialogState extends State<_FolderNameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    if (name.isEmpty) return;
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 160,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          labelText: 'Название папки',
+          hintText: 'Например, ТАУ · лабораторные',
+          prefixIcon: Icon(Icons.folder_outlined),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(widget.actionText),
+        ),
+      ],
+    );
+  }
+}
+
+class _YandexLinkDialog extends StatefulWidget {
+  const _YandexLinkDialog();
+
+  @override
+  State<_YandexLinkDialog> createState() => _YandexLinkDialogState();
+}
+
+class _YandexLinkDialogState extends State<_YandexLinkDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final url = _controller.text.trim();
+    if (url.isNotEmpty) Navigator.of(context).pop(url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Импорт из Яндекс Диска'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Вставь публичную ссылку на файл или папку. '
+            'Закрытые ссылки без публичного доступа не поддерживаются. '
+            'Папка импортируется ZIP-архивом до 20 МБ.',
           ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            maxLength: 2048,
+            decoration: const InputDecoration(
+              hintText: 'https://disk.yandex.ru/d/...',
+              labelText: 'Ссылка Яндекс Диска',
+              prefixIcon: Icon(Icons.link_outlined),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          ],
         ),
       ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.hasSearch, required this.onUpload});
-
-  final bool hasSearch;
-  final VoidCallback onUpload;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ServicePalette.theme(Theme.of(context));
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 70),
-      child: Column(
-        children: [
-          Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              color: ServicePalette.accent.withOpacity(0.10),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.cloud_outlined,
-              size: 40,
-              color: ServicePalette.accent,
-            ),
-          ),
-
-          const SizedBox(height: 18),
-
-          Text(
-            hasSearch ? 'Ничего не найдено' : 'Облако пока пустое',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            hasSearch
-                ? 'Попробуй изменить запрос'
-                : 'Загрузи первый файл в Cloud Campus',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
-            ),
-          ),
-
-          if (!hasSearch) ...[
-            const SizedBox(height: 20),
-
-            FilledButton.icon(
-              onPressed: onUpload,
-              icon: const Icon(Icons.add),
-              label: const Text('Добавить файл'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ServicePalette.theme(Theme.of(context));
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 60),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.cloud_off_outlined,
-            size: 54,
-            color: Colors.redAccent,
-          ),
-
-          const SizedBox(height: 16),
-
-          Text(
-            'Не удалось загрузить облако',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
-            ),
-          ),
-
-          const SizedBox(height: 18),
-
-          OutlinedButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Повторить'),
-          ),
-        ],
-      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Импортировать'),
+        ),
+      ],
     );
   }
 }
