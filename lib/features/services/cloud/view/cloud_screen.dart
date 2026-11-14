@@ -587,6 +587,50 @@ class _CloudScreenState extends State<CloudScreen> {
     }
   }
 
+  /// Creates a collision-safe filename without changing the extension.
+  /// Used when two copies have the same name but different contents.
+  String _uniquePublishedName(String original, Set<String> occupied) {
+    if (!occupied.contains(original)) return original;
+    final dot = original.lastIndexOf('.');
+    final hasExtension = dot > 0;
+    final base = hasExtension ? original.substring(0, dot) : original;
+    final extension = hasExtension ? original.substring(dot) : '';
+    for (var i = 1; i <= 999; i++) {
+      final suffix = i == 1 ? ' (с устройства)' : ' (с устройства $i)';
+      const maxNameLength = 160;
+      final maxBase = maxNameLength - suffix.length - extension.length;
+      if (maxBase <= 0) {
+        throw Exception('Слишком длинное расширение файла «$original»');
+      }
+      final prefix = base.length > maxBase
+          ? base.substring(0, maxBase) : base;
+      final alternative = '$prefix$suffix$extension';
+      if (!occupied.contains(alternative)) return alternative;
+    }
+    throw Exception('Не удалось подобрать уникальное имя для «$original»');
+  }
+
+  /// An interrupted upload can already have produced a renamed conflict
+  /// copy. Recognize it on retry, and reuse it ONLY after byte verification.
+  bool _matchesPublishedName(String original, String candidate) {
+    if (candidate == original) return true;
+    final dot = original.lastIndexOf('.');
+    final hasExtension = dot > 0;
+    final base = hasExtension ? original.substring(0, dot) : original;
+    final extension = hasExtension ? original.substring(dot) : '';
+    if (!candidate.endsWith(extension)) return false;
+    final noExt = extension.isEmpty
+        ? candidate
+        : candidate.substring(0, candidate.length - extension.length);
+    if (noExt == '$base (с устройства)') return true;
+    if (!noExt.startsWith('$base (с устройства ') ||
+        !noExt.endsWith(')')) return false;
+    final number = noExt.substring(
+      '$base (с устройства '.length, noExt.length - 1,
+    );
+    return int.tryParse(number) != null;
+  }
+
   /// Change the storage location instead of making a second visible folder.
   /// A private server staging folder allows retries without exposing a
   /// partially uploaded collection to other students.
@@ -617,8 +661,6 @@ class _CloudScreenState extends State<CloudScreen> {
         final pendingId = await _local.pendingPublication(folder.id);
         final serverFolders = await _api.getFolders(mode: 'mine');
         CloudFolder? serverFolder;
-        var existingPublishedCopy = existingMirror != null;
-
         if (existingMirror != null) {
           final matches = serverFolders.where((candidate) =>
               candidate.id == existingMirror.id && candidate.mine).toList();
@@ -662,7 +704,6 @@ class _CloudScreenState extends State<CloudScreen> {
             // Legacy duplicate created by the previous copy-only behavior:
             // verify bytes before adopting the existing server folder.
             serverFolder = existing.single;
-            existingPublishedCopy = true;
           } else {
             serverFolder = await _api.createFolder(
               folder.name, CloudVisibility.private,
@@ -679,71 +720,114 @@ class _CloudScreenState extends State<CloudScreen> {
         var onServer = await _api.getFiles(
           mode: 'mine', folderId: destination.id,
         );
-        final unmatched = [...onServer];
+        // A legacy published folder may contain *additional* files. Keep
+        // them, rather than requiring its contents to equal the local copy.
+        // Identically named but different files are both retained, with a
+        // suffix on the newly published version.
+        final assigned = <int, int>{};
+        final occupiedNames = onServer.map((file) => file.name).toSet();
+        final claimedServerIds = <int>{};
+
         for (var i = 0; i < files.length; i++) {
           final localFile = files[i];
-          final index = unmatched.indexWhere((remote) =>
-              remote.mine && remote.name == localFile.name &&
-              remote.size == localFile.size);
-          if (index >= 0) {
-            unmatched.removeAt(index);
+          CloudFile? match;
+          for (final candidate in onServer) {
+            if (!candidate.mine || !candidate.available ||
+                claimedServerIds.contains(candidate.id) ||
+                candidate.size != localFile.size ||
+                !_matchesPublishedName(localFile.name, candidate.name)) {
+              continue;
+            }
+            final temporary = await _api.downloadToTemporary(candidate);
+            try {
+              if (await _sameBytes(
+                File(localFile.localPath!), temporary,
+              )) {
+                match = candidate;
+                break;
+              }
+            } finally {
+              if (await temporary.exists()) {
+                try { await temporary.delete(); } catch (_) {}
+              }
+            }
+          }
+
+          if (match != null) {
+            claimedServerIds.add(match.id);
+            assigned[localFile.id] = match.id;
             continue;
           }
-          if (existingPublishedCopy) {
+
+          final targetName = _uniquePublishedName(
+            localFile.name, occupiedNames,
+          );
+          if (mounted) {
+            setState(() => _migrationStatus =
+                'Перенос файлов: ${i + 1} из ${files.length}');
+          }
+          // If the HTTP request succeeds on the server but its reply is
+          // lost, a retry will find the same bytes and will not reupload.
+          await _api.uploadFile(
+            localFile.localPath!,
+            filename: targetName,
+            folderId: destination.id,
+            visibility: CloudVisibility.private,
+          );
+          occupiedNames.add(targetName);
+          onServer = await _api.getFiles(
+            mode: 'mine', folderId: destination.id,
+          );
+          final uploaded = onServer.where((item) =>
+              item.mine && item.available &&
+              item.name == targetName && item.size == localFile.size &&
+              !claimedServerIds.contains(item.id)).toList();
+          if (uploaded.length != 1) {
             throw Exception(
-              'Содержимое уже опубликованной папки отличается. '
-              'Ничего не удалено. Сверь файлы вручную.',
+              'Сервер не подтвердил файл «${localFile.name}». '
+              'Личная папка сохранена для повторной проверки.',
+            );
+          }
+          assigned[localFile.id] = uploaded.single.id;
+          claimedServerIds.add(uploaded.single.id);
+        }
+
+        // Every local original must have a matching readable server file,
+        // irrespective of how many older files are already in the folder.
+        onServer = await _api.getFiles(
+          mode: 'mine', folderId: destination.id,
+        );
+        for (var i = 0; i < files.length; i++) {
+          final localFile = files[i];
+          final remoteMatches = onServer.where((item) =>
+              item.id == assigned[localFile.id] &&
+              item.mine && item.available &&
+              item.size == localFile.size).toList();
+          if (remoteMatches.length != 1) {
+            throw Exception(
+              'Файл «${localFile.name}» отсутствует на сервере. '
+              'Локальная папка сохранена.',
             );
           }
           if (mounted) {
             setState(() => _migrationStatus =
-                'Загрузка ${i + 1} из ${files.length}');
+                'Проверка файлов: ${i + 1} из ${files.length}');
           }
-          await _api.uploadFile(
-            localFile.localPath!,
-            filename: localFile.name,
-            folderId: destination.id,
-            visibility: CloudVisibility.private,
+          final temporary = await _api.downloadToTemporary(
+            remoteMatches.single,
           );
-        }
-        if (unmatched.isNotEmpty) {
-          throw Exception(
-            'На сервере оказались дополнительные файлы. '
-            'Папки не объединены, локальные данные сохранены.',
-          );
-        }
-
-        onServer = await _api.getFiles(
-          mode: 'mine', folderId: destination.id,
-        );
-        if (onServer.length != files.length) {
-          throw Exception('Не все файлы появились на сервере');
-        }
-        final toVerify = [...onServer];
-        for (var i = 0; i < files.length; i++) {
-          final localFile = files[i];
-          final index = toVerify.indexWhere((remote) =>
-              remote.mine && remote.name == localFile.name &&
-              remote.size == localFile.size && remote.available);
-          if (index < 0) {
-            throw Exception('Файл отсутствует на сервере: ${localFile.name}');
-          }
-          final remoteFile = toVerify.removeAt(index);
-          if (mounted) {
-            setState(() => _migrationStatus =
-                'Проверка ${i + 1} из ${files.length}');
-          }
-          final temp = await _api.downloadToTemporary(remoteFile);
           try {
-            if (!await _sameBytes(File(localFile.localPath!), temp)) {
+            if (!await _sameBytes(
+              File(localFile.localPath!), temporary,
+            )) {
               throw Exception(
-                'Файл «${localFile.name}» отличается от загруженного. '
-                'Локальная папка сохранена.',
+                'Содержимое файла «${localFile.name}» отличается '
+                'от серверной копии. Локальная папка сохранена.',
               );
             }
           } finally {
-            if (await temp.exists()) {
-              try { await temp.delete(); } catch (_) {}
+            if (await temporary.exists()) {
+              try { await temporary.delete(); } catch (_) {}
             }
           }
         }
