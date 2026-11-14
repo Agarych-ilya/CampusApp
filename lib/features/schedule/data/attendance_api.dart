@@ -146,17 +146,16 @@ class AttendanceApi {
       ...headers, 'Accept': 'application/json',
       if (method != 'GET') 'Content-Type': 'application/json',
     };
-    switch (method) {
-      case 'GET':
-        response = await _client.get(uri, headers: requestHeaders);
-      case 'POST':
-        response = await _client.post(uri, headers: requestHeaders,
-            body: jsonEncode(body ?? {}));
-      case 'PATCH':
-        response = await _client.patch(uri, headers: requestHeaders,
-            body: jsonEncode(body ?? {}));
-      default:
-        throw const FormatException('Недопустимый метод');
+    if (method == 'GET') {
+      response = await _client.get(uri, headers: requestHeaders);
+    } else if (method == 'POST') {
+      response = await _client.post(uri, headers: requestHeaders,
+          body: jsonEncode(body ?? {}));
+    } else if (method == 'PATCH') {
+      response = await _client.patch(uri, headers: requestHeaders,
+          body: jsonEncode(body ?? {}));
+    } else {
+      throw const FormatException('Недопустимый метод');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(_message(response));
