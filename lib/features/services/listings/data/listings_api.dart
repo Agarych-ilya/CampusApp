@@ -180,7 +180,7 @@ class ListingsApi {
     // BARS authentication verifies two independent protected pages.
     // 17 seconds can expire before both 9-second upstream requests finish.
     final timeout = path == '/bars-login'
-        ? const Duration(seconds: 65)
+        ? const Duration(seconds: 120)
         : const Duration(seconds: 17);
     final response = await http.Response.fromStream(
       await request.send().timeout(timeout),
@@ -278,6 +278,30 @@ class ListingsApi {
          (result['group'] as String).trim().isEmpty)) {
       throw Exception('БАРС не подтвердил твою учебную группу');
     }
+  }
+
+  /// Hand existing BARS cookies to the authenticated backend to perform
+  /// a server-side roster refresh. Never read/parse student HTML in Flutter.
+  /// Cookies are not stored in the backend; transport must be TLS or ADB.
+  Future<String> barsCookiesForServer() async {
+    final address = Uri.tryParse(ApiConfig.baseUrl);
+    if (address == null ||
+        !(address.scheme == 'https' ||
+          (address.scheme == 'http' &&
+           ['127.0.0.1', 'localhost'].contains(address.host)))) {
+      throw Exception('Для синхронизации БАРС нужен HTTPS или USB ADB Reverse');
+    }
+    final cookies = await WebViewCookieManager().getCookies(
+      domain: Uri.parse('https://bars.mpei.ru/bars_web/ST/Student/ListStudent'),
+    );
+    final allowed = cookies.where((cookie) =>
+        RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(cookie.name) &&
+        cookie.value.isNotEmpty &&
+        !cookie.value.contains(RegExp(r'[\r\n;]'))).toList();
+    if (allowed.isEmpty) throw Exception('Сессия БАРС не найдена. Выполни вход.');
+    final cookieHeader = allowed.map((c) => '${c.name}=${c.value}').join('; ');
+    if (cookieHeader.length > 8192) throw Exception('Слишком много cookie БАРС');
+    return cookieHeader;
   }
 
   /// Recheck the user's existing BARS WebView cookies to obtain their

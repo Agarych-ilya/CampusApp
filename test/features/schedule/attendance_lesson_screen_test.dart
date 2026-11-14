@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:campusapp/features/schedule/data/attendance_api.dart';
 import 'package:campusapp/features/schedule/data/schedule_lesson.dart';
 import 'package:campusapp/features/schedule/view/attendance_lesson_screen.dart';
-import 'package:campusapp/features/schedule/view/bars_roster_import_screen.dart';
 
 const lesson = ScheduleLesson(
   date: '14.11.2026',
@@ -209,24 +208,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('failed hidden roster sync shows retry, not BARS browser',
+  testWidgets('missing server-side roster offers retry without BARS browser',
       (tester) async {
     const group = 'А-03-23';
     final api = _AttendanceFake(starosta: true)..rosterImported = false;
-    expect(BarsRosterSync.begin(group), isTrue);
-    addTearDown(() {
-      if (BarsRosterSync.isActive(group)) {
-        BarsRosterSync.end(group, succeeded: false);
-      }
-    });
     await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
       group: group, lesson: lesson, api: api,
     )));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Загружаем список группы'), findsOneWidget);
-
-    BarsRosterSync.end(group, succeeded: false);
-    await tester.pumpAndSettle();
+    expect(find.textContaining('список группы с сервера БАРС'), findsOneWidget);
     expect(find.byKey(const ValueKey('attendance-retry-roster')),
         findsOneWidget);
     expect(find.text('Список группы из БАРС'), findsNothing);

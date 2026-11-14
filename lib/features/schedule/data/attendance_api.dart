@@ -182,6 +182,8 @@ class AttendanceDetail {
 class AttendanceApi {
   AttendanceApi({http.Client? client}) : _client = client ?? http.Client();
 
+  static Future<int>? _pendingSync;
+
   final http.Client _client;
   Uri get _base => Uri.parse('${ApiConfig.baseUrl}/services/attendance');
 
@@ -269,6 +271,27 @@ class AttendanceApi {
   Future<AttendanceRoster> roster() async =>
       AttendanceRoster.fromJson(await _request('GET', '/roster'));
 
+  /// Backend reads BARS through its own browser. Flutter only sends the
+  /// already authenticated BARS cookies; no hidden student-table WebView.
+  Future<int> syncRoster() {
+    final existing = _pendingSync;
+    if (existing != null) return existing;
+    final future = _syncRosterOnServer();
+    _pendingSync = future;
+    return future.whenComplete(() => _pendingSync = null);
+  }
+
+  Future<int> _syncRosterOnServer() async {
+    final cookies = await ListingsApi.instance.barsCookiesForServer();
+    final raw = await _request('POST', '/roster/sync',
+        body: {'cookieHeader': cookies});
+    if (raw is! Map || raw['count'] is! num) {
+      throw const FormatException('Сервер не подтвердил импорт группы БАРС');
+    }
+    return (raw['count'] as num).toInt();
+  }
+
+  /// Legacy explicit import, kept for compatibility with existing tests.
   /// Loads one reviewed BARS student table, not individual manual names.
   Future<int> importRoster(
     String group, List<BarsRosterStudent> students,
