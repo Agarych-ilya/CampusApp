@@ -6,8 +6,10 @@ import '/features/services/listings/data/listings_api.dart';
 import 'schedule_lesson.dart';
 
 /// Shared key between timetable lessons and closed attendance records.
-String attendanceLessonKey(String date, String time, String subject) =>
-    '${date.trim()}|${time.trim()}|${subject.trim()}';
+String attendanceLessonKey(
+  String date, String time, String subject, String type, String room,
+) => '${date.trim()}|${time.trim()}|${subject.trim()}'
+    '|${type.trim()}|${room.trim()}';
 
 String? attendanceKeyForSchedule(ScheduleLesson lesson) {
   final date = lesson.parsedDate;
@@ -17,6 +19,8 @@ String? attendanceKeyForSchedule(ScheduleLesson lesson) {
     '${date.year}-${two(date.month)}-${two(date.day)}',
     lesson.time,
     lesson.subject,
+    lesson.type,
+    lesson.room,
   );
 }
 
@@ -250,11 +254,14 @@ class AttendanceApi {
         if (row is Map &&
             row['date'] is String &&
             row['time'] is String &&
-            row['subject'] is String)
+            row['subject'] is String &&
+            row['type'] is String && row['room'] is String)
           attendanceLessonKey(
             row['date'] as String,
             row['time'] as String,
             row['subject'] as String,
+            row['type'] as String,
+            row['room'] as String,
           ),
     };
   }
