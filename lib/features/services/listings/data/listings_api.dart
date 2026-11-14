@@ -180,7 +180,7 @@ class ListingsApi {
     // BARS authentication verifies two independent protected pages.
     // 17 seconds can expire before both 9-second upstream requests finish.
     final timeout = path == '/bars-login'
-        ? const Duration(seconds: 35)
+        ? const Duration(seconds: 65)
         : const Duration(seconds: 17);
     final response = await http.Response.fromStream(
       await request.send().timeout(timeout),
@@ -277,6 +277,24 @@ class ListingsApi {
         (result is! Map || result['group'] is! String ||
          (result['group'] as String).trim().isEmpty)) {
       throw Exception('БАРС не подтвердил твою учебную группу');
+    }
+  }
+
+  /// Recheck the user's existing BARS WebView cookies to obtain their
+  /// current university role. This never accepts a role/name from Flutter.
+  Future<void> refreshBarsRole() async {
+    final oldCookie = _cookie;
+    final oldCsrf = _csrf;
+    _cookie = null;
+    _csrf = null;
+    try {
+      await ensureSession(requireGroup: true);
+    } catch (_) {
+      // Keep using the previous CampusApp session for ordinary features
+      // if the external BARS role check is temporarily unavailable.
+      _cookie = oldCookie;
+      _csrf = oldCsrf;
+      rethrow;
     }
   }
 
