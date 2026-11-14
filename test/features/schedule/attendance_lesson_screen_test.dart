@@ -186,6 +186,27 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('unverified starosta never sees manual-name entry',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: false);
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Добавить себя'), findsNothing);
+    expect(find.byKey(const ValueKey('attendance-check-starosta-role')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('bars-import-roster-entry')),
+        findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('student check-in remains pending until starosta approval',
       (tester) async {
     tester.view.physicalSize = const Size(430, 1200);
