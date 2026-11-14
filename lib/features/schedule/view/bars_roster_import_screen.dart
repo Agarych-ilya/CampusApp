@@ -151,10 +151,14 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
     if (!mounted || _manual || _autoRunning || _preview != null) return;
     setState(() { _autoRunning = true; _error = null; });
     try {
+      DateTime? lastNavigation;
       // AJAX tabs may not trigger onPageFinished; poll with a strict limit.
       for (var attempt = 0; attempt < 55; attempt++) {
         if (!mounted || _manual || _preview != null) return;
-        if (_loading || !await _onBars()) {
+        if (_loading || !await _onBars() ||
+            (lastNavigation != null &&
+             DateTime.now().difference(lastNavigation) <
+                 const Duration(milliseconds: 1400))) {
           await Future<void>.delayed(const Duration(milliseconds: 500));
           continue;
         }
@@ -166,8 +170,10 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
             setState(() => _progress = 'Считываем студентов...');
             if (await _extractRoster()) return;
           } else if (action == 'group') {
+            lastNavigation = DateTime.now();
             setState(() => _progress = 'Открываем группу...');
           } else if (action == 'tab') {
+            lastNavigation = DateTime.now();
             setState(() => _progress = 'Открываем раздел «Студенты»...');
           } else if (action == 'login') {
             throw const FormatException('В БАРС требуется авторизация');
@@ -301,8 +307,8 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         return JSON.stringify({action: 'wait'});
       }
       if (total === null && students.length === 10 && selects.length) {
-        return JSON.stringify({error:
-          'Не удалось проверить полноту списка. Выбери все записи.'});
+        // BARS may still be fetching the expanded page over AJAX.
+        return JSON.stringify({action: 'wait'});
       }
       return JSON.stringify({action: 'ready', students, total});
     })()
