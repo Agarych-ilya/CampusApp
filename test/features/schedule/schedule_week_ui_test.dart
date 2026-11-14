@@ -151,6 +151,50 @@ void main() {
     expect(find.text('Н'), findsOneWidget);
   });
 
+  test('N markers distinguish different rooms and lesson types', () {
+    const lesson = ScheduleLesson(
+      date: '12.11.2026', time: '09:20 - 10:55',
+      subject: 'Моделирование систем управления',
+      type: 'Лекция', room: 'В-308', teacher: '',
+    );
+    final key = attendanceKeyForSchedule(lesson);
+    expect(key, attendanceLessonKey(
+      '2026-11-12', '09:20 - 10:55',
+      'Моделирование систем управления', 'Лекция', 'В-308',
+    ));
+    expect(key, isNot(attendanceLessonKey(
+      '2026-11-12', '09:20 - 10:55',
+      'Моделирование систем управления', 'Лекция', 'М-307',
+    )));
+    expect(key, isNot(attendanceLessonKey(
+      '2026-11-12', '09:20 - 10:55',
+      'Моделирование систем управления', 'Лабораторная', 'В-308',
+    )));
+  });
+
+  testWidgets('opening another group cannot display N from the own group',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент', group: 'А-03-23',
+      recordBook: '', course: '4',
+      educationLevel: '', email: '', faculty: '',
+    ));
+    await GroupStorage().saveScheduleGroup('А-04-23');
+    final fake = _OwnAbsencesFake();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        attendanceApi: fake,
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-04-23'), findsWidgets);
+    expect(find.byKey(const ValueKey('schedule-absence-n')), findsNothing);
+    expect(fake.requested, 0);
+  });
+
   testWidgets('lesson type is to the right of its time', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
