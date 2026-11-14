@@ -238,7 +238,7 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
   }
 
   String _initials(String name) {
-    final pieces = name.trim().split(RegExp(r'\\s+'))
+    final pieces = name.trim().split(RegExp(r'\s+'))
         .where((part) => part.isNotEmpty).toList();
     if (pieces.isEmpty) return '?';
     if (pieces.length == 1) return pieces.first.substring(0, 1).toUpperCase();
