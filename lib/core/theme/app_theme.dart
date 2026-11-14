@@ -1,107 +1,146 @@
 import 'package:flutter/material.dart';
 
-class AppTheme {
-  static const Color pink = Color(0xFFFF007A);
-  static const Color orange = Color(0xFFFF8A00);
-  static const Color purple = Color(0xFF7A22FF);
+/// One restrained palette for CampusApp, based on the provided university
+/// application: graphite surfaces, icy blue accents and confident type.
+/// No pink/red branding colors are used in the app theme.
+abstract final class AppTheme {
+  static const Color accent = Color(0xFF9FC2FF);
+  static const Color accentStrong = Color(0xFF4C85D9);
+  static const Color cyan = Color(0xFF8EDCE6);
+  static const Color ink = Color(0xFF0C1018);
+  static const Color panel = Color(0xFF171D28);
+  static const Color lightBackground = Color(0xFFF5F7FB);
+  static const Color darkBackground = ink;
+  static const Color lightText = Color(0xFF192435);
+  static const Color darkText = Color(0xFFF0F4FC);
 
-  static const Color lightBackground = Colors.white;
-  static const Color darkBackground = Color(0xFF111111);
+  // Compatibility aliases for older widgets, all mapped to cool tones.
+  static const Color pink = accent;
+  static const Color orange = cyan;
+  static const Color purple = accentStrong;
 
-  static const Color lightText = Colors.black;
-  static const Color darkText = Colors.white;
-
-  static const Color lightFieldBorder = Color(0xFFE4E4E4);
-  static const Color darkFieldBorder = Color(0xFF3A3A3A);
-
-  static const Color lightHintText = Color(0xFFB8B8B8);
-  static const Color darkHintText = Color(0xFF8A8A8A);
+  static const Color lightFieldBorder = Color(0xFFDCE3EF);
+  static const Color darkFieldBorder = Color(0xFF303949);
+  static const Color lightHintText = Color(0xFF708198);
+  static const Color darkHintText = Color(0xFF96A5BA);
 
   static const LinearGradient mainGradient = LinearGradient(
-    colors: [orange, pink, purple],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [accentStrong, accent, cyan],
   );
-
   static const LinearGradient buttonGradient = LinearGradient(
-    colors: [pink, pink, orange],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+    colors: [accentStrong, accent],
   );
 
-  static ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.light,
-    scaffoldBackgroundColor: lightBackground,
-    fontFamily: 'Roboto',
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: pink,
-      brightness: Brightness.light,
-      primary: pink,
-      secondary: orange,
-      surface: lightBackground,
-    ),
-    textTheme: const TextTheme(
-      bodyLarge: TextStyle(color: lightText),
-      bodyMedium: TextStyle(color: lightText),
-      bodySmall: TextStyle(color: lightText),
-      titleLarge: TextStyle(color: lightText),
-      titleMedium: TextStyle(color: lightText),
-      titleSmall: TextStyle(color: lightText),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: lightBackground,
-      hintStyle: const TextStyle(
-        color: lightHintText,
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: lightFieldBorder, width: 1.4),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: pink, width: 1.5),
-      ),
-    ),
-  );
+  static ThemeData get lightTheme => _build(Brightness.light);
+  static ThemeData get darkTheme => _build(Brightness.dark);
 
-  static ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    scaffoldBackgroundColor: darkBackground,
-    fontFamily: 'Roboto',
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: pink,
-      brightness: Brightness.dark,
-      primary: pink,
-      secondary: orange,
-      surface: darkBackground,
-    ),
-    textTheme: const TextTheme(
-      bodyLarge: TextStyle(color: darkText),
-      bodyMedium: TextStyle(color: darkText),
-      bodySmall: TextStyle(color: darkText),
-      titleLarge: TextStyle(color: darkText),
-      titleMedium: TextStyle(color: darkText),
-      titleSmall: TextStyle(color: darkText),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: const Color(0xFF1A1A1A),
-      hintStyle: const TextStyle(
-        color: darkHintText,
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
+  static ThemeData _build(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    final primary = dark ? accent : accentStrong;
+    final bg = dark ? darkBackground : lightBackground;
+    final surface = dark ? const Color(0xFF151B26) : Colors.white;
+    final onSurface = dark ? darkText : lightText;
+    final muted = dark ? darkHintText : lightHintText;
+
+    final scheme = ColorScheme.fromSeed(
+      seedColor: accentStrong,
+      brightness: brightness,
+      primary: primary,
+      onPrimary: dark ? ink : Colors.white,
+      secondary: dark ? cyan : const Color(0xFF357F97),
+      onSecondary: dark ? ink : Colors.white,
+      surface: surface,
+      onSurface: onSurface,
+      onSurfaceVariant: muted,
+      surfaceContainerLow:
+          dark ? const Color(0xFF121823) : const Color(0xFFF1F4FA),
+      surfaceContainer:
+          dark ? const Color(0xFF1C2431) : const Color(0xFFE9EEF7),
+      surfaceContainerHigh:
+          dark ? const Color(0xFF253043) : const Color(0xFFDFE7F2),
+      outlineVariant:
+          dark ? darkFieldBorder : lightFieldBorder,
+      // Status colors are cooler and legible, not bright pink or red.
+      error: dark ? const Color(0xFFE8C18B) : const Color(0xFFA3682A),
+      onError: dark ? ink : Colors.white,
+    );
+
+    final base = ThemeData(
+      useMaterial3: true,
+      brightness: brightness,
+      scaffoldBackgroundColor: bg,
+      colorScheme: scheme,
+      fontFamily: 'Roboto',
+      splashFactory: InkSparkle.splashFactory,
+      appBarTheme: AppBarTheme(
+        backgroundColor: bg,
+        foregroundColor: onSurface,
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          color: onSurface, fontWeight: FontWeight.w800,
+          fontSize: 19, letterSpacing: -0.45,
+        ),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: darkFieldBorder, width: 1.4),
+      textTheme: TextTheme(
+        headlineMedium: TextStyle(
+          color: onSurface, fontWeight: FontWeight.w800,
+          fontSize: 29, letterSpacing: -0.8,
+        ),
+        titleLarge: TextStyle(
+          color: onSurface, fontWeight: FontWeight.w800,
+          fontSize: 23, letterSpacing: -0.55,
+        ),
+        titleMedium: TextStyle(
+          color: onSurface, fontWeight: FontWeight.w700,
+          fontSize: 16, letterSpacing: -0.2,
+        ),
+        titleSmall: TextStyle(
+          color: onSurface, fontWeight: FontWeight.w700, fontSize: 14,
+        ),
+        bodyLarge: TextStyle(
+          color: onSurface, fontSize: 16, fontWeight: FontWeight.w500,
+        ),
+        bodyMedium: TextStyle(
+          color: onSurface, fontSize: 14, fontWeight: FontWeight.w500,
+        ),
+        bodySmall: TextStyle(
+          color: muted, fontSize: 12, fontWeight: FontWeight.w500,
+        ),
+        labelLarge: TextStyle(
+          color: onSurface, fontSize: 14, fontWeight: FontWeight.w700,
+        ),
       ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: pink, width: 1.5),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: dark ? const Color(0xFF1A2331) : Colors.white,
+        hintStyle: TextStyle(
+          color: muted, fontSize: 14, fontWeight: FontWeight.w500,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18, vertical: 15,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(17),
+          borderSide: BorderSide(
+            color: dark ? darkFieldBorder : lightFieldBorder,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(17),
+          borderSide: BorderSide(color: primary, width: 1.5),
+        ),
       ),
-    ),
-  );
+      dividerTheme: const DividerThemeData(
+        color: Colors.transparent, thickness: 0, space: 0,
+      ),
+    );
+    return base;
+  }
 }

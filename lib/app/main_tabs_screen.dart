@@ -1,11 +1,14 @@
-import 'package:flutter/material.dart';
+import 'dart:ui';
 
-import '/core/theme/app_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '/features/schedule/schedule.dart';
 import '/features/services/services.dart';
 import '/features/profile/profile.dart';
 import '/features/map/view/campus_map_screen.dart';
 
+/// A floating glass tab dock: five icons only, with accessible labels.
 class MainTabsScreen extends StatefulWidget {
   const MainTabsScreen({super.key});
 
@@ -18,66 +21,111 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
 
   final List<Widget> _screens = const [
     ScheduleScreen(),
-
     CampusMapScreen(),
-
     _EmptyTabScreen(
       title: 'Чаты',
-      subtitle: 'Здесь потом будут сообщения',
-      icon: Icons.chat_bubble_outline,
+      subtitle: 'Здесь появятся ваши сообщения',
+      icon: Icons.chat_bubble_outline_rounded,
     ),
-
     ServicesScreen(),
-
     ProfileScreen(),
+  ];
+
+  static const _destinations = [
+    (label: 'Расписание', icon: Icons.calendar_today_outlined,
+      selected: Icons.calendar_month_rounded),
+    (label: 'Кампус', icon: Icons.map_outlined,
+      selected: Icons.map_rounded),
+    (label: 'Чаты', icon: Icons.chat_bubble_outline_rounded,
+      selected: Icons.chat_bubble_rounded),
+    (label: 'Сервисы', icon: Icons.grid_view_outlined,
+      selected: Icons.grid_view_rounded),
+    (label: 'Профиль', icon: Icons.person_outline_rounded,
+      selected: Icons.person_rounded),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: AppTheme.pink,
-        unselectedItemColor: Colors.grey,
-        selectedFontSize: 12,
-        unselectedFontSize: 12,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_month_outlined),
-            activeIcon: Icon(Icons.calendar_month),
-            label: 'Расписание',
+      extendBody: true,
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: Container(
+              height: 68,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(32),
+                color: dark
+                    ? const Color(0xDA1B2636)
+                    : const Color(0xEAF6FAFF),
+                border: Border.all(
+                  color: Colors.white.withOpacity(dark ? 0.18 : 0.65),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(dark ? 0.24 : 0.08),
+                    blurRadius: 28, offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+              child: Row(
+                children: List.generate(_destinations.length, (index) {
+                  final d = _destinations[index];
+                  final selected = index == _currentIndex;
+                  return Expanded(
+                    child: Tooltip(
+                      message: d.label,
+                      child: Semantics(
+                        label: d.label,
+                        selected: selected,
+                        button: true,
+                        child: InkWell(
+                          key: ValueKey('campus-glass-tab-$index'),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _currentIndex = index);
+                          },
+                          borderRadius: BorderRadius.circular(25),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 230),
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? color.primary.withOpacity(dark ? 0.22 : 0.15)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: selected
+                                    ? color.primary.withOpacity(0.32)
+                                    : Colors.transparent,
+                              ),
+                            ),
+                            child: Icon(
+                              selected ? d.selected : d.icon,
+                              size: selected ? 25 : 23,
+                              color: selected
+                                  ? color.primary : color.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map_outlined),
-            activeIcon: Icon(Icons.map),
-            label: 'Кампус',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_bubble),
-            label: 'Чаты',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.apps_outlined),
-            activeIcon: Icon(Icons.apps),
-            label: 'Сервисы',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Профиль',
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -97,7 +145,6 @@ class _EmptyTabScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return SafeArea(
       child: Center(
         child: Padding(
@@ -105,26 +152,22 @@ class _EmptyTabScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 58,
-                color: AppTheme.pink,
-              ),
-              const SizedBox(height: 18),
-              Text(
-                title,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(28),
                 ),
+                child: Icon(icon, size: 40,
+                    color: theme.colorScheme.primary),
               ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
+              const SizedBox(height: 22),
+              Text(title, style: theme.textTheme.headlineMedium),
+              const SizedBox(height: 10),
+              Text(subtitle, textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  )),
             ],
           ),
         ),

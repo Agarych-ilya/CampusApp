@@ -38,15 +38,15 @@ class LessonCard extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(22),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(18),
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+            color: theme.colorScheme.outlineVariant.withOpacity(0.32),
           ),
         ),
         child: Column(
@@ -112,13 +112,14 @@ class LessonCard extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE74D67),
+                          color: theme.colorScheme.primary.withOpacity(0.20),
+                          border: Border.all(color: theme.colorScheme.primary.withOpacity(0.50)),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Text(
                           'Н',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: theme.colorScheme.primary,
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
                           ),
