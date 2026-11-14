@@ -327,8 +327,11 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                         fontWeight: FontWeight.w700,
                       )),
                     const SizedBox(height: 3),
-                    Text(absent ? 'Отсутствует' : 'Присутствует',
-                      style: theme.textTheme.bodySmall?.copyWith(color: color)),
+                    Text(closed ? _label(student.status)
+                        : (absent ? 'Отсутствует' : 'Присутствует'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: closed
+                          ? _color(context, student.status) : color)),
                   ],
                 ),
               ),
@@ -429,6 +432,9 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
             ? detail!.students.where((s) => s.status == 'absent').length
             : _absentKeys.length)
         : 0;
+    final present = reviewed && isClosed
+        ? detail!.students.where((s) => s.status == 'present').length
+        : total - missing;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Учебный журнал'),
@@ -575,7 +581,7 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                             _summaryItem('Всего', total,
                                 theme.colorScheme.primary),
                             const SizedBox(width: 8),
-                            _summaryItem('Присутствуют', total - missing,
+                            _summaryItem('Присутствуют', present,
                                 const Color(0xFF4BBE91)),
                             const SizedBox(width: 8),
                             _summaryItem('Отсутствуют', missing,
