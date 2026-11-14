@@ -9,6 +9,17 @@ import 'schedule_lesson.dart';
 String attendanceLessonKey(String date, String time, String subject) =>
     '${date.trim()}|${time.trim()}|${subject.trim()}';
 
+String? attendanceKeyForSchedule(ScheduleLesson lesson) {
+  final date = lesson.parsedDate;
+  if (date == null) return null;
+  String two(int number) => number.toString().padLeft(2, '0');
+  return attendanceLessonKey(
+    '${date.year}-${two(date.month)}-${two(date.day)}',
+    lesson.time,
+    lesson.subject,
+  );
+}
+
 class AttendanceIdentity {
   const AttendanceIdentity({
     required this.authenticated, required this.isStarosta,
