@@ -635,13 +635,17 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        if (!isClosed) ...[
-                          const SizedBox(height: 5),
-                          Text('Нажми на студента, чтобы поставить или снять «Н»',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            )),
-                        ],
+                        const SizedBox(height: 6),
+                        Text(
+                          isClosed
+                              ? 'Нашёл ошибку? Нажми на строку, чтобы исправить '
+                                  'сохранённую отметку.'
+                              : 'Нажми на студента, чтобы поставить или снять «Н»',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         const SizedBox(height: 14),
                         if (detail.students.isEmpty)
                           const Text('Сначала загрузи полный список '
