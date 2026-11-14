@@ -38,16 +38,30 @@ class LessonCard extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(24),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.fromLTRB(18, 17, 18, 16),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: theme.colorScheme.outlineVariant.withOpacity(0.32),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.colorScheme.surfaceContainerLow,
+              theme.colorScheme.surfaceContainer.withOpacity(0.74),
+            ],
           ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withOpacity(0.26),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(
+                theme.brightness == Brightness.dark ? 0.12 : 0.03),
+              blurRadius: 18, offset: const Offset(0, 7),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,8 +69,8 @@ class LessonCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  width: 9,
-                  height: 9,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     color: accent,
                     shape: BoxShape.circle,
@@ -69,6 +83,7 @@ class LessonCard extends StatelessWidget {
                     color: theme.colorScheme.onSurface,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
+                    letterSpacing: 0.15,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -81,7 +96,7 @@ class LessonCard extends StatelessWidget {
                     style: TextStyle(
                       color: accent,
                       fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
@@ -95,7 +110,10 @@ class LessonCard extends StatelessWidget {
                   child: Text(
                     subject.isEmpty ? 'Занятие' : subject,
                     style: theme.textTheme.titleMedium?.copyWith(
+                      fontSize: 17,
+                      height: 1.24,
                       fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ),
