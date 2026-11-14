@@ -516,13 +516,25 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                       ),
                     ),
                   if (account != null && account.authenticated) ...[
-                    if (account.isStarosta)
+                    if (account.isStarosta) ...[
                       const Text('Режим старосты',
                           style: TextStyle(fontWeight: FontWeight.w800)),
-                    if (!account.registered) ...[
-                      const SizedBox(height: 12),
-                      const Text('Добавь себя в список группы, чтобы '
-                          'отмечаться на занятиях.'),
+                      const SizedBox(height: 10),
+                      Text(_roster?.imported == true
+                          ? 'Загружено студентов: ${_roster!.students.length}'
+                          : 'Список группы ещё не загружен из БАРС'),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        key: const ValueKey('bars-import-roster-entry'),
+                        onPressed: _saving ? null : _importFromBars,
+                        icon: const Icon(Icons.group_add_outlined),
+                        label: Text(_roster?.imported == true
+                            ? 'Обновить список группы'
+                            : 'Загрузить группу из БАРС'),
+                      ),
+                    ] else if (!account.registered) ...[
+                      const Text('Список группы ведёт староста. '
+                          'Для самостоятельной отметки можно добавить себя.'),
                       const SizedBox(height: 8),
                       FilledButton.icon(
                         onPressed: _saving ? null : _register,
@@ -531,7 +543,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                       ),
                     ] else ...[
                       Text('Ты в списке: ${account.displayName ?? ''}'),
-                      const SizedBox(height: 10),
                     ],
                     if (detail == null) ...[
                       const SizedBox(height: 14),
@@ -539,7 +550,8 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                       if (account.isStarosta) ...[
                         const SizedBox(height: 12),
                         FilledButton.icon(
-                          onPressed: _saving ? null : _open,
+                          onPressed: _saving || _roster?.imported != true
+                              ? null : _open,
                           icon: const Icon(Icons.playlist_add_check),
                           label: const Text('Открыть журнал пары'),
                         ),
@@ -571,35 +583,50 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                             'Если ты не нажал кнопку, это не означает '
                             'автоматический пропуск.'),
                       ] else ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Text(
-                          'Заявок: ${detail.count('pending')} · '
-                          'Присутствует: ${detail.count('present')} · '
-                          'Без отметки: ${detail.count('unmarked')}',
-                        ),
-                        const SizedBox(height: 12),
-                        if (detail.lesson.state == 'open' &&
-                            detail.count('pending') > 0)
-                          OutlinedButton.icon(
-                            onPressed: _saving ? null : _confirmPending,
-                            icon: const Icon(Icons.done_all),
-                            label: const Text('Подтвердить заявки'),
+                          detail.lesson.state == 'closed'
+                              ? 'Итоговые отметки'
+                              : 'Выбери отсутствующих',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
                           ),
-                        const SizedBox(height: 12),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(detail.lesson.state == 'closed'
+                            ? 'Пропусков: ${detail.count('absent')} · '
+                              'Присутствовало: ${detail.count('present')}'
+                            : 'Всего: ${detail.students.length} · '
+                              'Отсутствуют: ${_absentKeys.length}'),
+                        const SizedBox(height: 10),
+                        if (detail.students.isEmpty)
+                          const Text('Сначала загрузи полный список '
+                              'студентов из БАРС.'),
                         for (final student in detail.students)
-                          _studentTile(student),
-                        if (detail.lesson.state == 'open') ...[
+                          if (detail.lesson.state == 'open')
+                            _absenceTile(student)
+                          else
+                            ListTile(
+                              title: Text(student.displayName),
+                              trailing: Text(_label(student.status),
+                                style: TextStyle(
+                                  color: _color(context, student.status),
+                                )),
+                            ),
+                        if (detail.lesson.state == 'open' &&
+                            detail.students.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           FilledButton.icon(
-                            onPressed: _saving || !detail.readyToClose
-                                ? null : _close,
-                            icon: const Icon(Icons.lock_outline),
-                            label: const Text('Закрыть проверенный журнал'),
-                          ),
-                        ] else ...[
-                          FilledButton.icon(
-                            onPressed: _preview,
+                            key: const ValueKey('save-reviewed-absences'),
+                            onPressed: _saving ? null : _saveReviewedAbsences,
                             icon: const Icon(Icons.fact_check_outlined),
+                            label: const Text('Сохранить посещаемость'),
+                          ),
+                        ] else if (detail.lesson.state == 'closed') ...[
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            onPressed: _preview,
+                            icon: const Icon(Icons.list_alt),
                             label: const Text('Список для БАРС'),
                           ),
                         ],
