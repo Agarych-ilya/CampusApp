@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/schedule/data/group_storage.dart';
+import 'package:campusapp/features/schedule/data/attendance_api.dart';
 import 'package:campusapp/features/services/booking/data/classroom_booking_api.dart';
 import 'package:campusapp/features/schedule/data/semester_week.dart';
 import 'package:campusapp/features/schedule/data/private_lesson_notes_storage.dart';
@@ -107,6 +108,47 @@ void main() {
     }
     expect(find.byKey(const ValueKey('lesson-dot-2026-11-3-0')),
         findsNothing);
+  });
+
+  testWidgets('red N appears only on an explicitly absent lesson card',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: Column(children: [
+        LessonCard(
+          time: '09:20 - 10:55', subject: 'Отсутствовал',
+          type: 'Лекция', room: 'С-401', teacher: '',
+          attendanceAbsent: true,
+        ),
+        LessonCard(
+          time: '11:10 - 12:45', subject: 'Присутствовал',
+          type: 'Лекция', room: 'С-405', teacher: '',
+        ),
+      ])),
+    ));
+    expect(find.byKey(const ValueKey('schedule-absence-n')), findsOneWidget);
+    expect(find.text('Н'), findsOneWidget);
+  });
+
+  testWidgets('student receives N only from private matching lesson records',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Петров Пётр Сергеевич',
+      group: 'А-03-23', recordBook: '', course: '4',
+      educationLevel: '', email: '', faculty: '',
+    ));
+    final fake = _OwnAbsencesFake();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        attendanceApi: fake,
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(fake.requested, greaterThan(0));
+    expect(find.byKey(const ValueKey('schedule-absence-n')), findsOneWidget);
+    expect(find.text('Н'), findsOneWidget);
   });
 
   testWidgets('lesson type is to the right of its time', (tester) async {
@@ -402,6 +444,28 @@ class _FakeScheduleApi extends ScheduleApi {
         teacher: 'Преподаватель',
       ),
     ];
+  }
+}
+
+class _OwnAbsencesFake extends AttendanceApi {
+  int requested = 0;
+
+  @override
+  Future<Set<String>> myAbsentLessonKeys(
+    DateTime from, DateTime to,
+  ) async {
+    requested++;
+    final now = DateTime.now();
+    String two(int x) => x.toString().padLeft(2, '0');
+    return {
+      attendanceLessonKey(
+        '${now.year}-${two(now.month)}-${two(now.day)}',
+        '09:20 - 10:55',
+        'Занятие А-03-23',
+        'Лекция',
+        'С-409',
+      ),
+    };
   }
 }
 
