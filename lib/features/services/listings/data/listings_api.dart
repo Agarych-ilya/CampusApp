@@ -141,6 +141,11 @@ class ListingsApi {
 
   String? _cookie;
   String? _csrf;
+  String? _sessionGroup;
+  Future<void>? _pendingEnsureSession;
+  DateTime? _retryBARSAfter;
+  String? _lastBARSError;
+
   String get _base => ApiConfig.baseUrl + '/services/listings';
   bool get hasSession => _cookie != null && _csrf != null;
 
@@ -222,23 +227,63 @@ class ListingsApi {
     return CampusListing.fromJson(jsonDecode(utf8.decode(r.bodyBytes)));
   }
 
+  /// Multiple widgets can request Campus sessions simultaneously. Never
+  /// submit a burst of identical BARS verification requests on a failure.
+  /// A user-triggered "refreshBarsRole" bypasses the cooldown.
   Future<void> ensureSession({bool requireGroup = false}) async {
+    final pending = _pendingEnsureSession;
+    if (pending != null) {
+      await pending;
+    } else {
+      final now = DateTime.now();
+      if (_retryBARSAfter != null && now.isBefore(_retryBARSAfter!)) {
+        throw Exception(_lastBARSError ??
+            'Проверка БАРС временно недоступна. Повтори попытку позже.');
+      }
+      final running = _ensureSessionOnce();
+      _pendingEnsureSession = running;
+      try {
+        await running;
+        _retryBARSAfter = null;
+        _lastBARSError = null;
+      } catch (error) {
+        _retryBARSAfter = DateTime.now().add(const Duration(seconds: 30));
+        _lastBARSError = error.toString().replaceFirst('Exception: ', '');
+        rethrow;
+      } finally {
+        if (identical(_pendingEnsureSession, running)) {
+          _pendingEnsureSession = null;
+        }
+      }
+    }
+    // Never infer study-group access from an authenticated Campus cookie.
+    if (requireGroup && (_sessionGroup?.trim().isEmpty ?? true)) {
+      throw Exception('БАРС не подтвердил твою учебную группу');
+    }
+  }
+
+  Future<void> _ensureSessionOnce() async {
     if (hasSession) {
       try {
         final r = await _send('GET', '/session');
         final data = jsonDecode(utf8.decode(r.bodyBytes));
-        if (data is Map && data['authenticated'] == true &&
-            (!requireGroup || (data['group'] is String &&
-                (data['group'] as String).trim().isNotEmpty))) return;
-      } catch (_) {}
+        if (data is Map && data['authenticated'] == true) {
+          _sessionGroup = data['group'] is String
+              ? (data['group'] as String).trim() : null;
+          return;
+        }
+      } catch (_) {
+        // The existing Campus session may have expired.
+      }
     }
     _cookie = null;
     _csrf = null;
+    _sessionGroup = null;
     final address = Uri.tryParse(ApiConfig.baseUrl);
     if (address == null ||
         !(address.scheme == 'https' ||
-            (address.scheme == 'http' &&
-             ['127.0.0.1', 'localhost'].contains(address.host)))) {
+          (address.scheme == 'http' &&
+            ['127.0.0.1', 'localhost'].contains(address.host)))) {
       throw Exception(
         'Для публикации через БАРС требуется HTTPS или USB ADB Reverse '
         'с адресом 127.0.0.1:8000.',
@@ -273,11 +318,8 @@ class ListingsApi {
     }
     _cookie = rawCookie.split(';').first;
     _csrf = csrf;
-    if (requireGroup &&
-        (result is! Map || result['group'] is! String ||
-         (result['group'] as String).trim().isEmpty)) {
-      throw Exception('БАРС не подтвердил твою учебную группу');
-    }
+    _sessionGroup = result is Map && result['group'] is String
+        ? (result['group'] as String).trim() : null;
   }
 
   /// Hand existing BARS cookies to the authenticated backend to perform
@@ -309,8 +351,13 @@ class ListingsApi {
   Future<void> refreshBarsRole() async {
     final oldCookie = _cookie;
     final oldCsrf = _csrf;
+    final oldGroup = _sessionGroup;
     _cookie = null;
     _csrf = null;
+    _sessionGroup = null;
+    // Explicit user action must be able to retry immediately.
+    _retryBARSAfter = null;
+    _lastBARSError = null;
     try {
       await ensureSession(requireGroup: true);
     } catch (_) {
@@ -318,6 +365,7 @@ class ListingsApi {
       // if the external BARS role check is temporarily unavailable.
       _cookie = oldCookie;
       _csrf = oldCsrf;
+      _sessionGroup = oldGroup;
       rethrow;
     }
   }
