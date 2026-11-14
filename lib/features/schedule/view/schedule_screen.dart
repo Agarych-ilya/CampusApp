@@ -398,6 +398,46 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  int? _breakBetween(ScheduleLesson previous, ScheduleLesson next) {
+    final times = RegExp(r'\d{1,2}:\d{2}');
+    final first = times.allMatches(previous.time)
+        .map((match) => match.group(0)!).toList();
+    final second = times.allMatches(next.time)
+        .map((match) => match.group(0)!).toList();
+    if (first.length < 2 || second.isEmpty) return null;
+    int minutes(String text) {
+      final parts = text.split(':');
+      return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+    }
+    final gap = minutes(second.first) - minutes(first[1]);
+    return gap >= 10 && gap <= 180 ? gap : null;
+  }
+
+  Widget _breakSeparator(BuildContext context, int minutes) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 5, 14, 23),
+      child: Row(
+        children: [
+          Expanded(child: Container(
+            height: 1, color: muted.withOpacity(0.18),
+          )),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            child: Text('перерыв $minutes мин',
+              style: TextStyle(
+                color: muted.withOpacity(0.84),
+                fontSize: 12,
+              )),
+          ),
+          Expanded(child: Container(
+            height: 1, color: muted.withOpacity(0.18),
+          )),
+        ],
+      ),
+    );
+  }
+
   Widget _weekPage(BuildContext context, int page) {
     final theme = Theme.of(context);
     final date = _dateForPage(page);
@@ -407,7 +447,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       future: _lessonsForPage(page),
       builder: (context, snapshot) {
         final all = snapshot.data ?? const <ScheduleLesson>[];
-        final todayLessons = _lessonsForDay(all, date);
+        final todayLessons = _mode == ScheduleViewMode.week
+            ? (List<ScheduleLesson>.of(all)..sort((a, b) {
+                final aDate = a.parsedDate;
+                final bDate = b.parsedDate;
+                if (aDate == null || bDate == null) {
+                  return a.time.compareTo(b.time);
+                }
+                final diff = aDate.compareTo(bDate);
+                return diff == 0 ? a.time.compareTo(b.time) : diff;
+              }))
+            : _lessonsForDay(all, date);
         final isOwnGroup = canOpenOwnLessonDetails(
           profileGroup: _profileGroup,
           viewedGroup: _groupName,
@@ -500,7 +550,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                         ],
                                       ),
                                     ),
-                                  for (final lesson in todayLessons)
+                                  for (var i = 0;
+                                      i < todayLessons.length; i++) ...[
+                                    if (_mode == ScheduleViewMode.week &&
+                                        (i == 0 ||
+                                            todayLessons[i].parsedDate !=
+                                            todayLessons[i - 1].parsedDate))
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            3, 5, 0, 12),
+                                        child: Text(
+                                          _getWeekDayName(
+                                            todayLessons[i].parsedDate ?? date),
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(fontSize: 17),
+                                        ),
+                                      ),
+                                    if (_mode == ScheduleViewMode.day && i > 0)
+                                      if (_breakBetween(
+                                        todayLessons[i - 1], todayLessons[i],
+                                      ) case final int minutes)
+                                        _breakSeparator(context, minutes),
+                                    for (final lesson in [todayLessons[i]])
                                     FutureBuilder<Set<String>>(
                                       future: isOwnGroup
                                           ? _absencesForPage(page) : null,
@@ -533,6 +604,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                           ) ?? false),
                                     ),
                                     ),
+                                  ],
                                 ],
                               ),
                             ),
