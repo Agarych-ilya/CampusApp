@@ -17,6 +17,8 @@ class _AttendanceFake extends AttendanceApi {
   _AttendanceFake({required this.starosta});
   final bool starosta;
   bool failFirstSession = false;
+  String firstSessionError =
+      'Не удалось связаться с БАРС для проверки сессии';
   int sessionCalls = 0;
   bool opened = false;
   bool pending = false;
@@ -28,7 +30,7 @@ class _AttendanceFake extends AttendanceApi {
   Future<AttendanceIdentity> session() async {
     sessionCalls++;
     if (failFirstSession && sessionCalls == 1) {
-      throw Exception('Не удалось связаться с БАРС для проверки сессии');
+      throw Exception(firstSessionError);
     }
     return AttendanceIdentity(
       authenticated: true,
@@ -117,6 +119,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.sessionCalls, 2);
     expect(find.text('Я присутствую'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('expired BARS session offers re-login without wiping profile',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: false)
+      ..opened = true
+      ..failFirstSession = true
+      ..firstSessionError =
+          'БАРС не подтвердил сессию (список студентов, HTTP 302)';
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('HTTP 302'), findsOneWidget);
+    expect(find.byKey(const ValueKey('attendance-reconnect-bars')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('attendance-retry-session')),
+        findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
