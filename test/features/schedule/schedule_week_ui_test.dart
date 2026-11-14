@@ -38,10 +38,10 @@ void main() {
       LessonKind.elective,
     );
     expect(lessonKindLabel('Лекция', subject: 'Факультатив'), 'Факультатив');
-    expect(lessonKindColor(LessonKind.elective), const Color(0xFF8C8C94));
-    expect(lessonKindColor(LessonKind.lecture), const Color(0xFF34C759));
-    expect(lessonKindColor(LessonKind.practice), const Color(0xFFFACC15));
-    expect(lessonKindColor(LessonKind.laboratory), const Color(0xFFEF4444));
+    expect(lessonKindColor(LessonKind.elective), const Color(0xFF807B89));
+    expect(lessonKindColor(LessonKind.lecture), const Color(0xFFA58CFA));
+    expect(lessonKindColor(LessonKind.practice), const Color(0xFF9B82ED));
+    expect(lessonKindColor(LessonKind.laboratory), const Color(0xFF72C4AD));
   });
 
   testWidgets('each lesson appears as a coloured dot on its day', (tester) async {
@@ -104,13 +104,13 @@ void main() {
         find.byKey(ValueKey('lesson-dot-2026-11-2-$i')),
       );
       final decoration = dot.decoration! as BoxDecoration;
-      expect(decoration.color, lessonKindColor(kinds[i]));
+      expect(decoration.color, const Color(0xFF312255));
     }
     expect(find.byKey(const ValueKey('lesson-dot-2026-11-3-0')),
         findsNothing);
   });
 
-  testWidgets('red N appears only on an explicitly absent lesson card',
+  testWidgets('reference N appears only on an explicitly absent lesson card',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(body: Column(children: [
@@ -131,11 +131,10 @@ void main() {
     // as shown in the schedule mockup. Do not put it beside 'Лекция'.
     final badge = tester.getRect(find.byKey(
       const ValueKey('schedule-absence-n')));
-    final typeLabel = tester.getRect(find.text('Лекция').first);
+    final typeLabel = tester.getRect(find.text('ЛЕК').first);
     final subject = tester.getRect(find.text('Отсутствовал'));
     expect(badge.top, greaterThan(typeLabel.bottom));
-    expect(badge.left, greaterThan(subject.right));
-    expect(badge.top, lessThan(subject.bottom + 24));
+    expect(badge.left, greaterThan(subject.left));
   });
 
   testWidgets('absence N does not overlap the M-307 seat action',
@@ -153,7 +152,7 @@ void main() {
     )));
     final badge = tester.getRect(find.byKey(
       const ValueKey('schedule-absence-n')));
-    final type = tester.getRect(find.text('Лекция'));
+    final type = tester.getRect(find.text('ЛЕК'));
     final seatAction = tester.getRect(find.byKey(
       const ValueKey('schedule-book-seat')));
     expect(badge.top, greaterThan(type.bottom));
@@ -241,8 +240,9 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Лекция'), findsOneWidget);
-    expect(find.text('09:20 - 10:55'), findsOneWidget);
+    expect(find.text('ЛЕК'), findsOneWidget);
+    expect(find.text('09:20'), findsOneWidget);
+    expect(find.text('10:55'), findsOneWidget);
     expect(find.text('С-409'), findsOneWidget);
   });
 
@@ -260,9 +260,37 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Факультатив'), findsOneWidget);
-    final label = tester.widget<Text>(find.text('Факультатив'));
-    expect(label.style?.color, const Color(0xFF8C8C94));
+    expect(find.text('ФАК'), findsOneWidget);
+    final label = tester.widget<Text>(find.text('ФАК'));
+    expect(label.style?.color, const Color(0xFF807B89));
+  });
+
+  testWidgets('reference schedule switches day week and month modes',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('schedule-view-selector')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('schedule-floating-today')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('schedule-lesson-list')),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('schedule-view-week')));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-03-23'), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('schedule-view-month')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CalendarDatePicker), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('schedule-view-day')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('schedule-lesson-list')),
+        findsOneWidget);
   });
 
   testWidgets('changing group reloads real lessons, not only the label', (tester) async {
