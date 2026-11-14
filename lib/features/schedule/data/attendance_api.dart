@@ -55,6 +55,49 @@ class AttendanceStudent {
   }
 }
 
+class BarsRosterStudent {
+  const BarsRosterStudent({required this.fullName, this.sourceId});
+  final String fullName;
+  final String? sourceId;
+
+  Map<String, dynamic> toJson() => {
+    'fullName': fullName,
+    if (sourceId != null && sourceId!.isNotEmpty) 'sourceId': sourceId,
+  };
+}
+
+class AttendanceRoster {
+  const AttendanceRoster({
+    required this.group,
+    required this.students,
+    required this.imported,
+    this.importedAt,
+  });
+
+  final String group;
+  final List<AttendanceStudent> students;
+  final bool imported;
+  final String? importedAt;
+
+  factory AttendanceRoster.fromJson(dynamic raw) {
+    if (raw is! Map) throw const FormatException('Неверный список группы');
+    final rows = raw['students'];
+    if (rows is! List) throw const FormatException('Нет списка студентов');
+    return AttendanceRoster(
+      group: raw['group']?.toString() ?? '',
+      imported: raw['imported'] == true,
+      importedAt: raw['importedAt']?.toString(),
+      students: [
+        for (final row in rows)
+          AttendanceStudent.fromJson({
+            ...?((row is Map) ? Map<String, dynamic>.from(row) : null),
+            'status': 'unmarked',
+          }),
+      ],
+    );
+  }
+}
+
 class AttendanceLesson {
   const AttendanceLesson({
     required this.id, required this.date, required this.time,
@@ -166,6 +209,33 @@ class AttendanceApi {
   Future<AttendanceIdentity> session() async {
     final raw = await _request('GET', '/session');
     return AttendanceIdentity.fromJson(raw);
+  }
+
+  Future<AttendanceRoster> roster() async =>
+      AttendanceRoster.fromJson(await _request('GET', '/roster'));
+
+  /// Loads one reviewed BARS student table, not individual manual names.
+  Future<int> importRoster(
+    String group, List<BarsRosterStudent> students,
+  ) async {
+    final raw = await _request('POST', '/roster/import', body: {
+      'group': group, 'students': students.map((x) => x.toJson()).toList(),
+    });
+    if (raw is! Map || raw['count'] is! num) {
+      throw const FormatException('Импорт списка не подтверждён сервером');
+    }
+    return (raw['count'] as num).toInt();
+  }
+
+  /// Marks the explicitly selected absentees, and confirms the rest present.
+  /// Saves ONLY into CampusApp; official BARS remains untouched.
+  Future<void> saveAbsences(
+    int lessonId, List<String> rosterKeys, Set<String> absentKeys,
+  ) async {
+    await _request('POST', '/lessons/$lessonId/absences', body: {
+      'rosterKeys': rosterKeys,
+      'absentKeys': absentKeys.toList(),
+    });
   }
 
   Future<void> register(String name) async {
