@@ -505,6 +505,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 }
                               },
                               child: ListView(
+                                key: const ValueKey('schedule-lesson-list'),
+                                padding: const EdgeInsets.only(bottom: 150),
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 children: [
                                   if (_scheduleApi.showingOfflineCopy)
