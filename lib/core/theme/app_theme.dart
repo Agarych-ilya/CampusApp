@@ -1,33 +1,31 @@
 import 'package:flutter/material.dart';
 
 /// One restrained palette for CampusApp, based on the provided university
-/// application: graphite surfaces, icy blue accents and confident type.
-/// No pink/red branding colors are used in the app theme.
+/// application: near-black surfaces, muted lavender accents, precise type.
+/// Keep the layout neutral; use purple only for selection and small badges.
 abstract final class AppTheme {
-  static const Color accent = Color(0xFF9FC2FF);
-  static const Color accentStrong = Color(0xFF4C85D9);
-  static const Color cyan = Color(0xFF8EDCE6);
-  static const Color ink = Color(0xFF0C1018);
-  static const Color panel = Color(0xFF171D28);
-  static const Color lightBackground = Color(0xFFF5F7FB);
+  static const Color accent = Color(0xFFA58CFA);
+  static const Color accentStrong = Color(0xFF8067D7);
+  static const Color cyan = Color(0xFFC4B5FD);
+  static const Color ink = Color(0xFF0B0A0E);
+  static const Color panel = Color(0xFF18171C);
+  static const Color lightBackground = Color(0xFFF8F7FC);
   static const Color darkBackground = ink;
-  static const Color lightText = Color(0xFF192435);
-  static const Color darkText = Color(0xFFF0F4FC);
+  static const Color lightText = Color(0xFF211F2C);
+  static const Color darkText = Color(0xFFF5F4F8);
 
-  // Compatibility aliases for older widgets, all mapped to cool tones.
+  // Compatibility aliases for older widgets.
   static const Color pink = accent;
   static const Color orange = cyan;
   static const Color purple = accentStrong;
 
-  static const Color lightFieldBorder = Color(0xFFDCE3EF);
-  static const Color darkFieldBorder = Color(0xFF303949);
-  static const Color lightHintText = Color(0xFF708198);
-  static const Color darkHintText = Color(0xFF96A5BA);
+  static const Color lightFieldBorder = Color(0xFFD8D5E4);
+  static const Color darkFieldBorder = Color(0xFF302E36);
+  static const Color lightHintText = Color(0xFF797586);
+  static const Color darkHintText = Color(0xFF96929F);
 
   static const LinearGradient mainGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [accentStrong, accent, cyan],
+    colors: [accentStrong, accent],
   );
   static const LinearGradient buttonGradient = LinearGradient(
     begin: Alignment.centerLeft,
@@ -42,7 +40,7 @@ abstract final class AppTheme {
     final dark = brightness == Brightness.dark;
     final primary = dark ? accent : accentStrong;
     final bg = dark ? darkBackground : lightBackground;
-    final surface = dark ? const Color(0xFF151B26) : Colors.white;
+    final surface = dark ? const Color(0xFF17161B) : Colors.white;
     final onSurface = dark ? darkText : lightText;
     final muted = dark ? darkHintText : lightHintText;
 
@@ -51,20 +49,20 @@ abstract final class AppTheme {
       brightness: brightness,
       primary: primary,
       onPrimary: dark ? ink : Colors.white,
-      secondary: dark ? cyan : const Color(0xFF357F97),
+      secondary: dark ? cyan : const Color(0xFF7760C5),
       onSecondary: dark ? ink : Colors.white,
       surface: surface,
       onSurface: onSurface,
       onSurfaceVariant: muted,
       surfaceContainerLow:
-          dark ? const Color(0xFF121823) : const Color(0xFFF1F4FA),
+          dark ? const Color(0xFF111014) : const Color(0xFFF2F0F8),
       surfaceContainer:
-          dark ? const Color(0xFF1C2431) : const Color(0xFFE9EEF7),
+          dark ? const Color(0xFF1B1A20) : const Color(0xFFEBE8F3),
       surfaceContainerHigh:
-          dark ? const Color(0xFF253043) : const Color(0xFFDFE7F2),
+          dark ? const Color(0xFF25232B) : const Color(0xFFE2DFF0),
       outlineVariant:
           dark ? darkFieldBorder : lightFieldBorder,
-      // Status colors are cooler and legible, not bright pink or red.
+      // Neutral warm status color only for warnings, never branding.
       error: dark ? const Color(0xFFE8C18B) : const Color(0xFFA3682A),
       onError: dark ? ink : Colors.white,
     );
@@ -119,7 +117,7 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: dark ? const Color(0xFF1A2331) : Colors.white,
+        fillColor: dark ? const Color(0xFF201E27) : Colors.white,
         hintStyle: TextStyle(
           color: muted, fontSize: 14, fontWeight: FontWeight.w500,
         ),
