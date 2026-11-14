@@ -27,6 +27,7 @@ class _AttendanceFake extends AttendanceApi {
   int decided = 0;
   int closed = 0;
   Set<String> savedAbsences = {};
+  int savedCorrections = 0;
   final firstStudentKey = List.filled(64, 'a').join();
   final secondStudentKey = List.filled(64, 'b').join();
 
@@ -62,6 +63,24 @@ class _AttendanceFake extends AttendanceApi {
       ),
     ] : [],
   );
+
+  @override
+  Future<void> correctClosedAttendance(
+    int lessonId, String ownerKey, {
+    required String expectedStatus,
+    required String status,
+  }) async {
+    expect(lessonId, 7);
+    expect(ownerKey, secondStudentKey);
+    expect(expectedStatus, savedAbsences.contains(ownerKey)
+        ? 'absent' : 'present');
+    if (status == 'absent') {
+      savedAbsences.add(ownerKey);
+    } else {
+      savedAbsences.remove(ownerKey);
+    }
+    savedCorrections++;
+  }
 
   @override
   Future<void> saveAbsences(
@@ -264,15 +283,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Петров П.'), findsOneWidget);
     expect(find.text('Иванов И.'), findsNothing);
-    expect(find.text('№'), findsOneWidget);
-    expect(find.text('Студент'), findsOneWidget);
-    expect(find.text('Пропуск'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget); // roster number, not filter index
+    expect(find.text('СТУДЕНТЫ'), findsOneWidget);
+    expect(find.text('«Н» — ПРОПУСК'), findsOneWidget);
+    expect(find.text('«Н» — ПРОПУСК'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget); // roster number, not filter index
     expect(find.byTooltip('Петров Пётр'), findsOneWidget);
     final row = tester.getSize(find.byKey(
       ValueKey('attendance-absent-${api.secondStudentKey}'),
     ));
-    expect(row.height, 48);
+    expect(row.height, greaterThanOrEqualTo(66));
     await tester.tap(find.byKey(
       ValueKey('attendance-absent-${api.secondStudentKey}'),
     ));
@@ -284,12 +303,46 @@ void main() {
     expect(find.text('Петров П.'), findsOneWidget);
     expect(find.byKey(const ValueKey('attendance-student-absence')),
         findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
     await tester.tap(find.byKey(
       ValueKey('attendance-absent-${api.secondStudentKey}'),
     ));
     await tester.pumpAndSettle();
     expect(find.text('Отсутствуют (0)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('attendance-student-absence')),
+        findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('closed journal lets the starosta remove an accidental N',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: true)
+      ..opened = true
+      ..closed = 1;
+    api.savedAbsences.add(api.secondStudentKey);
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('В группе: 2 · Пропусков: 1 · Сохранён'),
+        findsOneWidget);
+    final row = find.byKey(
+      ValueKey('attendance-absent-${api.secondStudentKey}'));
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('Снять пропуск?'), findsOneWidget);
+    await tester.tap(find.text('Исправить'));
+    await tester.pumpAndSettle();
+    expect(api.savedCorrections, 1);
+    expect(api.savedAbsences, isEmpty);
+    expect(find.text('В группе: 2 · Пропусков: 0 · Сохранён'),
+        findsOneWidget);
     expect(find.byKey(const ValueKey('attendance-student-absence')),
         findsNothing);
     expect(tester.takeException(), isNull);
@@ -314,19 +367,19 @@ void main() {
     expect(find.text('Добавить себя'), findsNothing);
     await tester.tap(find.text('Открыть журнал пары'));
     await tester.pumpAndSettle();
-    expect(find.text('Студентов: 2 · Отсутствуют: 0'), findsOneWidget);
-    expect(find.text('Нажми на студента, чтобы отметить пропуск'),
+    expect(find.text('В группе: 2 · Пропусков: 0'), findsOneWidget);
+    expect(find.text('Нажми на студента, чтобы поставить или снять «Н»'),
         findsOneWidget);
     expect(find.text('Иванов И.'), findsOneWidget);
     expect(find.text('Петров П.'), findsOneWidget);
     // Compact roll call: fixed ledger columns, original order, no cards.
     expect(find.byKey(const ValueKey('attendance-table-header')),
         findsOneWidget);
-    expect(find.text('№'), findsOneWidget);
-    expect(find.text('Студент'), findsOneWidget);
-    expect(find.text('Пропуск'), findsOneWidget);
+    expect(find.text('СТУДЕНТЫ'), findsOneWidget);
+    expect(find.text('«Н» — ПРОПУСК'), findsOneWidget);
+    expect(find.text('«Н» — ПРОПУСК'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
     expect(find.byType(CircleAvatar), findsNothing);
     expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
     expect(find.text('Режим старосты'), findsNothing);
@@ -347,7 +400,7 @@ void main() {
 
     expect(api.closed, 1);
     expect(api.savedAbsences, {api.secondStudentKey});
-    expect(find.text('Студентов: 2 · Отсутствуют: 1 · Журнал закрыт'),
+    expect(find.text('В группе: 2 · Пропусков: 1 · Сохранён'),
         findsOneWidget);
     expect(find.text('Итоговые отметки'), findsNothing);
     expect(find.text('Список для БАРС'), findsNothing);
