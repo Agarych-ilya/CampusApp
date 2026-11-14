@@ -98,7 +98,43 @@ class CampusGlassDock extends StatelessWidget {
               ],
             ),
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-            child: Row(
+            child: LayoutBuilder(
+              builder: (context, bounds) {
+                final slotWidth = bounds.maxWidth / destinations.length;
+                return Stack(
+                  children: [
+                    AnimatedPositioned(
+                      key: const ValueKey('campus-glass-lens'),
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      left: currentIndex * slotWidth + 3,
+                      top: 2,
+                      bottom: 2,
+                      width: slotWidth - 6,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(23),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.white.withOpacity(dark ? 0.17 : 0.70),
+                              scheme.primary.withOpacity(dark ? 0.24 : 0.17),
+                            ],
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(dark ? 0.25 : 0.75),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.primary.withOpacity(0.12),
+                              blurRadius: 16,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Row(
               children: List.generate(destinations.length, (index) {
                 final item = destinations[index];
                 final selected = index == currentIndex;
@@ -121,14 +157,10 @@ class CampusGlassDock extends StatelessWidget {
                           curve: Curves.easeOutCubic,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: selected
-                                ? scheme.primary.withOpacity(dark ? 0.22 : 0.15)
-                                : Colors.transparent,
+                            color: Colors.transparent,
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: selected
-                                  ? scheme.primary.withOpacity(0.32)
-                                  : Colors.transparent,
+                              color: Colors.transparent,
                             ),
                           ),
                           child: Icon(
@@ -143,6 +175,10 @@ class CampusGlassDock extends StatelessWidget {
                   ),
                 );
               }),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
