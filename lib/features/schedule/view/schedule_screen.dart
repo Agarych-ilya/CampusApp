@@ -146,6 +146,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Future<Set<String>> _absencesForPage(int page) {
     return _absenceFutures.putIfAbsent(page, () async {
+      // Widget/offline timetable tests should not contact a live BARS API.
+      if (widget.scheduleApi != null && widget.attendanceApi == null) {
+        return <String>{};
+      }
       try {
         final first = _startForPage(page);
         final last = DateTime(first.year, first.month, first.day + 6);
