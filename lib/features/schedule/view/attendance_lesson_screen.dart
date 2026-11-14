@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '/features/auth/view/login_screen.dart';
 import '../data/attendance_api.dart';
+import 'bars_roster_import_screen.dart';
 import '../data/schedule_lesson.dart';
 
 /// Student check-in and starosta review for ONE lesson from the real timetable.
@@ -25,6 +26,8 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
   late final AttendanceApi _api;
   AttendanceIdentity? _identity;
   AttendanceDetail? _detail;
+  AttendanceRoster? _roster;
+  Set<String> _absentKeys = {};
   int? _lessonId;
   bool _loading = true;
   bool _saving = false;
@@ -98,6 +101,7 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
           'подтверждённым через БАРС',
         );
       }
+      final roster = account.isStarosta ? await _api.roster() : null;
       final date = widget.lesson.parsedDate;
       if (date == null) throw Exception('Дата пары не определена');
       final lessons = await _api.lessons(date);
@@ -113,8 +117,14 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
       if (!mounted) return;
       setState(() {
         _identity = account;
+        _roster = roster;
         _lessonId = id;
         _detail = detail;
+        _absentKeys = {
+          if (detail != null)
+            for (final student in detail.students)
+              if (student.status == 'absent') student.ownerKey,
+        };
       });
     } catch (error) {
       if (mounted) setState(() {
@@ -191,6 +201,85 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     await _run(
       () => _api.register(name),
       'Ты добавлен в список своей группы',
+    );
+  }
+
+  Future<void> _importFromBars() async {
+    if (_identity?.isStarosta != true || _saving) return;
+    final imported = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => BarsRosterImportScreen(
+        group: widget.group, api: _api,
+      )),
+    );
+    if (mounted && imported == true) await _load();
+  }
+
+  Future<void> _saveReviewedAbsences() async {
+    final detail = _detail;
+    if (_identity?.isStarosta != true || detail == null || _saving ||
+        detail.lesson.state != 'open') return;
+    final roster = detail.students;
+    if (roster.isEmpty || _roster?.imported != true) {
+      _message('Сначала загрузи полный список группы из БАРС', error: true);
+      return;
+    }
+    final absent = roster.where((student) =>
+        _absentKeys.contains(student.ownerKey)).toList();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Подтвердить посещаемость?'),
+        content: SingleChildScrollView(child: Text(
+          'Всего студентов: ${roster.length}\n'
+          'Отсутствовали: ${absent.length}\n'
+          'Присутствовали: ${roster.length - absent.length}\n\n'
+          '${absent.isEmpty ? 'Отсутствующих нет' :
+            absent.map((student) => student.displayName).join('\n')}\n\n'
+          'Проверь, что список группы полный. Это сохранит отметки '
+          'в CampusApp и закроет журнал. Официальный БАРС не изменяется.',
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Сохранить')),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await _run(
+      () => _api.saveAbsences(
+        detail.lesson.id,
+        roster.map((student) => student.ownerKey).toList(),
+        Set.of(_absentKeys),
+      ),
+      'Посещаемость сохранена в CampusApp',
+    );
+  }
+
+  Widget _absenceTile(AttendanceStudent student) {
+    final absent = _absentKeys.contains(student.ownerKey);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 7),
+      child: CheckboxListTile(
+        key: ValueKey('attendance-absent-${student.ownerKey}'),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        title: Text(student.displayName, style: const TextStyle(
+          fontWeight: FontWeight.w600,
+        )),
+        subtitle: Text(absent ? 'Отсутствовал' : 'Присутствовал',
+            style: TextStyle(color:
+                absent ? Colors.redAccent : Colors.green.shade400)),
+        value: absent,
+        activeColor: Colors.redAccent,
+        onChanged: _saving ? null : (checked) => setState(() {
+          if (checked == true) {
+            _absentKeys.add(student.ownerKey);
+          } else {
+            _absentKeys.remove(student.ownerKey);
+          }
+        }),
+      ),
     );
   }
 
