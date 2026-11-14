@@ -1,0 +1,141 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:campusapp/features/schedule/data/attendance_api.dart';
+import 'package:campusapp/features/schedule/data/schedule_lesson.dart';
+import 'package:campusapp/features/schedule/view/attendance_lesson_screen.dart';
+
+const lesson = ScheduleLesson(
+  date: '14.11.2026',
+  time: '10:00–11:30',
+  subject: 'Теория управления',
+  type: 'Лекция',
+  room: 'В-308',
+  teacher: 'Преподаватель',
+);
+
+class _AttendanceFake extends AttendanceApi {
+  _AttendanceFake({required this.starosta});
+  final bool starosta;
+  bool opened = false;
+  bool pending = false;
+  int checkedIn = 0;
+  int decided = 0;
+  int closed = 0;
+
+  @override
+  Future<AttendanceIdentity> session() async => AttendanceIdentity(
+    authenticated: true,
+    isStarosta: starosta,
+    registered: true,
+    group: 'А-03-23',
+    displayName: starosta ? 'Староста' : 'Студент',
+  );
+
+  @override
+  Future<List<AttendanceLesson>> lessons(DateTime date) async {
+    expect(date.year, 2026);
+    if (!opened) return [];
+    return const [
+      AttendanceLesson(id: 7, date: '2026-11-14',
+        time: '10:00–11:30', subject: 'Теория управления', state: 'open'),
+    ];
+  }
+
+  @override
+  Future<int> open(ScheduleLesson value) async {
+    expect(value.subject, lesson.subject);
+    opened = true;
+    return 7;
+  }
+
+  @override
+  Future<AttendanceDetail> detail(int id) async {
+    expect(id, 7);
+    return AttendanceDetail(
+      lesson: const AttendanceLesson(
+        id: 7, date: '2026-11-14', time: '10:00–11:30',
+        subject: 'Теория управления', state: 'open',
+      ),
+      myStatus: starosta ? 'unmarked' : (pending ? 'pending' : 'unmarked'),
+      students: starosta ? [
+        AttendanceStudent(
+          ownerKey: 'a' * 64, displayName: 'Студент',
+          status: decided > 0 ? 'present' : 'pending',
+        ),
+      ] : [],
+    );
+  }
+
+  @override
+  Future<void> checkIn(int id) async {
+    checkedIn++;
+    pending = true;
+  }
+
+  @override
+  Future<void> decide(int id, AttendanceStudent person, String status) async {
+    expect(status, 'present');
+    expect(person.ownerKey, 'a' * 64);
+    decided++;
+  }
+}
+
+void main() {
+  test('BARS attendance roster parser rejects invalid student keys', () {
+    expect(() => AttendanceStudent.fromJson({
+      'ownerKey': 'not-a-server-key',
+      'displayName': 'Подставной',
+      'status': 'present',
+    }), throwsFormatException);
+  });
+
+  testWidgets('student check-in remains pending until starosta approval',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: false)..opened = true;
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Я присутствую'), findsOneWidget);
+    await tester.tap(find.text('Я присутствую'));
+    await tester.pumpAndSettle();
+    expect(api.checkedIn, 1);
+    expect(find.textContaining('Ожидает проверки'), findsOneWidget);
+    expect(find.text('Пропуск'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('starosta opens journal then reviews pending students',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: true);
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Открыть журнал пары'), findsOneWidget);
+    await tester.tap(find.text('Открыть журнал пары'));
+    await tester.pumpAndSettle();
+    expect(api.opened, isTrue);
+    expect(find.text('Подтвердить заявки'), findsOneWidget);
+    await tester.tap(find.text('Подтвердить заявки'));
+    await tester.pumpAndSettle();
+    expect(find.text('Подтвердить заявки?'), findsOneWidget);
+    await tester.tap(find.text('Подтвердить').last);
+    await tester.pumpAndSettle();
+    expect(api.decided, 1);
+    expect(find.text('Присутствует'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
