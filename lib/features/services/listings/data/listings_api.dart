@@ -135,6 +135,15 @@ class ListingDraft {
   };
 }
 
+// A BARS 401 is not a network retry case: the phone must complete a fresh
+// login in the existing official BARS WebView before trying again.
+class _BarsLoginRequired implements Exception {
+  const _BarsLoginRequired(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 class ListingsApi {
   ListingsApi._();
   static final ListingsApi instance = ListingsApi._();
@@ -145,6 +154,21 @@ class ListingsApi {
   Future<void>? _pendingEnsureSession;
   DateTime? _retryBARSAfter;
   String? _lastBARSError;
+  bool _mustLoginToBars = false;
+  int _barsLoginGeneration = 0;
+
+  /// Called only after the BARS WebView has successfully parsed and saved
+  /// the actual student profile (not on every WebView page load).
+  /// Invalidate any Campus session belonging to the previous BARS identity.
+  void barsLoginCompleted() {
+    _barsLoginGeneration++;
+    _mustLoginToBars = false;
+    _retryBARSAfter = null;
+    _lastBARSError = null;
+    _cookie = null;
+    _csrf = null;
+    _sessionGroup = null;
+  }
 
   String get _base => ApiConfig.baseUrl + '/services/listings';
   bool get hasSession => _cookie != null && _csrf != null;
@@ -191,7 +215,11 @@ class ListingsApi {
       await request.send().timeout(timeout),
     ).timeout(timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(_error(response));
+      final message = _error(response);
+      if (path == '/bars-login' && response.statusCode == 401) {
+        throw _BarsLoginRequired(message);
+      }
+      throw Exception(message);
     }
     return response;
   }
@@ -235,20 +263,40 @@ class ListingsApi {
     if (pending != null) {
       await pending;
     } else {
+      if (_mustLoginToBars) {
+        throw _BarsLoginRequired(_lastBARSError ??
+            'Войди в БАРС повторно через CampusApp.');
+      }
       final now = DateTime.now();
       if (_retryBARSAfter != null && now.isBefore(_retryBARSAfter!)) {
         throw Exception(_lastBARSError ??
             'Проверка БАРС временно недоступна. Повтори попытку позже.');
       }
+      final generation = _barsLoginGeneration;
       final running = _ensureSessionOnce();
       _pendingEnsureSession = running;
       try {
         await running;
+        if (generation != _barsLoginGeneration) {
+          // A stale async session check must not replace a newly logged-in
+          // BARS account. The caller can retry with the new session.
+          _cookie = null;
+          _csrf = null;
+          _sessionGroup = null;
+          throw const _BarsLoginRequired('Обновилась сессия БАРС. Повтори запрос.');
+        }
         _retryBARSAfter = null;
         _lastBARSError = null;
       } catch (error) {
-        _retryBARSAfter = DateTime.now().add(const Duration(seconds: 30));
-        _lastBARSError = error.toString().replaceFirst('Exception: ', '');
+        if (generation == _barsLoginGeneration) {
+          _lastBARSError = error.toString().replaceFirst('Exception: ', '');
+          if (error is _BarsLoginRequired) {
+            _mustLoginToBars = true;
+            _retryBARSAfter = null;
+          } else {
+            _retryBARSAfter = DateTime.now().add(const Duration(seconds: 30));
+          }
+        }
         rethrow;
       } finally {
         if (identical(_pendingEnsureSession, running)) {
@@ -298,7 +346,9 @@ class ListingsApi {
         cookie.value.isNotEmpty &&
         !cookie.value.contains(RegExp(r'[\r\n;]'))).toList();
     if (allowed.isEmpty) {
-      throw Exception('Сессия БАРС не найдена. Войди в БАРС в CampusApp.');
+      throw const _BarsLoginRequired(
+        'Сессия БАРС не найдена. Войди в БАРС через CampusApp.',
+      );
     }
     final cookieHeader = allowed
         .map((item) => item.name + '=' + item.value).join('; ');
@@ -356,6 +406,7 @@ class ListingsApi {
     _csrf = null;
     _sessionGroup = null;
     // Explicit user action must be able to retry immediately.
+    _mustLoginToBars = false;
     _retryBARSAfter = null;
     _lastBARSError = null;
     try {

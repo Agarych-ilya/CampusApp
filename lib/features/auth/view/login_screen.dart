@@ -10,6 +10,7 @@ import '/features/profile/data/bars_subject.dart';
 import '/features/profile/data/bars_subjects_storage.dart';
 import '/features/profile/data/student_profile.dart';
 import '/features/profile/data/student_profile_storage.dart';
+import '/features/services/listings/data/listings_api.dart';
 
 import '/features/schedule/data/group_storage.dart';
 
@@ -372,6 +373,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       debugPrint('BARS: group saved');
 
+      // This is a real completed WebView login, not an automatic page load.
+      // Re-enable one server verification attempt with the fresh BARS cookies.
+      ListingsApi.instance.barsLoginCompleted();
       _finished = true;
 
       _watchTimer?.cancel();
