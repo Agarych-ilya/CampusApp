@@ -6,6 +6,7 @@ import '../data/lesson_kind.dart';
 import '../data/private_lesson_notes_storage.dart';
 import '../data/own_lesson_note_preview_storage.dart';
 import '../data/schedule_lesson.dart';
+import 'attendance_lesson_screen.dart';
 
 /// A bottom-sheet opened from a timetable lesson.
 class LessonDetailsSheet extends StatefulWidget {
@@ -381,6 +382,21 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
           Text('Аудитория: ${widget.lesson.room}'),
         if (widget.lesson.teacher.trim().isNotEmpty)
           Text('Преподаватель: ${widget.lesson.teacher}'),
+        const SizedBox(height: 18),
+        // Attendance belongs to the selected lesson, not the Services tab.
+        OutlinedButton.icon(
+          key: const ValueKey('open-attendance-journal'),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AttendanceLessonScreen(
+                group: widget.group,
+                lesson: widget.lesson,
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.fact_check_outlined),
+          label: const Text('Учебный журнал · посещаемость'),
+        ),
         const SizedBox(height: 22),
         Text('Мои оценки по предмету',
             style: theme.textTheme.titleLarge?.copyWith(
