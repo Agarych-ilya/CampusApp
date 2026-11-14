@@ -237,9 +237,51 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     );
   }
 
-  /// A plain attendance row: a name and one status control, no avatars,
-  /// decorative statistic cards or colour-coded labels for every student.
-  Widget _absenceTile(AttendanceStudent student, {required bool closed}) {
+  // The journal uses the original roster position for row numbers. Filtering
+  // must not silently renumber students, as this is a group roll call.
+  static const double _numberColumnWidth = 34;
+  static const double _absenceColumnWidth = 72;
+
+  String _compactStudentName(String fullName) {
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    if (parts.length <= 1) return fullName.trim();
+    // Surname + initials; the full BARS name remains available on long press.
+    final initials = parts.skip(1).take(2)
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}.').join(' ');
+    return '${parts.first} $initials';
+  }
+
+  Widget _attendanceTableHeader(ThemeData theme) {
+    final caption = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w600,
+    );
+    return Container(
+      key: const ValueKey('attendance-table-header'),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(
+          color: theme.colorScheme.outlineVariant,
+        )),
+      ),
+      child: Row(children: [
+        SizedBox(width: _numberColumnWidth, child: Text('№', style: caption)),
+        Expanded(child: Text('Студент', style: caption)),
+        SizedBox(width: _absenceColumnWidth,
+          child: Text('Пропуск', textAlign: TextAlign.center, style: caption)),
+      ]),
+    );
+  }
+
+  /// Compact 48 px ledger row. A dash means "not marked absent" and never
+  /// claims that a present mark was confirmed by BARS.
+  Widget _absenceTile(
+    AttendanceStudent student, {
+    required int number,
+    required bool closed,
+  }) {
     final theme = Theme.of(context);
     final absent = closed
         ? student.status == 'absent'
@@ -257,47 +299,56 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
         }
       }),
       child: Container(
-        constraints: const BoxConstraints(minHeight: 56),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           border: Border(bottom: BorderSide(
             color: theme.colorScheme.outlineVariant.withOpacity(0.45),
           )),
         ),
-        child: Row(
-          children: [
-            Expanded(
+        child: Row(children: [
+          SizedBox(
+            width: _numberColumnWidth,
+            child: Text('$number', style: theme.textTheme.bodySmall?.copyWith(
+              color: muted,
+            )),
+          ),
+          Expanded(
+            child: Tooltip(
+              message: student.displayName,
               child: Text(
-                student.displayName,
-                maxLines: 2,
+                _compactStudentName(student.displayName),
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            if (absent)
-              Container(
-                key: const ValueKey('attendance-student-absence'),
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                child: const Text('Н', style: TextStyle(
-                  color: absenceColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                )),
-              )
-            else if (!closed)
-              Icon(Icons.radio_button_unchecked, size: 23, color: muted)
-            else if (student.status == 'present')
-              Icon(Icons.check, size: 20, color: muted)
-            else
-              Text(_label(student.status),
-                style: theme.textTheme.bodySmall?.copyWith(color: muted)),
-          ],
-        ),
+          ),
+          SizedBox(
+            width: _absenceColumnWidth,
+            child: Center(
+              child: absent
+                  ? Text('Н',
+                      key: const ValueKey('attendance-student-absence'),
+                      style: const TextStyle(
+                        color: absenceColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    )
+                  : Text(
+                      closed && student.status != 'present'
+                          ? _label(student.status)
+                          : '—',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                    ),
+            ),
+          ),
+        ]),
       ),
     );
   }
@@ -343,6 +394,12 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
             ? detail!.students.where((s) => s.status == 'absent').length
             : _absentKeys.length)
         : 0;
+    final rosterNumbers = reviewed
+        ? <String, int>{
+            for (var i = 0; i < detail!.students.length; i++)
+              detail!.students[i].ownerKey: i + 1,
+          }
+        : <String, int>{};
     return Scaffold(
       appBar: AppBar(
         title: const Text('Учебный журнал'),
@@ -547,8 +604,13 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                             ],
                           ),
                           const SizedBox(height: 8),
+                          _attendanceTableHeader(theme),
                           for (final student in shown)
-                            _absenceTile(student, closed: isClosed),
+                            _absenceTile(
+                              student,
+                              number: rosterNumbers[student.ownerKey]!,
+                              closed: isClosed,
+                            ),
                           if (shown.isEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 28),

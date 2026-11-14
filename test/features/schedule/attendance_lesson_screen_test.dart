@@ -245,7 +245,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('search and absent-only filter compact student cards',
+  testWidgets('compact ledger preserves original numbers under filtering',
       (tester) async {
     tester.view.physicalSize = const Size(430, 1200);
     tester.view.devicePixelRatio = 1;
@@ -262,8 +262,17 @@ void main() {
     await tester.enterText(
       find.byKey(const ValueKey('attendance-search')), 'Петров');
     await tester.pumpAndSettle();
-    expect(find.text('Петров Пётр'), findsOneWidget);
-    expect(find.text('Иванов Иван'), findsNothing);
+    expect(find.text('Петров П.'), findsOneWidget);
+    expect(find.text('Иванов И.'), findsNothing);
+    expect(find.text('№'), findsOneWidget);
+    expect(find.text('Студент'), findsOneWidget);
+    expect(find.text('Пропуск'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget); // roster number, not filter index
+    expect(find.byTooltip('Петров Пётр'), findsOneWidget);
+    final row = tester.getSize(find.byKey(
+      ValueKey('attendance-absent-${api.secondStudentKey}'),
+    ));
+    expect(row.height, 48);
     await tester.tap(find.byKey(
       ValueKey('attendance-absent-${api.secondStudentKey}'),
     ));
@@ -272,9 +281,17 @@ void main() {
       const ValueKey('attendance-filter-absent'),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('Петров Пётр'), findsOneWidget);
+    expect(find.text('Петров П.'), findsOneWidget);
     expect(find.byKey(const ValueKey('attendance-student-absence')),
         findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    await tester.tap(find.byKey(
+      ValueKey('attendance-absent-${api.secondStudentKey}'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Отсутствуют (0)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('attendance-student-absence')),
+        findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -300,10 +317,18 @@ void main() {
     expect(find.text('Студентов: 2 · Отсутствуют: 0'), findsOneWidget);
     expect(find.text('Нажми на студента, чтобы отметить пропуск'),
         findsOneWidget);
-    expect(find.text('Иванов Иван'), findsOneWidget);
-    expect(find.text('Петров Пётр'), findsOneWidget);
-    // The starosta journal is a simple list, not colorful KPI/initials cards.
+    expect(find.text('Иванов И.'), findsOneWidget);
+    expect(find.text('Петров П.'), findsOneWidget);
+    // Compact roll call: fixed ledger columns, original order, no cards.
+    expect(find.byKey(const ValueKey('attendance-table-header')),
+        findsOneWidget);
+    expect(find.text('№'), findsOneWidget);
+    expect(find.text('Студент'), findsOneWidget);
+    expect(find.text('Пропуск'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
     expect(find.byType(CircleAvatar), findsNothing);
+    expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
     expect(find.text('Режим старосты'), findsNothing);
     expect(find.text('Итоговые отметки'), findsNothing);
 
