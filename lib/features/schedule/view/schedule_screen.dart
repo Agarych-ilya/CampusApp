@@ -7,6 +7,7 @@ import '/core/theme/app_theme.dart';
 import '../data/data.dart';
 import '../data/lesson_group_access.dart';
 import '../data/semester_week.dart';
+import '../data/attendance_api.dart';
 import '../widgets/lesson_note_preview.dart';
 import '/features/profile/data/student_profile_storage.dart';
 import 'lesson_details_sheet.dart';
@@ -17,12 +18,14 @@ class ScheduleScreen extends StatefulWidget {
     this.scheduleApi,
     this.groupStorage,
     this.bookingApi,
+    this.attendanceApi,
   });
 
   // Optional dependencies allow end-to-end widget tests without an MPEI server.
   final ScheduleApi? scheduleApi;
   final GroupStorage? groupStorage;
   final ClassroomBookingApi? bookingApi;
+  final AttendanceApi? attendanceApi;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -33,6 +36,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   late final ScheduleApi _scheduleApi;
   late final GroupStorage _groupStorage;
   final Map<int, Future<List<ScheduleLesson>>> _weekFutures = {};
+  final Map<int, Future<Set<String>>> _absenceFutures = {};
+  late final AttendanceApi _attendanceApi;
 
   String? _groupName;
   String? _profileGroup;
@@ -51,6 +56,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     super.initState();
     _scheduleApi = widget.scheduleApi ?? ScheduleApi();
     _groupStorage = widget.groupStorage ?? GroupStorage();
+    _attendanceApi = widget.attendanceApi ?? AttendanceApi();
     _selectedDate = DateTime.now();
     _anchorWeek = _getWeekStart(_selectedDate);
     _weekController = PageController(initialPage: _initialWeekPage);
@@ -76,6 +82,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void dispose() {
     _weekController.dispose();
+    if (widget.attendanceApi == null) _attendanceApi.dispose();
     super.dispose();
   }
 
@@ -96,6 +103,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         _initializationError = null;
         _isInitializing = false;
         _weekFutures.clear();
+        _absenceFutures.clear();
       });
     } catch (error) {
       if (!mounted) return;
@@ -134,6 +142,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final monday = _startForPage(page);
     return DateTime(monday.year, monday.month,
         monday.day + _selectedDate.weekday - 1);
+  }
+
+  Future<Set<String>> _absencesForPage(int page) {
+    return _absenceFutures.putIfAbsent(page, () async {
+      try {
+        final first = _startForPage(page);
+        final last = DateTime(first.year, first.month, first.day + 6);
+        return await _attendanceApi.myAbsentLessonKeys(first, last);
+      } catch (_) {
+        // Attendance is optional; missing/expired BARS session must never
+        // block the cached timetable or display somebody else's N.
+        return <String>{};
+      }
+    });
   }
 
   Future<List<ScheduleLesson>> _lessonsForPage(int page) {
@@ -182,6 +204,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (group == null || group.isEmpty) return;
     final page = _currentWeekPage;
     setState(() {
+      _absenceFutures.remove(page);
       _weekFutures[page] = _scheduleApi.getWeekSchedule(
         group: group,
         selectedDate: _startForPage(page),
@@ -224,6 +247,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       setState(() {
         _groupName = selectedGroup;
         _weekFutures.clear();
+        _absenceFutures.clear();
         // Use the verified result instead of showing a stale old future.
         _weekFutures[page] = Future.value(lessons);
         _changingGroup = false;
@@ -308,13 +332,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           lesson: lesson,
           scrollController: controller,
           onNotesChanged: () {
-            if (mounted) setState(() => _notesRevision++);
+            if (mounted) setState(() {
+              _notesRevision++;
+              _absenceFutures.clear();
+            });
           },
         ),
       ),
     );
     // Changes made in the modal are visible on the underlying cards.
-    if (mounted) setState(() => _notesRevision++);
+    if (mounted) setState(() {
+      _notesRevision++;
+      _absenceFutures.clear();
+    });
   }
 
   Future<void> _openClassroomBooking(ScheduleLesson lesson) async {
@@ -479,7 +509,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                       ),
                                     ),
                                   for (final lesson in todayLessons)
-                                    LessonCard(
+                                    FutureBuilder<Set<String>>(
+                                      future: isOwnGroup
+                                          ? _absencesForPage(page) : null,
+                                      builder: (context, absenceSnapshot) =>
+                                          LessonCard(
                                       onTap: isOwnGroup
                                           ? () => _openLessonDetails(lesson)
                                           : null,
@@ -501,6 +535,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                       type: lesson.type,
                                       room: lesson.room,
                                       teacher: lesson.teacher,
+                                      attendanceAbsent: isOwnGroup &&
+                                          (absenceSnapshot.data?.contains(
+                                            attendanceKeyForSchedule(lesson),
+                                          ) ?? false),
+                                    ),
                                     ),
                                 ],
                               ),
