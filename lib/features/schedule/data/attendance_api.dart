@@ -305,6 +305,24 @@ class AttendanceApi {
     return (raw['count'] as num).toInt();
   }
 
+  /// Correct a single saved mark; backend checks the verified starosta,
+  /// group and expected previous status before persisting an audit entry.
+  Future<void> correctClosedAttendance(
+    int lessonId, String ownerKey, {
+    required String expectedStatus,
+    required String status,
+  }) async {
+    if (!{'present', 'absent'}.contains(expectedStatus) ||
+        !{'present', 'absent'}.contains(status)) {
+      throw const FormatException('Неверный статус исправления');
+    }
+    await _request('PATCH', '/lessons/$lessonId/attendance', body: {
+      'ownerKey': ownerKey,
+      'expectedStatus': expectedStatus,
+      'status': status,
+    });
+  }
+
   /// Marks the explicitly selected absentees, and confirms the rest present.
   /// Saves ONLY into CampusApp; official BARS remains untouched.
   Future<void> saveAbsences(
