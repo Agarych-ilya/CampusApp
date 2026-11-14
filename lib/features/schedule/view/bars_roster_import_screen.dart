@@ -235,6 +235,8 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         x.includes('ф.и.о'));
       const statusCol = columns.findIndex(x =>
         x.includes('статус обучения'));
+      const emailCol = columns.findIndex(x => x === 'почта' ||
+        x.includes('электронная почта'));
       if (fio < 0 || statusCol < 0) {
         return JSON.stringify({action: 'wait'});
       }
@@ -267,10 +269,15 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
             if (id) break;
           } catch (_) {}
         }
+        const emailText = emailCol >= 0 && cells.length > emailCol
+          ? clean(cells[emailCol].innerText) : '';
+        const matchedEmail = emailText.match(
+          /[A-Za-z][A-Za-z0-9_.-]{2,63}@mpei\.ru/i);
         students.push({
           fullName,
           ...(id && /^[A-Za-z0-9_-]{1,120}$/.test(id)
             ? {sourceId: id} : {}),
+          ...(matchedEmail ? {email: matchedEmail[0].toLowerCase()} : {}),
         });
       }
       if (!students.length) return JSON.stringify({action: 'wait'});
@@ -335,6 +342,7 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
       students.add(BarsRosterStudent(
         fullName: (row['fullName'] as String).trim(),
         sourceId: row['sourceId']?.toString(),
+        email: row['email']?.toString(),
       ));
     }
     if (mounted) setState(() {
