@@ -27,7 +27,6 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
   String? _error;
   bool _busy = false;
   bool _loading = true;
-  String _page = '';
 
   @override
   void initState() {
@@ -37,11 +36,11 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (url) {
           if (!mounted) return;
-          setState(() { _loading = true; _page = url; _error = null; });
+          setState(() { _loading = true; _error = null; });
         },
         onPageFinished: (url) {
           if (!mounted) return;
-          setState(() { _loading = false; _page = url; });
+          setState(() { _loading = false; });
         },
         onWebResourceError: (error) {
           if (!mounted || error.isForMainFrame != true) return;
@@ -145,6 +144,21 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
               });
             }
           }
+          // BARS tables are paginated by default. Never treat 10 visible
+          // rows as the full group if its pager reports a larger total.
+          const surrounding = Array.from(document.querySelectorAll(
+            '[id$="__Pager"],[id$="_Pager"],.pager-size'));
+          const rosterPager = surrounding.find(node =>
+            /student/i.test(node.id || node.parentElement?.id || ''));
+          const pagerText = clean(rosterPager?.innerText || '');
+          const totalMatch = pagerText.match(/(?:из|всего)\s+(\d+)/i);
+          const total = totalMatch ? Number(totalMatch[1]) : null;
+          if (total && total > students.length) {
+            return JSON.stringify({error:
+              'В таблице показана только часть группы (' +
+              students.length + ' из ' + total +
+              '). Выбери «Отображать 100/500» и считай список снова.'});
+          }
           return JSON.stringify({
             group: expected, students: students,
             error: students.length ? null :
@@ -220,7 +234,8 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
               Text(widget.group, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 5),
               const Text('Открой: Учебные группы → своя группа → Студенты. '
-                  'Затем нажми «Считать список». ФИО вручную вводить не нужно.'),
+                  'Если список разбит на страницы, выбери '
+                  '«Отображать 100/500». Затем нажми «Считать список».'),
               if (_loading) const LinearProgressIndicator(),
               if (_error != null) ...[
                 const SizedBox(height: 8),
