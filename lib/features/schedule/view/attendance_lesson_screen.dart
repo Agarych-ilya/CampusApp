@@ -181,52 +181,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     }
   }
 
-  Future<void> _register() async {
-    final controller = TextEditingController(
-      text: _identity?.displayName ?? '',
-    );
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Добавить себя в группу'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Имя будет видно старосте для сверки списка. '
-                'Учебная группа проверяется через БАРС.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLength: 100,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Фамилия и имя',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (!mounted || name == null) return;
-    await _run(
-      () => _api.register(name),
-      'Ты добавлен в список своей группы',
-    );
-  }
-
   Future<void> _importFromBars() async {
     if (_identity?.isStarosta != true || _saving) return;
     final imported = await Navigator.of(context).push<bool>(
