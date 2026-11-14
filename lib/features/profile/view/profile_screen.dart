@@ -44,13 +44,13 @@ String? _gradeNumber(String raw) {
 
 Color _subjectSurface(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF202535)
-        : const Color(0xFFF0F3FB);
+        ? const Color(0xFF1A181F)
+        : const Color(0xFFF7F5FA);
 
 Color _subjectInnerSurface(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF2A3144)
-        : const Color(0xFFE4EAF6);
+        ? const Color(0xFF27232F)
+        : const Color(0xFFE9E5F2);
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -344,14 +344,14 @@ class _ProfilePagerTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final background = dark
-        ? const Color(0xFF222630)
+        ? const Color(0xFF1C1A22)
         : const Color(0xFFE9EDF3);
     final active = dark
-        ? const Color(0xFF343D50)
+        ? const Color(0xFF302B39)
         : const Color(0xFFFFFFFF);
     final activeText = dark
-        ? const Color(0xFFB9D7FF)
-        : const Color(0xFF225D9D);
+        ? const Color(0xFFC6B3FF)
+        : const Color(0xFF7D61C6);
 
     Widget tab(int index, IconData icon, String title) {
       final selected = selectedPage == index;
@@ -431,7 +431,7 @@ class _ProfileHeader extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final surface = dark
         ? const Color(0xFF282332)
-        : const Color(0xFFE8F1FF);
+        : const Color(0xFFF0EBFC);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -806,11 +806,11 @@ class _GradeDot extends StatelessWidget {
       case '5':
         color = const Color(0xFF2AA77D);
       case '4':
-        color = const Color(0xFF327BD6);
+        color = const Color(0xFF9F88EC);
       case '3':
         color = const Color(0xFFE3A030);
       case '2':
-        color = const Color(0xFF86BCE5);
+        color = const Color(0xFFA58CFA);
       default:
         color = Theme.of(context).colorScheme.primary;
     }
