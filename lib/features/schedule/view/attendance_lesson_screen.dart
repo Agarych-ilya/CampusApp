@@ -426,7 +426,7 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                         const SizedBox(height: 10),
                         if (detail.lesson.state == 'open' &&
                             account.registered &&
-                            ['unmarked', 'rejected', 'pending']
+                            ['unmarked', 'pending']
                               .contains(detail.myStatus ?? 'unmarked'))
                           FilledButton.icon(
                             onPressed: _saving ? null : _checkIn,
