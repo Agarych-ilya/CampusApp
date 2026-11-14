@@ -76,7 +76,7 @@ class _AttendanceFake extends AttendanceApi {
   Future<List<AttendanceLesson>> lessons(DateTime date) async {
     expect(date.year, 2026);
     if (!opened) return [];
-    return const [
+    return [
       AttendanceLesson(id: 7, date: '2026-11-14',
         time: '10:00–11:30', subject: 'Теория управления',
         state: closed > 0 ? 'closed' : 'open'),
@@ -94,7 +94,7 @@ class _AttendanceFake extends AttendanceApi {
   Future<AttendanceDetail> detail(int id) async {
     expect(id, 7);
     return AttendanceDetail(
-      lesson: const AttendanceLesson(
+      lesson: AttendanceLesson(
         id: 7, date: '2026-11-14', time: '10:00–11:30',
         subject: 'Теория управления',
         state: closed > 0 ? 'closed' : 'open',
