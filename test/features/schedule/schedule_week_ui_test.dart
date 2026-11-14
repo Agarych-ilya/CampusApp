@@ -265,6 +265,21 @@ void main() {
     expect(label.style?.color, const Color(0xFF807B89));
   });
 
+  testWidgets('break label uses actual gap between two lessons',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ScheduleScreen(
+        scheduleApi: _GapScheduleApi(),
+        groupStorage: GroupStorage(),
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('перерыв 30 мин'), findsOneWidget);
+    expect(find.text('Первое занятие'), findsOneWidget);
+    expect(find.text('Второе занятие'), findsOneWidget);
+  });
+
   testWidgets('reference schedule switches day week and month modes',
       (tester) async {
     SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
@@ -589,4 +604,35 @@ class _FakeBookingApi extends ClassroomBookingApi {
     slots: classroomDemoSlots,
     testMode: true,
   );
+}
+
+class _GapScheduleApi extends _FakeScheduleApi {
+  @override
+  Future<List<ScheduleLesson>> getWeekSchedule({
+    required String group,
+    required DateTime selectedDate,
+    bool forceRefresh = false,
+  }) async {
+    final today = DateTime.now();
+    final day = today.day.toString().padLeft(2, '0');
+    final month = today.month.toString().padLeft(2, '0');
+    return [
+      ScheduleLesson(
+        date: '$day.$month.${today.year}',
+        time: '09:00 - 10:30',
+        subject: 'Первое занятие',
+        type: 'Практика',
+        room: 'С-101',
+        teacher: '',
+      ),
+      ScheduleLesson(
+        date: '$day.$month.${today.year}',
+        time: '11:00 - 12:30',
+        subject: 'Второе занятие',
+        type: 'Практика',
+        room: 'С-102',
+        teacher: '',
+      ),
+    ];
+  }
 }
