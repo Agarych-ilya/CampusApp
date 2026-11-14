@@ -298,84 +298,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     );
   }
 
-  Future<void> _decide(AttendanceStudent student, String status) async {
-    final id = _lessonId;
-    if (id == null) return;
-    await _run(
-      () => _api.decide(id, student, status),
-      'Отметка обновлена',
-    );
-  }
-
-  Future<void> _confirmPending() async {
-    final id = _lessonId;
-    final pending = _detail?.students.where((student) =>
-        student.status == 'pending').toList() ?? [];
-    if (id == null || pending.isEmpty) return;
-    final allowed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Подтвердить заявки?'),
-        content: Text(
-          'Подтвердить присутствие ${pending.length} студентов? '
-          'Проверь, что они действительно были на паре.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Подтвердить'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || allowed != true) return;
-    await _run(() async {
-      for (final student in pending) {
-        await _api.decide(id, student, 'present');
-      }
-    }, 'Заявки подтверждены');
-  }
-
-  Future<void> _close() async {
-    final detail = _detail;
-    if (detail == null || !detail.readyToClose) {
-      _message('Сначала проверь всех студентов группы', error: true);
-      return;
-    }
-    final allowed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Закрыть журнал?'),
-        content: Text(
-          'Проверь все отметки. Присутствовало: '
-          '${detail.count('present')}, пропусков: '
-          '${detail.count('absent')}, уважительных: '
-          '${detail.count('excused')}. '
-          'Запись в официальный БАРС пока не выполняется.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || allowed != true) return;
-    await _run(
-      () => _api.close(detail.lesson.id, detail.students),
-      'Журнал закрыт. Доступен список для сверки с БАРС.',
-    );
-  }
-
   Future<void> _preview() async {
     if (_lessonId == null) return;
     try {
@@ -406,52 +328,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     } catch (error) {
       _message(error.toString().replaceFirst('Exception: ', ''), error: true);
     }
-  }
-
-  Widget _studentTile(AttendanceStudent student) {
-    final theme = Theme.of(context);
-    final open = _detail?.lesson.state == 'open';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(student.displayName,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                )),
-            const SizedBox(height: 5),
-            Text(_label(student.status),
-                style: TextStyle(color: _color(context, student.status))),
-            if (open) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 4,
-                runSpacing: 2,
-                children: [
-                  TextButton.icon(
-                    onPressed: _saving ? null : () => _decide(student, 'present'),
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('Был'),
-                  ),
-                  TextButton.icon(
-                    onPressed: _saving ? null : () => _decide(student, 'absent'),
-                    icon: const Icon(Icons.cancel_outlined, size: 18),
-                    label: const Text('Пропуск'),
-                  ),
-                  TextButton.icon(
-                    onPressed: _saving ? null : () => _decide(student, 'excused'),
-                    icon: const Icon(Icons.info_outline, size: 18),
-                    label: const Text('Уваж.'),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 
   @override
