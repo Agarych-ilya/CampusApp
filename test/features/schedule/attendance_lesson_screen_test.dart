@@ -59,7 +59,7 @@ class _AttendanceFake extends AttendanceApi {
       myStatus: starosta ? 'unmarked' : (pending ? 'pending' : 'unmarked'),
       students: starosta ? [
         AttendanceStudent(
-          ownerKey: 'a' * 64, displayName: 'Студент',
+          ownerKey: List.filled(64, 'a').join(), displayName: 'Студент',
           status: decided > 0 ? 'present' : 'pending',
         ),
       ] : [],
@@ -75,7 +75,7 @@ class _AttendanceFake extends AttendanceApi {
   @override
   Future<void> decide(int id, AttendanceStudent person, String status) async {
     expect(status, 'present');
-    expect(person.ownerKey, 'a' * 64);
+    expect(person.ownerKey, List.filled(64, 'a').join());
     decided++;
   }
 }
