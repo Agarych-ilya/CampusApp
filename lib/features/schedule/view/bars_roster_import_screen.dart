@@ -201,145 +201,160 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
     }
   }
 
+  /// Extract the real student table only; never use the general-page table
+  /// of staff responsible for university journals.
+  String _rosterScript() => r'''
+    (function () {
+      const expected = __GROUP__;
+      const clean = s => String(s || '').replace(/\u00a0/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+      const norm = s => clean(s).toUpperCase()
+        .replace(/[AА](?=-\d)/g, 'А').replace(/[–—−]/g, '-');
+      if (!norm(document.body?.innerText).includes(norm(expected))) {
+        return JSON.stringify({error: 'Открыта не та учебная группа'});
+      }
+      const tables = Array.from(document.querySelectorAll('table'))
+        .filter(table => {
+          if (table.getClientRects().length === 0) return false;
+          const cols = Array.from(table.querySelectorAll('th'))
+            .map(x => clean(x.innerText).toLowerCase());
+          return cols.some(x => x === 'фио' || x.includes('ф.и.о')) &&
+            cols.some(x => x.includes('статус обучения'));
+        });
+      if (tables.length !== 1) return JSON.stringify({action: 'wait'});
+      const table = tables[0];
+      const columns = Array.from(table.querySelectorAll('thead th'))
+        .map(x => clean(x.innerText).toLowerCase());
+      const fio = columns.findIndex(x => x === 'фио' ||
+        x.includes('ф.и.о'));
+      const statusCol = columns.findIndex(x =>
+        x.includes('статус обучения'));
+      if (fio < 0 || statusCol < 0) {
+        return JSON.stringify({action: 'wait'});
+      }
+      const students = [], seen = new Set();
+      for (const tr of table.querySelectorAll('tbody tr')) {
+        if (tr.getClientRects().length === 0) continue;
+        const cells = Array.from(tr.querySelectorAll(':scope > td'));
+        if (cells.length <= Math.max(fio, statusCol)) continue;
+        const fullName = clean(cells[fio].innerText);
+        const status = clean(cells[statusCol].innerText).toLowerCase();
+        if (!status.includes('обучается') &&
+            !status.includes('допущен к обучению')) continue;
+        if (fullName.length > 120 ||
+            !/^[\p{L} .'-]+$/u.test(fullName) ||
+            fullName.split(' ').filter(Boolean).length < 2) {
+          return JSON.stringify({error: 'Неверное ФИО в списке БАРС'});
+        }
+        if (seen.has(fullName.toLowerCase())) {
+          return JSON.stringify({error:
+            'Одинаковые ФИО: требуется уникальный идентификатор'});
+        }
+        seen.add(fullName.toLowerCase());
+        let id = null;
+        for (const a of cells[fio].querySelectorAll('a[href]')) {
+          try {
+            const url = new URL(a.getAttribute('href'), location.href);
+            if (url.origin !== 'https://bars.mpei.ru') continue;
+            id = ['studentID', 'studentId', 'stID', 'studID']
+              .map(key => url.searchParams.get(key)).find(Boolean) || null;
+            if (id) break;
+          } catch (_) {}
+        }
+        students.push({
+          fullName,
+          ...(id && /^[A-Za-z0-9_-]{1,120}$/.test(id)
+            ? {sourceId: id} : {}),
+        });
+      }
+      if (!students.length) return JSON.stringify({action: 'wait'});
+
+      const panel = table.closest('.panel, .card, .box, .dataTables_wrapper') ||
+        table.parentElement?.parentElement?.parentElement || document.body;
+      const pagerText = clean(panel.innerText);
+      const countMatch = pagerText.match(
+        /Отображены\s*\d+\s*[-–]\s*\d+\s*запис[ьи]?\s*из\s*(\d+)/i) ||
+        pagerText.match(/из\s+(\d+)\s+запис[ьи]/i);
+      const total = countMatch ? Number(countMatch[1]) : null;
+      const selects = Array.from(document.querySelectorAll('select'))
+        .filter(sel => {
+          const opt = Array.from(sel.options);
+          return opt.some(o => o.value === '10' || clean(o.text) === '10') &&
+            opt.some(o => Number(o.value) >= 50 ||
+              Number(clean(o.text)) >= 50);
+        });
+      const select = selects.length === 1 ? selects[0] : null;
+      if (select && (total === null || students.length < total)) {
+        const options = Array.from(select.options)
+          .filter(o => Number(o.value) >= 50 || Number(clean(o.text)) >= 50)
+          .sort((a, b) => Number(b.value || clean(b.text)) -
+            Number(a.value || clean(a.text)));
+        if (options.length && select.value !== options[0].value) {
+          select.value = options[0].value;
+          select.dispatchEvent(new Event('change', {bubbles: true}));
+          return JSON.stringify({action: 'expand'});
+        }
+      }
+      // Never import a known partial page, even if pagination is still
+      // loading asynchronously.
+      if (total !== null && students.length < total) {
+        return JSON.stringify({action: 'wait'});
+      }
+      if (total === null && students.length === 10 && selects.length) {
+        return JSON.stringify({error:
+          'Не удалось проверить полноту списка. Выбери все записи.'});
+      }
+      return JSON.stringify({action: 'ready', students, total});
+    })()
+  '''.replaceFirst('__GROUP__', jsonEncode(widget.group));
+
+  Future<bool> _extractRoster() async {
+    final result = await _runJson(_rosterScript());
+    if (result['action'] == 'wait' || result['action'] == 'expand') return false;
+    if (result['error'] is String) {
+      throw FormatException(result['error'] as String);
+    }
+    if (result['action'] != 'ready') return false;
+    final rows = result['students'];
+    if (rows is! List || rows.length < 3 || rows.length > 120) {
+      throw const FormatException(
+        'Проверь полноту списка группы (от 3 до 120 студентов)',
+      );
+    }
+    final students = <BarsRosterStudent>[];
+    for (final row in rows) {
+      if (row is! Map || row['fullName'] is! String) {
+        throw const FormatException('Некорректная строка студентов');
+      }
+      students.add(BarsRosterStudent(
+        fullName: (row['fullName'] as String).trim(),
+        sourceId: row['sourceId']?.toString(),
+      ));
+    }
+    if (mounted) setState(() {
+      _preview = students;
+      _error = null;
+      _progress = 'Список загружен. Проверь ФИО.';
+    });
+    return true;
+  }
+
   Future<void> _readVisibleRoster() async {
-    if (_busy || _loading) return;
-    final uri = Uri.tryParse(await _web.currentUrl() ?? '');
-    if (uri == null || uri.scheme != 'https' ||
-        uri.host != 'bars.mpei.ru' ||
-        !uri.path.startsWith('/bars_web/')) {
-      setState(() => _error =
-          'Открой вкладку «Студенты» на официальном сайте БАРС');
+    if (_busy || _loading || _autoRunning) return;
+    if (!await _onBars()) {
+      if (mounted) setState(() => _error = 'Открой страницу БАРС');
       return;
     }
     setState(() { _busy = true; _error = null; });
     try {
-      final script = r'''
-        (function () {
-          const expected = __GROUP__;
-          const clean = s => String(s || '').replace(/\u00a0/g, ' ')
-            .replace(/\s+/g, ' ').trim();
-          const text = clean(document.body.innerText);
-          const groupKey = s => clean(s).toUpperCase()
-            .replace(/A(?=-[0-9])/g, 'А').replace(/[–—−]/g, '-');
-          if (!groupKey(text).includes(groupKey(expected))) {
-            return JSON.stringify({error: 'На странице не найдена группа ' + expected});
-          }
-          const students = [];
-          const seen = new Set();
-          for (const table of document.querySelectorAll('table')) {
-            // General group page also lists staff responsible for journals
-            // with Фамилия / Имя columns. Never import that staff table.
-            // Student rows must come from a VISIBLE student-specific grid.
-            const marker = String(table.id || '') + ' ' +
-              String(table.getAttribute('data-q-href') || '');
-            if (!/student|studlist/i.test(marker) ||
-                /responsib|journal|teacher/i.test(marker) ||
-                table.getClientRects().length === 0) continue;
-            const headerRows = Array.from(table.querySelectorAll('thead tr'));
-            const header = headerRows.map(row =>
-              Array.from(row.querySelectorAll('th')).map(th =>
-                clean(th.innerText).toLowerCase())).find(cols =>
-                cols.some(s => s.includes('фамилия')) &&
-                cols.some(s => s === 'имя' || s.startsWith('имя ')) ||
-                cols.some(s => s === 'фио' || s.includes('ф.и.о') ||
-                  s.includes('фамилия имя отчество') || s === 'студент'));
-            if (!header) continue;
-            const family = header.findIndex(s => s.includes('фамилия'));
-            const name = header.findIndex(s => s === 'имя' || s.startsWith('имя '));
-            const father = header.findIndex(s => s.includes('отчество'));
-            const fio = header.findIndex(s => s === 'фио' ||
-              s.includes('ф.и.о') || s.includes('фамилия имя отчество') ||
-              s === 'студент');
-            for (const tr of table.querySelectorAll('tbody tr')) {
-              const cells = Array.from(tr.querySelectorAll(':scope > td'));
-              if (!cells.length) continue;
-              const value = index => index >= 0 && index < cells.length
-                ? clean(cells[index].innerText) : '';
-              const fullName = fio >= 0 ? value(fio) :
-                clean([value(family), value(name), value(father)].join(' '));
-              if (!/^[\p{L} .'-]+$/u.test(fullName) ||
-                  fullName.split(' ').filter(Boolean).length < 2 ||
-                  fullName.length > 120) continue;
-              const normalized = fullName.toLocaleLowerCase('ru-RU');
-              if (seen.has(normalized)) {
-                return JSON.stringify({error:
-                  'Найдены одинаковые ФИО. Нужен уникальный ID каждого студента'});
-              }
-              seen.add(normalized);
-              let id = null;
-              const anchors = Array.from(tr.querySelectorAll('a[href]'));
-              for (const a of anchors) {
-                try {
-                  const link = new URL(a.href, location.href);
-                  if (link.host !== location.host) continue;
-                  id = ['studentID','stID','studID','studentId'].map(key =>
-                    link.searchParams.get(key)).find(Boolean) || null;
-                  if (id) break;
-                } catch (_) {}
-              }
-              students.push({
-                fullName: fullName,
-                ...(id && /^[a-zA-Z0-9_-]{1,120}$/.test(id)
-                  ? {sourceId: id} : {}),
-              });
-            }
-          }
-          // BARS tables are paginated by default. Never treat 10 visible
-          // rows as the full group if its pager reports a larger total.
-          const surrounding = Array.from(document.querySelectorAll(
-            '[id$="__Pager"],[id$="_Pager"],.pager-size'));
-          const rosterPager = surrounding.find(node =>
-            /student/i.test(node.id || node.parentElement?.id || ''));
-          const pagerText = clean(rosterPager?.innerText || '');
-          const totalMatch = pagerText.match(/(?:из|всего)\s+(\d+)/i);
-          const total = totalMatch ? Number(totalMatch[1]) : null;
-          if (total && total > students.length) {
-            return JSON.stringify({error:
-              'В таблице показана только часть группы (' +
-              students.length + ' из ' + total +
-              '). Выбери «Отображать 100/500» и считай список снова.'});
-          }
-          return JSON.stringify({
-            group: expected, students: students,
-            error: students.length ? null :
-              'Не найдена таблица именно вкладки «Студенты». ' +
-              'Открой её в своей группе и дождись полной загрузки. ' +
-              'Таблица ответственных за журнал не подходит.',
-          });
-        })()
-      '''.replaceFirst('__GROUP__', jsonEncode(widget.group));
-
-      final raw = await _web.runJavaScriptReturningResult(script);
-      final extracted = unpackJavascriptResult(raw);
-      if (extracted is! Map) {
-        throw const FormatException('Не удалось прочитать таблицу БАРС');
+      if (!await _extractRoster() && mounted) {
+        setState(() => _error =
+            'Таблица ещё загружается. Повтори через несколько секунд.');
       }
-      final error = extracted['error']?.toString();
-      if (error != null && error.isNotEmpty && error != 'null') {
-        throw FormatException(error);
-      }
-      final rawStudents = extracted['students'];
-      if (rawStudents is! List || rawStudents.length < 3 ||
-          rawStudents.length > 120) {
-        throw const FormatException(
-          'Проверь, что загружена вся группа: найдено меньше 3 или больше 120 строк',
-        );
-      }
-      final students = <BarsRosterStudent>[];
-      for (final row in rawStudents) {
-        if (row is! Map || row['fullName'] is! String) {
-          throw const FormatException('Неверный формат списка студентов');
-        }
-        students.add(BarsRosterStudent(
-          fullName: (row['fullName'] as String).trim(),
-          sourceId: row['sourceId']?.toString(),
-        ));
-      }
-      if (mounted) setState(() => _preview = students);
     } catch (error) {
-      if (mounted) setState(() => _error =
-          error.toString().replaceFirst('FormatException: ', '')
-              .replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = error.toString()
+          .replaceFirst('FormatException: ', '')
+          .replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
