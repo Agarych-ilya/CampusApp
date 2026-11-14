@@ -587,48 +587,51 @@ class _CloudScreenState extends State<CloudScreen> {
     }
   }
 
-  /// Creates a collision-safe filename without changing the extension.
-  /// Used when two copies have the same name but different contents.
-  String _uniquePublishedName(String original, Set<String> occupied) {
-    if (!occupied.contains(original)) return original;
+  /// Resolve a deterministic, collision-safe name for a different file
+  /// that shares the same original filename. Preserve its file extension.
+  String _conflictFilename(String original, int index) {
     final dot = original.lastIndexOf('.');
     final hasExtension = dot > 0;
     final base = hasExtension ? original.substring(0, dot) : original;
     final extension = hasExtension ? original.substring(dot) : '';
+    final suffix = index == 1
+        ? ' (с устройства)'
+        : ' (с устройства $index)';
+    const maxNameLength = 160;
+    final maxBase = maxNameLength - suffix.length - extension.length;
+    if (maxBase <= 0) {
+      throw Exception('Слишком длинное расширение файла «$original»');
+    }
+    final prefix = base.length > maxBase
+        ? base.substring(0, maxBase) : base;
+    return '$prefix$suffix$extension';
+  }
+
+  String _uniquePublishedName(String original, Set<String> occupied) {
+    if (!occupied.contains(original)) return original;
     for (var i = 1; i <= 999; i++) {
-      final suffix = i == 1 ? ' (с устройства)' : ' (с устройства $i)';
-      const maxNameLength = 160;
-      final maxBase = maxNameLength - suffix.length - extension.length;
-      if (maxBase <= 0) {
-        throw Exception('Слишком длинное расширение файла «$original»');
-      }
-      final prefix = base.length > maxBase
-          ? base.substring(0, maxBase) : base;
-      final alternative = '$prefix$suffix$extension';
-      if (!occupied.contains(alternative)) return alternative;
+      final candidate = _conflictFilename(original, i);
+      if (!occupied.contains(candidate)) return candidate;
     }
     throw Exception('Не удалось подобрать уникальное имя для «$original»');
   }
 
-  /// An interrupted upload can already have produced a renamed conflict
-  /// copy. Recognize it on retry, and reuse it ONLY after byte verification.
+  /// Retry a previous interrupted upload without creating another copy,
+  /// including when a long base name had to be shortened.
   bool _matchesPublishedName(String original, String candidate) {
     if (candidate == original) return true;
     final dot = original.lastIndexOf('.');
-    final hasExtension = dot > 0;
-    final base = hasExtension ? original.substring(0, dot) : original;
-    final extension = hasExtension ? original.substring(dot) : '';
+    final extension = dot > 0 ? original.substring(dot) : '';
     if (!candidate.endsWith(extension)) return false;
-    final noExt = extension.isEmpty
+    final suffix = RegExp(r' \(с устройства(?: ([1-9][0-9]*))?\)$');
+    final nameWithoutExtension = extension.isEmpty
         ? candidate
         : candidate.substring(0, candidate.length - extension.length);
-    if (noExt == '$base (с устройства)') return true;
-    if (!noExt.startsWith('$base (с устройства ') ||
-        !noExt.endsWith(')')) return false;
-    final number = noExt.substring(
-      '$base (с устройства '.length, noExt.length - 1,
-    );
-    return int.tryParse(number) != null;
+    final match = suffix.firstMatch(nameWithoutExtension);
+    if (match == null) return false;
+    final n = match.group(1) == null ? 1 : int.tryParse(match.group(1)!);
+    if (n == null || n < 1 || n > 999) return false;
+    return _conflictFilename(original, n) == candidate;
   }
 
   /// Change the storage location instead of making a second visible folder.
