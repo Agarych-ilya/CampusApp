@@ -73,7 +73,7 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
       final identity = await _attendanceApi.session();
       String normalized(String? group) => (group ?? '')
           .trim().toUpperCase().replaceAll('A', 'А')
-          .replaceAll(RegExp(r'\\s+'), '');
+          .replaceAll(RegExp(r'\s+'), '');
       return identity.authenticated &&
           identity.isStarosta &&
           normalized(identity.group).isNotEmpty &&
