@@ -237,6 +237,48 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     );
   }
 
+  /// Saved lessons can be corrected without reopening the whole journal.
+  /// The backend verifies the group, old status and logs each correction.
+  Future<void> _correctSavedMark(AttendanceStudent student) async {
+    final lesson = _detail?.lesson;
+    if (_saving || lesson == null || lesson.state != 'closed' ||
+        _identity?.isStarosta != true) return;
+    if (student.status != 'present' && student.status != 'absent') return;
+    final remove = student.status == 'absent';
+    final next = remove ? 'present' : 'absent';
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(remove ? 'Снять пропуск?' : 'Поставить пропуск?'),
+        content: Text(
+          student.displayName + '\n\n' +
+          (remove
+            ? 'Отметка «Н» будет снята, студент станет присутствующим.'
+            : 'Студент будет отмечен как отсутствующий.') +
+          '\nИзменение сохранится в CampusApp и в истории журнала.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Исправить'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || accepted != true) return;
+    await _run(
+      () => _api.correctClosedAttendance(
+        lesson.id, student.ownerKey,
+        expectedStatus: student.status, status: next,
+      ),
+      remove ? 'Пропуск снят' : 'Пропуск сохранён',
+    );
+  }
+
   // The journal uses the original roster position for row numbers. Filtering
   // must not silently renumber students, as this is a group roll call.
   static const double _numberColumnWidth = 34;
@@ -253,30 +295,35 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
   }
 
   Widget _attendanceTableHeader(ThemeData theme) {
-    final caption = theme.textTheme.labelMedium?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-      fontWeight: FontWeight.w600,
-    );
-    return Container(
+    return Padding(
       key: const ValueKey('attendance-table-header'),
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(
-          color: theme.colorScheme.outlineVariant,
-        )),
+      padding: const EdgeInsets.fromLTRB(5, 14, 5, 12),
+      child: Row(
+        children: [
+          Text(
+            'СТУДЕНТЫ',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.7,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '«Н» — ПРОПУСК',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
-      child: Row(children: [
-        SizedBox(width: _numberColumnWidth, child: Text('№', style: caption)),
-        Expanded(child: Text('Студент', style: caption)),
-        SizedBox(width: _absenceColumnWidth,
-          child: Text('Пропуск', textAlign: TextAlign.center, style: caption)),
-      ]),
     );
   }
 
-  /// Compact 48 px ledger row. A dash means "not marked absent" and never
-  /// claims that a present mark was confirmed by BARS.
+  /// A distinct, touch-friendly tile without any horizontal separator lines.
+  /// A saved N can be corrected in-place with an explicit confirmation.
   Widget _absenceTile(
     AttendanceStudent student, {
     required int number,
@@ -286,69 +333,124 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     final absent = closed
         ? student.status == 'absent'
         : _absentKeys.contains(student.ownerKey);
-    final muted = theme.colorScheme.onSurfaceVariant;
-    const absenceColor = Color(0xFFEF566E);
+    final scheme = theme.colorScheme;
+    final primary = scheme.primary;
+    final dark = theme.brightness == Brightness.dark;
 
-    return InkWell(
-      key: ValueKey('attendance-absent-${student.ownerKey}'),
-      onTap: _saving || closed ? null : () => setState(() {
-        if (absent) {
-          _absentKeys.remove(student.ownerKey);
-        } else {
-          _absentKeys.add(student.ownerKey);
-        }
-      }),
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(
-            color: theme.colorScheme.outlineVariant.withOpacity(0.45),
-          )),
-        ),
-        child: Row(children: [
-          SizedBox(
-            width: _numberColumnWidth,
-            child: Text('$number', style: theme.textTheme.bodySmall?.copyWith(
-              color: muted,
-            )),
-          ),
-          Expanded(
-            child: Tooltip(
-              message: student.displayName,
-              child: Text(
-                _compactStudentName(student.displayName),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Tooltip(
+        message: student.displayName,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey('attendance-absent-${student.ownerKey}'),
+            borderRadius: BorderRadius.circular(20),
+            onTap: _saving ? null : () {
+              if (closed) {
+                _correctSavedMark(student);
+              } else {
+                setState(() {
+                  if (absent) {
+                    _absentKeys.remove(student.ownerKey);
+                  } else {
+                    _absentKeys.add(student.ownerKey);
+                  }
+                });
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              constraints: const BoxConstraints(minHeight: 66),
+              padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: absent
+                      ? [
+                          primary.withOpacity(dark ? 0.19 : 0.12),
+                          scheme.surfaceContainerLow,
+                        ]
+                      : [
+                          scheme.surfaceContainerLow,
+                          scheme.surfaceContainer.withOpacity(0.76),
+                        ],
                 ),
+                border: Border.all(
+                  color: absent
+                      ? primary.withOpacity(0.48)
+                      : scheme.outlineVariant.withOpacity(0.23),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(dark ? 0.11 : 0.025),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: _numberColumnWidth,
+                    child: Text(
+                      number.toString().padLeft(2, '0'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _compactStudentName(student.displayName),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 43,
+                    height: 39,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: absent
+                          ? primary.withOpacity(0.19)
+                          : scheme.surfaceContainerHigh.withOpacity(0.52),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: absent
+                            ? primary.withOpacity(0.35)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Text(
+                      absent ? 'Н' : '—',
+                      key: absent
+                          ? const ValueKey('attendance-student-absence')
+                          : null,
+                      style: TextStyle(
+                        color: absent ? primary : scheme.onSurfaceVariant,
+                        fontSize: absent ? 17 : 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          SizedBox(
-            width: _absenceColumnWidth,
-            child: Center(
-              child: absent
-                  ? Text('Н',
-                      key: const ValueKey('attendance-student-absence'),
-                      style: const TextStyle(
-                        color: absenceColor,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    )
-                  : Text(
-                      closed && student.status != 'present'
-                          ? _label(student.status)
-                          : '—',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                    ),
-            ),
-          ),
-        ]),
+        ),
       ),
     );
   }
@@ -527,15 +629,15 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                       ] else ...[
                         const SizedBox(height: 14),
                         Text(
-                          'Студентов: $total · Отсутствуют: $missing'
-                          '${isClosed ? ' · Журнал закрыт' : ''}',
+                          'В группе: $total · Пропусков: $missing'
+                          '${isClosed ? ' · Сохранён' : ''}',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                         if (!isClosed) ...[
                           const SizedBox(height: 5),
-                          Text('Нажми на студента, чтобы отметить пропуск',
+                          Text('Нажми на студента, чтобы поставить или снять «Н»',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             )),
