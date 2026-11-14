@@ -16,6 +16,8 @@ const lesson = ScheduleLesson(
 class _AttendanceFake extends AttendanceApi {
   _AttendanceFake({required this.starosta});
   final bool starosta;
+  bool failFirstSession = false;
+  int sessionCalls = 0;
   bool opened = false;
   bool pending = false;
   int checkedIn = 0;
@@ -23,13 +25,19 @@ class _AttendanceFake extends AttendanceApi {
   int closed = 0;
 
   @override
-  Future<AttendanceIdentity> session() async => AttendanceIdentity(
-    authenticated: true,
-    isStarosta: starosta,
-    registered: true,
-    group: 'А-03-23',
-    displayName: starosta ? 'Староста' : 'Студент',
-  );
+  Future<AttendanceIdentity> session() async {
+    sessionCalls++;
+    if (failFirstSession && sessionCalls == 1) {
+      throw Exception('Не удалось связаться с БАРС для проверки сессии');
+    }
+    return AttendanceIdentity(
+      authenticated: true,
+      isStarosta: starosta,
+      registered: true,
+      group: 'А-03-23',
+      displayName: starosta ? 'Староста' : 'Студент',
+    );
+  }
 
   @override
   Future<List<AttendanceLesson>> lessons(DateTime date) async {
@@ -87,6 +95,29 @@ void main() {
       'displayName': 'Подставной',
       'status': 'present',
     }), throwsFormatException);
+  });
+
+  testWidgets('BARS connectivity error has retry and recovers without login',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: false)
+      ..opened = true
+      ..failFirstSession = true;
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Не удалось связаться с БАРС'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('attendance-retry-session')));
+    await tester.pumpAndSettle();
+    expect(api.sessionCalls, 2);
+    expect(find.text('Я присутствую'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('student check-in remains pending until starosta approval',
