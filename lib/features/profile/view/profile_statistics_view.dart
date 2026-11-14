@@ -344,7 +344,7 @@ class _GradeDistributionCard extends StatelessWidget {
       5: Color(0xFF32B28D),
       4: Color(0xFF5FA8FF),
       3: Color(0xFFE6B460),
-      2: Color(0xFFE1747F),
+      2: Color(0xFF93BDE9),
     };
     final segments = <_RingPiece>[
       for (final grade in [5, 4, 3, 2])

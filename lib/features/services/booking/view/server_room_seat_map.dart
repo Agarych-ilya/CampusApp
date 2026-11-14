@@ -307,7 +307,7 @@ class _RoomElementsPainter extends CustomPainter {
   Color _color(String type) {
     switch (type) {
       case 'upper':
-        return const Color(0xFFE46D78);
+        return const Color(0xFF9FC2FF);
       case 'lower':
         return const Color(0xFF7398F8);
       case 'aisle':

@@ -75,7 +75,7 @@ class _CurvedRowGuides extends CustomPainter {
           _AuditoriumGeometry.seatHeight / 2;
       final paint = Paint()
         ..color = (row <= 4
-                ? const Color(0xFFE46D78)
+                ? const Color(0xFF9FC2FF)
                 : const Color(0xFF7398F8))
             .withOpacity(0.5)
         ..strokeWidth = 2
@@ -122,7 +122,7 @@ class _AmphitheaterSeatMapState extends State<AmphitheaterSeatMap> {
   static const _free = Color(0xFF3F9870);
   static const _taken = Color(0xFF55555D);
   static const _mine = Color(0xFFF0BF78);
-  static const _red = Color(0xFFE46D78);
+  static const _red = Color(0xFF9FC2FF);
   static const _blue = Color(0xFF7398F8);
 
   final TransformationController _transform = TransformationController();

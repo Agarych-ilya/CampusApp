@@ -431,7 +431,7 @@ class _ProfileHeader extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final surface = dark
         ? const Color(0xFF282332)
-        : const Color(0xFFFFEDF5);
+        : const Color(0xFFE8F1FF);
 
     return Container(
       padding: const EdgeInsets.all(16),

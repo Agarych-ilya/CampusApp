@@ -72,7 +72,7 @@ class WeekDaysRow extends StatelessWidget {
                       height: 31,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: selected ? AppTheme.pink : Colors.transparent,
+                        color: selected ? AppTheme.accent : Colors.transparent,
                         shape: BoxShape.circle,
                       ),
                       child: Text(

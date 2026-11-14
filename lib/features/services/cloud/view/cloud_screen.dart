@@ -196,7 +196,7 @@ class _CloudScreenState extends State<CloudScreen> {
       ..showSnackBar(SnackBar(
         content: Text(value),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: error ? Colors.redAccent : null,
+        backgroundColor: error ? const Color(0xFFD8B47B) : null,
       ));
   }
 
@@ -1651,7 +1651,7 @@ class _CloudScreenState extends State<CloudScreen> {
                       const PopupMenuItem(
                         value: 'delete',
                         child: Text('Удалить навсегда',
-                            style: TextStyle(color: Colors.redAccent)),
+                            style: TextStyle(color: const Color(0xFFD8B47B))),
                       ),
                     ],
                   ],
@@ -1801,7 +1801,7 @@ class _CloudScreenState extends State<CloudScreen> {
                                         : _storageAmount(_quota!.usedBytes),
                                     key: const ValueKey('cloud-used'),
                                     style: theme.textTheme.titleMedium?.copyWith(
-                                      color: Colors.redAccent,
+                                      color: const Color(0xFFD8B47B),
                                       fontSize: 17,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -1979,7 +1979,7 @@ class _CloudScreenState extends State<CloudScreen> {
                   padding: const EdgeInsets.all(28),
                   child: Column(children: [
                     const Icon(Icons.cloud_off_outlined,
-                        size: 48, color: Colors.redAccent),
+                        size: 48, color: const Color(0xFFD8B47B)),
                     const SizedBox(height: 12),
                     Text(_error!, textAlign: TextAlign.center),
                     const SizedBox(height: 12),
