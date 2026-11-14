@@ -134,7 +134,7 @@ class LessonCard extends StatelessWidget {
                           border: Border.all(color: theme.colorScheme.primary.withOpacity(0.50)),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Н',
                           style: TextStyle(
                             color: theme.colorScheme.primary,
