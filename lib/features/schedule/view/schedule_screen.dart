@@ -488,7 +488,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             Expanded(
               child: snapshot.connectionState == ConnectionState.waiting
                   ? const Center(
-                      child: CircularProgressIndicator(color: AppTheme.pink),
+                      child: CircularProgressIndicator(color: AppTheme.accent),
                     )
                   : snapshot.hasError
                       ? ScheduleMessage(
@@ -582,7 +582,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final theme = Theme.of(context);
     if (_isInitializing) {
       return const SafeArea(
-        child: Center(child: CircularProgressIndicator(color: AppTheme.pink)),
+        child: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
       );
     }
     if (_initializationError != null) {

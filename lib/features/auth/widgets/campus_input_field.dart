@@ -35,7 +35,7 @@ class CampusInputField extends StatelessWidget {
           fontSize: 14, 
           color: theme.colorScheme.onSurface,
         ),
-        cursorColor: AppTheme.pink,
+        cursorColor: AppTheme.accent,
         decoration: InputDecoration(
           hintText: hintText, 
           suffixIcon: suffixIcon,

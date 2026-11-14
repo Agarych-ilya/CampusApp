@@ -134,10 +134,10 @@ class _MonthCalendarPopupState extends State<MonthCalendarPopup> {
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.pink : Colors.transparent,
+                    color: isSelected ? AppTheme.accent : Colors.transparent,
                     shape: BoxShape.circle,
                     border: isToday && !isSelected
-                        ? Border.all(color: AppTheme.pink.withOpacity(0.5))
+                        ? Border.all(color: AppTheme.accent.withOpacity(0.5))
                         : null,
                   ),
                   child: Center(
