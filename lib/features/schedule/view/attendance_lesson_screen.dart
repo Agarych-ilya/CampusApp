@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '/features/auth/view/login_screen.dart';
 import '../data/attendance_api.dart';
 import '../data/schedule_lesson.dart';
 
@@ -63,6 +64,25 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     'pending' => Theme.of(context).colorScheme.primary,
     _ => Theme.of(context).colorScheme.onSurfaceVariant,
   };
+
+  bool _requiresBarsReconnect(String error) =>
+      error.contains('БАРС отклонил сессию') ||
+      error.contains('перенаправил на вход') ||
+      error.contains('Нет подтверждённой сессии БАРС') ||
+      error.contains('Сессия БАРС не найдена') ||
+      error.contains('БАРС не подтвердил сессию');
+
+  Future<void> _reconnectBars() async {
+    // The profile cached at app startup is not itself a live BARS session.
+    // Reuse the existing BARS WebView login without logging out of CampusApp.
+    final authenticated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(returnToPreviousScreen: true),
+      ),
+    );
+    if (!mounted) return;
+    if (authenticated == true) await _load();
+  }
 
   Future<void> _load() async {
     if (mounted) setState(() {
@@ -392,6 +412,16 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                               icon: const Icon(Icons.refresh_outlined),
                               label: const Text('Повторить проверку'),
                             ),
+                            if (_requiresBarsReconnect(_error!)) ...[
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                key: const ValueKey('attendance-reconnect-bars'),
+                                onPressed: _saving || _loading
+                                    ? null : _reconnectBars,
+                                icon: const Icon(Icons.login),
+                                label: const Text('Обновить вход в БАРС'),
+                              ),
+                            ],
                           ],
                         ),
                       ),
