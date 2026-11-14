@@ -11,6 +11,7 @@ import '../data/attendance_api.dart';
 import '../widgets/lesson_note_preview.dart';
 import '/features/profile/data/student_profile_storage.dart';
 import 'lesson_details_sheet.dart';
+import 'bars_roster_import_screen.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({
@@ -44,6 +45,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _initializationError;
   bool _isInitializing = true;
   bool _changingGroup = false;
+  String? _autoRosterGroup;
   int _notesRevision = 0;
   Set<String> _bookableRooms = bookableClassrooms.toSet();
   late DateTime _selectedDate;
@@ -105,6 +107,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         _weekFutures.clear();
         _absenceFutures.clear();
       });
+      // Do not block the timetable while the starosta's roster is fetched.
+      // Widget tests/offline injected APIs do not use a platform WebView.
+      if (widget.scheduleApi == null && widget.attendanceApi == null) {
+        _syncStarostaRoster();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -112,6 +119,32 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         _isInitializing = false;
       });
     }
+  }
+
+  Future<void> _syncStarostaRoster() async {
+    try {
+      final identity = await _attendanceApi.session();
+      if (!mounted || !identity.authenticated || !identity.isStarosta ||
+          _normGroup(identity.group) != _normGroup(_profileGroup) ||
+          _normGroup(identity.group) != _normGroup(_groupName)) return;
+      final roster = await _attendanceApi.roster();
+      if (!mounted || roster.imported || roster.students.isNotEmpty ||
+          BarsRosterSync.isActive(identity.group!)) return;
+      setState(() => _autoRosterGroup = identity.group);
+    } catch (_) {
+      // Attendance is optional: a BARS outage must not block timetable UI.
+    }
+  }
+
+  String _normGroup(String? value) => (value ?? '')
+      .toUpperCase().replaceAll('A', 'А').replaceAll(' ', '');
+
+  void _onRosterSynced() {
+    if (!mounted) return;
+    setState(() {
+      _autoRosterGroup = null;
+      _absenceFutures.clear();
+    });
   }
 
   DateTime _getWeekStart(DateTime date) => DateTime(
@@ -594,7 +627,21 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       );
     }
 
-    return SafeArea(
+    return Stack(children: [
+      if (_autoRosterGroup != null)
+        Offstage(
+          offstage: true,
+          child: SizedBox(
+            width: 430, height: 800,
+            child: BarsRosterImportScreen(
+              group: _autoRosterGroup!, api: _attendanceApi,
+              silent: true,
+              onCompleted: _onRosterSynced,
+              onFailure: (_) => _onRosterSynced(),
+            ),
+          ),
+        ),
+      SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
@@ -651,7 +698,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           ],
         ),
       ),
-    );
+      ),
+    ]);
   }
 
   String _getWeekDayName(DateTime date) {

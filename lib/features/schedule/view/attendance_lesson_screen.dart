@@ -31,6 +31,9 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
   Set<String> _absentKeys = {};
   final TextEditingController _search = TextEditingController();
   bool _showAbsentOnly = false;
+  bool _attemptedAutoImport = false;
+  String? _autoImportGroup;
+  String? _rosterError;
   int? _lessonId;
   bool _loading = true;
   bool _saving = false;
@@ -40,11 +43,13 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
   void initState() {
     super.initState();
     _api = widget.api ?? AttendanceApi();
+    BarsRosterSync.revision.addListener(_onRosterSyncEvent);
     _load();
   }
 
   @override
   void dispose() {
+    BarsRosterSync.revision.removeListener(_onRosterSyncEvent);
     _search.dispose();
     if (widget.api == null) _api.dispose();
     super.dispose();
@@ -89,6 +94,27 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     );
     if (!mounted) return;
     if (authenticated == true) await _load();
+  }
+
+  void _onRosterSyncEvent() {
+    if (!mounted || BarsRosterSync.lastGroup != widget.group) return;
+    // Another screen (e.g. timetable) may have finished the sync.
+    if (BarsRosterSync.lastSucceeded) {
+      setState(() { _autoImportGroup = null; _rosterError = null; });
+      _load();
+    } else if (_autoImportGroup != null) {
+      setState(() {
+        _autoImportGroup = null;
+        _rosterError = 'Не удалось автоматически прочитать список БАРС.';
+      });
+    }
+  }
+
+  Future<void> _retryRoster() async {
+    if (_loading || _saving || _autoImportGroup != null ||
+        BarsRosterSync.isActive(widget.group)) return;
+    _attemptedAutoImport = false;
+    await _load();
   }
 
   Future<void> _refreshStarostaRole() async {
@@ -144,6 +170,15 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
       setState(() {
         _identity = account;
         _roster = roster;
+        if (account.isStarosta && roster?.imported != true &&
+            !_attemptedAutoImport &&
+            !BarsRosterSync.isActive(widget.group) &&
+            widget.api == null) {
+          // Hidden WebView automatically imports the official group table.
+          _attemptedAutoImport = true;
+          _autoImportGroup = widget.group;
+          _rosterError = null;
+        }
         _lessonId = id;
         _detail = detail;
         _absentKeys = {
@@ -182,16 +217,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  Future<void> _importFromBars() async {
-    if (_identity?.isStarosta != true || _saving) return;
-    final imported = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => BarsRosterImportScreen(
-        group: widget.group, api: _api,
-      )),
-    );
-    if (mounted && imported == true) await _load();
   }
 
   Future<void> _saveReviewedAbsences() async {
@@ -446,7 +471,22 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
           ),
         ],
       ),
-      body: _loading
+      body: Stack(children: [
+        if (_autoImportGroup != null)
+          Offstage(
+            offstage: true,
+            child: SizedBox(
+              width: 430, height: 800,
+              child: BarsRosterImportScreen(
+                group: _autoImportGroup!, api: _api, silent: true,
+                onCompleted: () {},
+                onFailure: (message) {
+                  if (mounted) setState(() => _rosterError = message);
+                },
+              ),
+            ),
+          ),
+        Positioned.fill(child: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
@@ -496,18 +536,26 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                       const Text('Режим старосты',
                           style: TextStyle(fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
-                      Text(_roster?.imported == true
-                          ? 'Загружено студентов: ${_roster!.students.length}'
-                          : 'Список группы ещё не загружен из БАРС'),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        key: const ValueKey('bars-import-roster-entry'),
-                        onPressed: _saving ? null : _importFromBars,
-                        icon: const Icon(Icons.group_add_outlined),
-                        label: Text(_roster?.imported == true
-                            ? 'Обновить список группы'
-                            : 'Загрузить группу из БАРС'),
-                      ),
+                      if (_roster?.imported == true)
+                        Text('Студентов в группе: ${_roster!.students.length}')
+                      else ...[
+                        Text(_autoImportGroup != null ||
+                                BarsRosterSync.isActive(widget.group)
+                            ? 'Загружаем список группы автоматически…'
+                            : (_rosterError ??
+                                'Список группы пока не получен из БАРС.')),
+                        const SizedBox(height: 8),
+                        if (_autoImportGroup != null ||
+                            BarsRosterSync.isActive(widget.group))
+                          const LinearProgressIndicator()
+                        else
+                          OutlinedButton.icon(
+                            key: const ValueKey('attendance-retry-roster'),
+                            onPressed: _retryRoster,
+                            icon: const Icon(Icons.sync),
+                            label: const Text('Повторить загрузку'),
+                          ),
+                      ],
                     ] else ...[
                       const Text('Учебный журнал ведёт староста группы. '
                           'ФИО студентов загружаются из БАРС, '
@@ -659,7 +707,8 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                   ],
                 ],
               ),
-            ),
+            )),
+      ]),
       bottomNavigationBar: reviewed && !isClosed
           ? SafeArea(
               top: false,

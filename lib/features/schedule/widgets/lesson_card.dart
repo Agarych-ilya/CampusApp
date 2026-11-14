@@ -48,7 +48,10 @@ class LessonCard extends StatelessWidget {
           color: theme.colorScheme.outlineVariant.withOpacity(0.5),
         ),
       ),
-      child: Column(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -69,7 +72,9 @@ class LessonCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
+                child: Padding(
+                  padding: EdgeInsets.only(right: attendanceAbsent ? 30 : 0),
+                  child: Text(
                   lessonKindLabel(type, subject: subject),
                   textAlign: TextAlign.right,
                   maxLines: 1,
@@ -79,28 +84,9 @@ class LessonCard extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
+                  ),
                 ),
               ),
-              if (attendanceAbsent) ...[
-                const SizedBox(width: 8),
-                Container(
-                  key: const ValueKey('schedule-absence-n'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE74D67),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'Н',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -158,6 +144,27 @@ class LessonCard extends StatelessWidget {
           ],
           if (footer != null) footer!,
         ],
+      ),
+      if (attendanceAbsent)
+        Positioned(
+          right: 0, top: 0,
+          child: Semantics(
+            label: 'Пропуск занятия',
+            child: Container(
+              key: const ValueKey('schedule-absence-n'),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE74D67),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('Н', style: TextStyle(
+                color: Colors.white, fontSize: 13,
+                fontWeight: FontWeight.w900,
+              )),
+            ),
+          ),
+        ),
+      ],
       ),
       ),
     );

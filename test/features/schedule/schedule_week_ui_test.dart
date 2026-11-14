@@ -127,6 +127,12 @@ void main() {
     ));
     expect(find.byKey(const ValueKey('schedule-absence-n')), findsOneWidget);
     expect(find.text('Н'), findsOneWidget);
+    // Badge is pinned to the upper-right corner, not inside the title row.
+    final badge = tester.getRect(find.byKey(
+      const ValueKey('schedule-absence-n')));
+    final typeLabel = tester.getRect(find.text('Лекция').first);
+    expect(typeLabel.right, lessThan(badge.left));
+    expect(badge.top, lessThan(typeLabel.bottom));
   });
 
   testWidgets('student receives N only from private matching lesson records',

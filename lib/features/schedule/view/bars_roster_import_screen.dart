@@ -5,16 +5,40 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../data/attendance_api.dart';
 
-/// The user navigates to BARS → Учебные группы → their group → Студенты.
-/// We read ONLY the visible table from the official HTTPS BARS origin.
-/// Import is a previewable CampusApp copy, never an official BARS edit.
+/// Signals completed background imports so a journal opened during the sync
+/// can refresh without exposing the BARS browser or duplicating requests.
+class BarsRosterSync {
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+  static final Set<String> _activeGroups = <String>{};
+  static String? lastGroup;
+  static bool lastSucceeded = false;
+
+  static bool isActive(String group) => _activeGroups.contains(group);
+
+  static bool begin(String group) => _activeGroups.add(group);
+
+  static void end(String group, {required bool succeeded}) {
+    if (!_activeGroups.remove(group)) return;
+    lastGroup = group;
+    lastSucceeded = succeeded;
+    revision.value++;
+  }
+}
+
+/// Reads the authorized group's actual BARS student table. Normal imports
+/// show a review UI; silent imports run offstage and never show BARS to the user.
+/// Neither path writes into the official BARS attendance journal.
 class BarsRosterImportScreen extends StatefulWidget {
   const BarsRosterImportScreen({
     super.key, required this.group, required this.api,
+    this.silent = false, this.onCompleted, this.onFailure,
   });
 
   final String group;
   final AttendanceApi api;
+  final bool silent;
+  final VoidCallback? onCompleted;
+  final ValueChanged<String>? onFailure;
 
   @override
   State<BarsRosterImportScreen> createState() =>
@@ -29,11 +53,18 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
   bool _loading = true;
   bool _manual = false;
   bool _autoRunning = false;
+  bool _silentFinished = false;
+  bool _skipped = false;
   String _progress = 'Открываем учебные группы БАРС...';
 
   @override
   void initState() {
     super.initState();
+    if (widget.silent && !BarsRosterSync.begin(widget.group)) {
+      // Another mounted schedule/journal widget is already syncing this group.
+      _skipped = true;
+      return;
+    }
     _web = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
@@ -44,21 +75,35 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         onPageFinished: (url) {
           if (!mounted) return;
           setState(() { _loading = false; });
-          if (!_manual && !_autoRunning && _preview == null) {
+          if (!_manual && !_autoRunning && _preview == null &&
+              !_silentFinished) {
             _autoNavigate();
           }
         },
         onWebResourceError: (error) {
-          if (!mounted || error.isForMainFrame != true) return;
-          setState(() {
-            _error = 'Не удалось открыть страницу БАРС';
-            _manual = true;
-          });
+          if (!mounted || error.isForMainFrame != true ||
+              _silentFinished) return;
+          const message = 'Не удалось открыть страницу БАРС';
+          if (widget.silent) {
+            _silentFinished = true;
+            BarsRosterSync.end(widget.group, succeeded: false);
+            widget.onFailure?.call(message);
+          } else {
+            setState(() { _error = message; _manual = true; });
+          }
         },
       ))
       ..loadRequest(Uri.parse(
         'https://bars.mpei.ru/bars_web/SG/StudyGroup/ListStudyGroup',
       ));
+  }
+
+  @override
+  void dispose() {
+    if (widget.silent && !_skipped && !_silentFinished) {
+      BarsRosterSync.end(widget.group, succeeded: false);
+    }
+    super.dispose();
   }
 
   /// Android often JSON-quotes JavaScript's JSON string a second time.
@@ -148,7 +193,8 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
   '''.replaceFirst('__GROUP__', jsonEncode(widget.group));
 
   Future<void> _autoNavigate() async {
-    if (!mounted || _manual || _autoRunning || _preview != null) return;
+    if (!mounted || _manual || _autoRunning || _preview != null ||
+        _silentFinished || _skipped) return;
     setState(() { _autoRunning = true; _error = null; });
     try {
       DateTime? lastNavigation;
@@ -194,13 +240,17 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         'Можно продолжить вручную.',
       );
     } catch (error) {
-      if (mounted && !_manual) {
-        setState(() {
-          _manual = true;
-          _error = error.toString()
-              .replaceFirst('FormatException: ', '')
-              .replaceFirst('Exception: ', '');
-        });
+      if (mounted && !_manual && !_silentFinished) {
+        final message = error.toString()
+            .replaceFirst('FormatException: ', '')
+            .replaceFirst('Exception: ', '');
+        if (widget.silent) {
+          _silentFinished = true;
+          BarsRosterSync.end(widget.group, succeeded: false);
+          widget.onFailure?.call(message);
+        } else {
+          setState(() { _manual = true; _error = message; });
+        }
       }
     } finally {
       if (mounted) setState(() => _autoRunning = false);
@@ -345,6 +395,16 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         email: row['email']?.toString(),
       ));
     }
+    if (widget.silent) {
+      // The starosta role and group are checked again by the server.
+      // Never submit a partial/ambiguous BARS table.
+      await widget.api.importRoster(widget.group, students);
+      if (!mounted) return true;
+      _silentFinished = true;
+      BarsRosterSync.end(widget.group, succeeded: true);
+      widget.onCompleted?.call();
+      return true;
+    }
     if (mounted) setState(() {
       _preview = students;
       _error = null;
@@ -391,6 +451,14 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_skipped || (widget.silent && _silentFinished)) {
+      return const SizedBox.shrink();
+    }
+    if (widget.silent) {
+      // Parent lays out this WebView in Offstage. It still runs JavaScript,
+      // but the student never sees or interacts with its BARS pages.
+      return WebViewWidget(controller: _web);
+    }
     final preview = _preview;
     return Scaffold(
       appBar: AppBar(title: const Text('Список группы из БАРС')),

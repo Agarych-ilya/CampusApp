@@ -275,7 +275,8 @@ void main() {
       group: 'А-03-23', lesson: lesson, api: api,
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Загружено студентов: 2'), findsOneWidget);
+    expect(find.text('Студентов в группе: 2'), findsOneWidget);
+    expect(find.text('Загрузить группу из БАРС'), findsNothing);
     expect(find.text('Добавить себя'), findsNothing);
     await tester.tap(find.text('Открыть журнал пары'));
     await tester.pumpAndSettle();
