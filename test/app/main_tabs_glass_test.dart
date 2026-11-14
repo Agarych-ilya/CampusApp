@@ -5,7 +5,7 @@ import 'package:campusapp/app/main_tabs_screen.dart';
 import 'package:campusapp/core/theme/app_theme.dart';
 
 void main() {
-  testWidgets('navigation is an icon-only glass dock',
+  testWidgets('glass navigation shows five interactive icons without captions',
       (tester) async {
     tester.view.physicalSize = const Size(430, 900);
     tester.view.devicePixelRatio = 1;
@@ -13,20 +13,25 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
+    int? picked;
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
-      home: const MainTabsScreen(),
+      home: Scaffold(
+        bottomNavigationBar: CampusGlassDock(
+          currentIndex: 0,
+          onSelected: (i) => picked = i,
+        ),
+      ),
     ));
     await tester.pump();
     for (var i = 0; i < 5; i++) {
       expect(find.byKey(ValueKey('campus-glass-tab-$i')), findsOneWidget);
     }
     expect(find.byType(BottomNavigationBar), findsNothing);
-    final dock = find.byType(BackdropFilter);
-    expect(dock, findsOneWidget);
-    expect(find.descendant(
-      of: dock, matching: find.text('Расписание')), findsNothing);
-    expect(find.descendant(
-      of: dock, matching: find.text('Сервисы')), findsNothing);
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(find.text('Расписание'), findsNothing);
+    expect(find.text('Профиль'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('campus-glass-tab-3')));
+    expect(picked, 3);
   });
 }
