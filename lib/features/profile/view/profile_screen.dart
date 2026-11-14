@@ -810,7 +810,7 @@ class _GradeDot extends StatelessWidget {
       case '3':
         color = const Color(0xFFE3A030);
       case '2':
-        color = const Color(0xFFD65E65);
+        color = const Color(0xFF86BCE5);
       default:
         color = Theme.of(context).colorScheme.primary;
     }
