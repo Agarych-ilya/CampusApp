@@ -388,10 +388,17 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
             children: [
               Text(widget.group, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 5),
-              const Text('Открой: Учебные группы → своя группа → Студенты. '
-                  'Если список разбит на страницы, выбери '
-                  '«Отображать 100/500». Затем нажми «Считать список».'),
-              if (_loading) const LinearProgressIndicator(),
+              Text(preview != null
+                  ? 'Проверь ФИО перед сохранением.'
+                  : _manual
+                      ? 'Автоматический переход не завершился. '
+                        'Можешь открыть вкладку вручную.'
+                      : _progress),
+              if (_loading || _autoRunning)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(),
+                ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
                 Text(_error!, style: TextStyle(
@@ -402,15 +409,48 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
           ),
         ),
         if (preview == null) ...[
-          Expanded(child: WebViewWidget(controller: _web)),
+          Expanded(child: IgnorePointer(
+            ignoring: !_manual,
+            child: WebViewWidget(controller: _web),
+          )),
           Padding(
             padding: const EdgeInsets.all(12),
-            child: FilledButton.icon(
-              key: const ValueKey('bars-read-roster'),
-              onPressed: _busy || _loading ? null : _readVisibleRoster,
-              icon: const Icon(Icons.download_rounded),
-              label: const Text('Считать список студентов'),
-            ),
+            child: Column(children: [
+              if (_manual)
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('bars-read-roster'),
+                    onPressed: _busy || _loading || _autoRunning
+                        ? null : _readVisibleRoster,
+                    icon: const Icon(Icons.download_rounded),
+                    label: const Text('Считать открытый список'),
+                  ),
+                ),
+              if (!_manual)
+                OutlinedButton.icon(
+                  key: const ValueKey('bars-manual-mode'),
+                  onPressed: () => setState(() => _manual = true),
+                  icon: const Icon(Icons.touch_app_outlined),
+                  label: const Text('Открыть вручную'),
+                ),
+              if (_manual)
+                TextButton.icon(
+                  key: const ValueKey('bars-auto-retry'),
+                  onPressed: _loading || _busy ? null : () {
+                    setState(() {
+                      _manual = false;
+                      _error = null;
+                      _progress = 'Открываем учебные группы БАРС...';
+                    });
+                    _web.loadRequest(Uri.parse(
+                      'https://bars.mpei.ru/bars_web/SG/StudyGroup/ListStudyGroup',
+                    ));
+                  },
+                  icon: const Icon(Icons.refresh_outlined),
+                  label: const Text('Повторить автоматически'),
+                ),
+            ]),
           ),
         ] else ...[
           Padding(
