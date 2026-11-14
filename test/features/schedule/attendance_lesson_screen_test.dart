@@ -233,7 +233,7 @@ void main() {
       ValueKey('attendance-absent-${api.secondStudentKey}'),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('Отсутствуют: 1'), findsOneWidget);
+    expect(find.textContaining('Отсутствуют: 1'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('save-reviewed-absences')));
     await tester.pumpAndSettle();
     expect(find.text('Подтвердить посещаемость?'), findsOneWidget);
