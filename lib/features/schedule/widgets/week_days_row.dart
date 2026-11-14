@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../data/schedule_lesson.dart';
 import '../data/lesson_kind.dart';
-import '/core/theme/app_theme.dart';
 
 /// Seven days of the selected week. One coloured dot = one real lesson.
 class WeekDaysRow extends StatelessWidget {
@@ -28,93 +27,109 @@ class WeekDaysRow extends StatelessWidget {
     );
     final onSurface = Theme.of(context).colorScheme.onSurface;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: List.generate(7, (index) {
-        final day = DateTime(monday.year, monday.month, monday.day + index);
-        final lessons = weekLessons.where((lesson) {
-          final parsed = lesson.parsedDate;
-          return parsed != null &&
-              parsed.year == day.year &&
-              parsed.month == day.month &&
-              parsed.day == day.day;
-        }).toList()
-          ..sort((a, b) => a.time.compareTo(b.time));
-        final selected = day.year == selectedDate.year &&
-            day.month == selectedDate.month &&
-            day.day == selectedDate.day;
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      height: 99,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: List.generate(7, (index) {
+          final day = DateTime(monday.year, monday.month, monday.day + index);
+          final lessons = weekLessons.where((lesson) {
+            final parsed = lesson.parsedDate;
+            return parsed != null &&
+                parsed.year == day.year &&
+                parsed.month == day.month &&
+                parsed.day == day.day;
+          }).toList()
+            ..sort((a, b) => a.time.compareTo(b.time));
+          final selected = day.year == selectedDate.year &&
+              day.month == selectedDate.month &&
+              day.day == selectedDate.day;
+          final weekend = index >= 5;
+          final ink = selected
+              ? const Color(0xFF1A1330)
+              : weekend
+                  ? scheme.onSurfaceVariant.withOpacity(0.58)
+                  : scheme.onSurface;
 
-        return Expanded(
-          child: Semantics(
-            label: '${_weekDays[index]}, ${day.day}, пар: ${lessons.length}',
-            button: true,
-            selected: selected,
-            child: InkWell(
-              key: ValueKey('schedule-day-${day.year}-${day.month}-${day.day}'),
-              onTap: () => onDateSelected(day),
-              borderRadius: BorderRadius.circular(14),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _weekDays[index],
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: onSurface.withOpacity(0.78),
-                      ),
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2.5),
+              child: Semantics(
+                label: '${_weekDays[index]}, ${day.day}, пар: ${lessons.length}',
+                button: true,
+                selected: selected,
+                child: InkWell(
+                  key: ValueKey('schedule-day-${day.year}-${day.month}-${day.day}'),
+                  onTap: () => onDateSelected(day),
+                  borderRadius: BorderRadius.circular(28),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.only(top: 10, bottom: 8),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? scheme.primary
+                          : dark
+                              ? const Color(0xFF16151A)
+                              : const Color(0xFFF0EEF5),
+                      borderRadius: BorderRadius.circular(28),
                     ),
-                    const SizedBox(height: 5),
-                    Container(
-                      width: 31,
-                      height: 31,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: selected ? AppTheme.accent : Colors.transparent,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '${day.day}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: selected ? Colors.white : onSurface,
+                    child: Column(
+                      children: [
+                        Text(
+                          _weekDays[index].toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: ink,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    // At most four dots per row on narrow phones.
-                    if (lessons.isEmpty)
-                      const SizedBox(height: 6)
-                    else
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 3,
-                        runSpacing: 3,
-                        children: [
-                          for (var i = 0; i < lessons.length; i++)
-                            Container(
-                              key: ValueKey('lesson-dot-${day.year}-${day.month}-${day.day}-$i'),
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: lessonKindColor(
-                                  lessonKind(lessons[i].type, subject: lessons[i].subject),
+                        const SizedBox(height: 5),
+                        Text(
+                          '${day.day}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: ink,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (lessons.isEmpty)
+                          const SizedBox(height: 6)
+                        else
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 2,
+                            runSpacing: 2,
+                            children: [
+                              for (var i = 0; i < lessons.length && i < 5; i++)
+                                Container(
+                                  key: ValueKey('lesson-dot-${day.year}-${day.month}-${day.day}-$i'),
+                                  width: 5,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? const Color(0xFF312255)
+                                        : lessonKindColor(lessonKind(
+                                            lessons[i].type,
+                                            subject: lessons[i].subject,
+                                          )),
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                  ],
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 }
