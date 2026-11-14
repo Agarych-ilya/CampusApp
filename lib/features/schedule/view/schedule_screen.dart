@@ -292,31 +292,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  Future<void> _showMonthCalendar() async {
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.08),
-      builder: (dialogContext) => Dialog(
-        alignment: Alignment.topLeft,
-        insetPadding: EdgeInsets.only(
-          left: 20,
-          top: MediaQuery.of(dialogContext).padding.top + 52,
-          right: 20,
-          bottom: 24,
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: MonthCalendarPopup(
-          selectedDate: _selectedDate,
-          onDateSelected: (date) {
-            _selectDate(date);
-            Navigator.of(dialogContext).pop();
-          },
-        ),
-      ),
-    );
-  }
-
   bool _isSameDate(DateTime first, DateTime second) =>
       first.year == second.year &&
       first.month == second.month &&
@@ -722,43 +697,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return weekDays[date.weekday - 1];
   }
 
-  String _getMonthName(DateTime date) {
-    const months = [
-      'Январь',
-      'Февраль',
-      'Март',
-      'Апрель',
-      'Май',
-      'Июнь',
-      'Июль',
-      'Август',
-      'Сентябрь',
-      'Октябрь',
-      'Ноябрь',
-      'Декабрь',
-    ];
 
-    return months[date.month - 1];
-  }
-
-  String _formatSelectedDate(DateTime date) {
-    const months = [
-      'января',
-      'февраля',
-      'марта',
-      'апреля',
-      'мая',
-      'июня',
-      'июля',
-      'августа',
-      'сентября',
-      'октября',
-      'ноября',
-      'декабря',
-    ];
-
-    return '${date.day} ${months[date.month - 1]}';
-  }
 }
 
 
