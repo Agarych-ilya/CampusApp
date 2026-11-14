@@ -379,9 +379,21 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(14),
-                        child: Text(_error!, style: TextStyle(
-                          color: theme.colorScheme.error,
-                        )),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_error!, style: TextStyle(
+                              color: theme.colorScheme.error,
+                            )),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              key: const ValueKey('attendance-retry-session'),
+                              onPressed: _saving || _loading ? null : _load,
+                              icon: const Icon(Icons.refresh_outlined),
+                              label: const Text('Повторить проверку'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   if (account != null && account.authenticated) ...[
