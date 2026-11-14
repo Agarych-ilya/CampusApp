@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '/features/auth/view/login_screen.dart';
+import '/features/services/listings/data/listings_api.dart';
 import '../data/attendance_api.dart';
 import 'bars_roster_import_screen.dart';
 import '../data/schedule_lesson.dart';
@@ -85,6 +86,28 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     );
     if (!mounted) return;
     if (authenticated == true) await _load();
+  }
+
+  Future<void> _refreshStarostaRole() async {
+    if (_saving || _loading) return;
+    setState(() => _saving = true);
+    try {
+      await ListingsApi.instance.refreshBarsRole();
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      if (_identity?.isStarosta != true) {
+        _message(
+          'БАРС не подтвердил права старосты. Проверь, доступна ли '
+          'страница своей учебной группы в БАРС.',
+          error: true,
+        );
+      }
+    } catch (error) {
+      _message(error.toString().replaceFirst('Exception: ', ''), error: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _load() async {
@@ -408,17 +431,18 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                             ? 'Обновить список группы'
                             : 'Загрузить группу из БАРС'),
                       ),
-                    ] else if (!account.registered) ...[
-                      const Text('Список группы ведёт староста. '
-                          'Для самостоятельной отметки можно добавить себя.'),
-                      const SizedBox(height: 8),
-                      FilledButton.icon(
-                        onPressed: _saving ? null : _register,
-                        icon: const Icon(Icons.person_add_alt_1),
-                        label: const Text('Добавить себя'),
-                      ),
                     ] else ...[
-                      Text('Ты в списке: ${account.displayName ?? ''}'),
+                      const Text('Учебный журнал ведёт староста группы. '
+                          'ФИО студентов загружаются из БАРС, '
+                          'вводить их вручную не требуется.'),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        key: const ValueKey('attendance-check-starosta-role'),
+                        onPressed: _saving || _loading
+                            ? null : _refreshStarostaRole,
+                        icon: const Icon(Icons.verified_user_outlined),
+                        label: const Text('Проверить права старосты'),
+                      ),
                     ],
                     if (detail == null) ...[
                       const SizedBox(height: 14),
