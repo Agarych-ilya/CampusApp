@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:campusapp/features/schedule/data/attendance_api.dart';
 import 'package:campusapp/features/schedule/data/schedule_lesson.dart';
 import 'package:campusapp/features/schedule/view/attendance_lesson_screen.dart';
+import 'package:campusapp/features/schedule/view/bars_roster_import_screen.dart';
 
 const lesson = ScheduleLesson(
   date: '14.11.2026',
@@ -16,6 +17,7 @@ const lesson = ScheduleLesson(
 class _AttendanceFake extends AttendanceApi {
   _AttendanceFake({required this.starosta});
   final bool starosta;
+  bool rosterImported = true;
   bool failFirstSession = false;
   String firstSessionError =
       'Не удалось связаться с БАРС для проверки сессии';
@@ -47,8 +49,8 @@ class _AttendanceFake extends AttendanceApi {
   @override
   Future<AttendanceRoster> roster() async => AttendanceRoster(
     group: 'А-03-23',
-    imported: true,
-    students: [
+    imported: rosterImported,
+    students: rosterImported ? [
       AttendanceStudent(
         ownerKey: firstStudentKey,
         displayName: 'Иванов Иван',
@@ -59,7 +61,7 @@ class _AttendanceFake extends AttendanceApi {
         displayName: 'Петров Пётр',
         status: 'unmarked',
       ),
-    ],
+    ] : [],
   );
 
   @override
@@ -204,6 +206,30 @@ void main() {
         findsOneWidget);
     expect(find.byKey(const ValueKey('bars-import-roster-entry')),
         findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed hidden roster sync shows retry, not BARS browser',
+      (tester) async {
+    const group = 'А-03-23';
+    final api = _AttendanceFake(starosta: true)..rosterImported = false;
+    expect(BarsRosterSync.begin(group), isTrue);
+    addTearDown(() {
+      if (BarsRosterSync.isActive(group)) {
+        BarsRosterSync.end(group, succeeded: false);
+      }
+    });
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: group, lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Загружаем список группы'), findsOneWidget);
+
+    BarsRosterSync.end(group, succeeded: false);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('attendance-retry-roster')),
+        findsOneWidget);
+    expect(find.text('Список группы из БАРС'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

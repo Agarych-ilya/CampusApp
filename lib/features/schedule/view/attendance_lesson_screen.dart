@@ -102,7 +102,10 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     if (BarsRosterSync.lastSucceeded) {
       setState(() { _autoImportGroup = null; _rosterError = null; });
       _load();
-    } else if (_autoImportGroup != null) {
+    } else {
+      // A sync started by ScheduleScreen can fail while the journal is open.
+      // Rebuild even if this screen has no own import widget, so its loading
+      // indicator is replaced with the retry action.
       setState(() {
         _autoImportGroup = null;
         _rosterError = 'Не удалось автоматически прочитать список БАРС.';
