@@ -229,6 +229,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('search and absent-only filter compact student cards',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final api = _AttendanceFake(starosta: true)..opened = true;
+    await tester.pumpWidget(MaterialApp(home: AttendanceLessonScreen(
+      group: 'А-03-23', lesson: lesson, api: api,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('attendance-search')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('attendance-search')), 'Петров');
+    await tester.pumpAndSettle();
+    expect(find.text('Петров Пётр'), findsOneWidget);
+    expect(find.text('Иванов Иван'), findsNothing);
+    await tester.tap(find.byKey(
+      ValueKey('attendance-absent-${api.secondStudentKey}'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(
+      const ValueKey('attendance-filter-absent'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Петров Пётр'), findsOneWidget);
+    expect(find.byKey(const ValueKey('attendance-student-absence')),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('starosta marks only absentees from imported group roster',
       (tester) async {
     tester.view.physicalSize = const Size(430, 1200);
@@ -254,7 +287,9 @@ void main() {
       ValueKey('attendance-absent-${api.secondStudentKey}'),
     ));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Отсутствуют: 1'), findsOneWidget);
+    expect(find.text('Отсутствуют (1)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('attendance-student-absence')),
+        findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('save-reviewed-absences')));
     await tester.pumpAndSettle();
     expect(find.text('Подтвердить посещаемость?'), findsOneWidget);
