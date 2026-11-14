@@ -27,6 +27,9 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
   String? _error;
   bool _busy = false;
   bool _loading = true;
+  bool _manual = false;
+  bool _autoRunning = false;
+  String _progress = 'Открываем учебные группы БАРС...';
 
   @override
   void initState() {
@@ -41,10 +44,16 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         onPageFinished: (url) {
           if (!mounted) return;
           setState(() { _loading = false; });
+          if (!_manual && !_autoRunning && _preview == null) {
+            _autoNavigate();
+          }
         },
         onWebResourceError: (error) {
           if (!mounted || error.isForMainFrame != true) return;
-          setState(() => _error = 'Не удалось открыть страницу БАРС');
+          setState(() {
+            _error = 'Не удалось открыть страницу БАРС';
+            _manual = true;
+          });
         },
       ))
       ..loadRequest(Uri.parse(
@@ -59,6 +68,137 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
       value = jsonDecode(value);
     }
     return value;
+  }
+
+  Future<Map<String, dynamic>> _runJson(String script) async {
+    final raw = await _web.runJavaScriptReturningResult(script);
+    final value = unpackJavascriptResult(raw);
+    if (value is! Map) {
+      throw const FormatException('БАРС вернул неожиданные данные');
+    }
+    return Map<String, dynamic>.from(value);
+  }
+
+  Future<bool> _onBars() async {
+    final uri = Uri.tryParse(await _web.currentUrl() ?? '');
+    return uri != null && uri.scheme == 'https' &&
+        uri.host == 'bars.mpei.ru' && uri.path.startsWith('/bars_web/');
+  }
+
+  String _nextPageScript() => r'''
+    (function () {
+      const expected = __GROUP__;
+      const clean = s => String(s || '').replace(/\u00a0/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+      const norm = s => clean(s).toUpperCase()
+        .replace(/[AА](?=-\d)/g, 'А').replace(/[–—−]/g, '-');
+      const safe = a => {
+        try {
+          const href = a.getAttribute('href');
+          if (!href || /^javascript:/i.test(href)) return false;
+          const url = new URL(href, location.href);
+          return url.origin === 'https://bars.mpei.ru' &&
+            url.pathname.startsWith('/bars_web/');
+        } catch (_) { return false; }
+      };
+      if (/\/(Login|SignIn)\/?$/i.test(location.pathname)) {
+        return JSON.stringify({action: 'login'});
+      }
+      const tables = Array.from(document.querySelectorAll('table'))
+        .filter(t => t.getClientRects().length > 0 &&
+          Array.from(t.querySelectorAll('th')).some(x =>
+            clean(x.innerText).toLowerCase() === 'фио') &&
+          Array.from(t.querySelectorAll('th')).some(x =>
+            clean(x.innerText).toLowerCase().includes('статус обучения')));
+      const pageText = norm(document.body?.innerText);
+      if (tables.length === 1 && pageText.includes(norm(expected))) {
+        return JSON.stringify({action: 'students'});
+      }
+      if (/\/StudyGroup\/ListStudyGroup\/?$/i.test(location.pathname)) {
+        const links = Array.from(document.querySelectorAll('a[href]'))
+          .filter(a => norm(a.innerText) === norm(expected) && safe(a) &&
+            /\/SG\/StudyGroup\/EditStudyGroup\/?$/i.test(
+              new URL(a.href, location.href).pathname));
+        if (links.length === 1) {
+          links[0].click();
+          return JSON.stringify({action: 'group'});
+        }
+        if (links.length > 1) return JSON.stringify({action: 'ambiguous'});
+        return JSON.stringify({action: 'wait'});
+      }
+      if (/\/StudyGroup\/EditStudyGroup\/?$/i.test(location.pathname) &&
+          pageText.includes(norm(expected))) {
+        const links = Array.from(document.querySelectorAll('a[href]'))
+          .filter(a => clean(a.innerText).toLowerCase() === 'студенты' &&
+            safe(a));
+        if (links.length === 1) {
+          links[0].click();
+          return JSON.stringify({action: 'tab'});
+        }
+        const tabs = Array.from(document.querySelectorAll(
+          'nav a, aside a, .list-group a, .sidebar a, [role="tab"]'))
+          .filter(a => clean(a.innerText).toLowerCase() === 'студенты');
+        if (tabs.length === 1) {
+          tabs[0].click();
+          return JSON.stringify({action: 'tab'});
+        }
+      }
+      return JSON.stringify({action: 'wait'});
+    })()
+  '''.replaceFirst('__GROUP__', jsonEncode(widget.group));
+
+  Future<void> _autoNavigate() async {
+    if (!mounted || _manual || _autoRunning || _preview != null) return;
+    setState(() { _autoRunning = true; _error = null; });
+    try {
+      // AJAX tabs may not trigger onPageFinished; poll with a strict limit.
+      for (var attempt = 0; attempt < 55; attempt++) {
+        if (!mounted || _manual || _preview != null) return;
+        if (_loading || !await _onBars()) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          continue;
+        }
+        try {
+          final response = await _runJson(_nextPageScript());
+          final action = response['action'];
+          if (!mounted || _manual) return;
+          if (action == 'students') {
+            setState(() => _progress = 'Считываем студентов...');
+            if (await _extractRoster()) return;
+          } else if (action == 'group') {
+            setState(() => _progress = 'Открываем группу...');
+          } else if (action == 'tab') {
+            setState(() => _progress = 'Открываем раздел «Студенты»...');
+          } else if (action == 'login') {
+            throw const FormatException('В БАРС требуется авторизация');
+          } else if (action == 'ambiguous') {
+            throw const FormatException(
+              'Найдено несколько групп с одинаковым названием',
+            );
+          }
+        } on FormatException {
+          rethrow;
+        } catch (_) {
+          // The JS context may disappear during a navigation. Retry safely.
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 550));
+      }
+      throw const FormatException(
+        'Не удалось автоматически открыть список. '
+        'Можно продолжить вручную.',
+      );
+    } catch (error) {
+      if (mounted && !_manual) {
+        setState(() {
+          _manual = true;
+          _error = error.toString()
+              .replaceFirst('FormatException: ', '')
+              .replaceFirst('Exception: ', '');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _autoRunning = false);
+    }
   }
 
   Future<void> _readVisibleRoster() async {
