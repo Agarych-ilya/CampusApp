@@ -14,6 +14,7 @@ class _PublishApi extends CloudApi {
   final List<CloudFile> remote = [];
   final Map<int, File> remoteContent = {};
   bool failUpload = false;
+  bool failAfterSaveOnce = false;
   int createdFolders = 0;
   int uploads = 0;
   int nextId = 55;
@@ -65,6 +66,10 @@ class _PublishApi extends CloudApi {
       mine: true, saved: false, image: false,
     ));
     uploads++;
+    if (failAfterSaveOnce) {
+      failAfterSaveOnce = false;
+      throw Exception('Соединение разорвано после сохранения на сервере');
+    }
   }
 
   @override
@@ -236,7 +241,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('different content in legacy copies is never removed',
+  testWidgets('different same-name files are both kept in one folder',
       (tester) async {
     await _setViewport(tester);
     final root = await Directory.systemTemp.createTemp('publish_diff_');
@@ -254,10 +259,74 @@ void main() {
     expect(find.text('UBS'), findsOneWidget);
     await _switchToPublic(tester);
 
-    expect(await fixture.store.folders(), hasLength(1));
+    // The existing file stays, and the phone's different file gets a
+    // readable conflict suffix instead of being overwritten or lost.
+    expect(await fixture.store.folders(), isEmpty);
+    expect(api.createdFolders, 0);
+    expect(api.uploads, 1);
+    expect(api.remote, hasLength(2));
+    expect(api.remote.map((f) => f.name).toSet(), {
+      'notes.txt', 'notes (с устройства).txt',
+    });
+    expect(await api.remoteContent[54]!.readAsString(), 'changed note!');
     expect(find.text('UBS'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('legacy cloud-only files are preserved during merge',
+      (tester) async {
+    await _setViewport(tester);
+    final root = await Directory.systemTemp.createTemp('publish_extra_');
+    addTearDown(() => root.delete(recursive: true));
+    final fixture = await _setupPrivate(root);
+    final extraFile = File('${root.path}/extra.txt');
+    await extraFile.writeAsString('remote-only content');
+    final api = _PublishApi(root);
+    await api.seedOldPublishedCopy('UBS', extraFile, 'other.txt');
+
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(
+      api: api, localStore: fixture.store,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('UBS'), findsOneWidget);
+    await _switchToPublic(tester);
+
+    expect(api.createdFolders, 0);
+    expect(api.uploads, 1);
+    expect(await fixture.store.folders(), isEmpty);
+    expect(api.remote.map((file) => file.name).toSet(),
+        {'notes.txt', 'other.txt'});
+    expect(await api.remoteContent[54]!.readAsString(),
+        'remote-only content');
+    expect(find.text('UBS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retry after uploaded response was lost does not duplicate files',
+      (tester) async {
+    await _setViewport(tester);
+    final root = await Directory.systemTemp.createTemp('publish_lost_ack_');
+    addTearDown(() => root.delete(recursive: true));
+    final fixture = await _setupPrivate(root);
+    final api = _PublishApi(root)..failAfterSaveOnce = true;
+
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(
+      api: api, localStore: fixture.store,
+    )));
+    await tester.pumpAndSettle();
+    await _switchToPublic(tester);
+    expect(api.uploads, 1);
+    expect(await fixture.store.folders(), hasLength(1));
+    expect(api.remote, hasLength(1));
+
+    await _switchToPublic(tester);
+    expect(api.uploads, 1);
+    expect(api.remote, hasLength(1));
+    expect(await fixture.store.folders(), isEmpty);
+    expect(api.published?.visibility, CloudVisibility.public);
+    expect(find.text('UBS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('switching an existing combined folder back to Private '
       'keeps the original local folder', (tester) async {
     await _setViewport(tester);
