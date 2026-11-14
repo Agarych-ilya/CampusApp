@@ -177,9 +177,14 @@ class ListingsApi {
     final request = http.Request(method, Uri.parse(_base + path));
     request.headers.addAll(_headers(json: body != null, change: change));
     if (body != null) request.body = jsonEncode(body);
+    // BARS authentication verifies two independent protected pages.
+    // 17 seconds can expire before both 9-second upstream requests finish.
+    final timeout = path == '/bars-login'
+        ? const Duration(seconds: 35)
+        : const Duration(seconds: 17);
     final response = await http.Response.fromStream(
-      await request.send().timeout(const Duration(seconds: 17)),
-    ).timeout(const Duration(seconds: 17));
+      await request.send().timeout(timeout),
+    ).timeout(timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(_error(response));
     }
