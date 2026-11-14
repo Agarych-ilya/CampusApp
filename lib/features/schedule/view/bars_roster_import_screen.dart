@@ -80,7 +80,9 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
           const clean = s => String(s || '').replace(/\u00a0/g, ' ')
             .replace(/\s+/g, ' ').trim();
           const text = clean(document.body.innerText);
-          if (!text.includes(expected)) {
+          const groupKey = s => clean(s).toUpperCase()
+            .replace(/A(?=-[0-9])/g, 'А').replace(/[–—−]/g, '-');
+          if (!groupKey(text).includes(groupKey(expected))) {
             return JSON.stringify({error: 'На странице не найдена группа ' + expected});
           }
           const students = [];
