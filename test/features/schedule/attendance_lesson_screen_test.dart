@@ -25,6 +25,9 @@ class _AttendanceFake extends AttendanceApi {
   int checkedIn = 0;
   int decided = 0;
   int closed = 0;
+  Set<String> savedAbsences = {};
+  final firstStudentKey = List.filled(64, 'a').join();
+  final secondStudentKey = List.filled(64, 'b').join();
 
   @override
   Future<AttendanceIdentity> session() async {
@@ -42,12 +45,41 @@ class _AttendanceFake extends AttendanceApi {
   }
 
   @override
+  Future<AttendanceRoster> roster() async => AttendanceRoster(
+    group: 'А-03-23',
+    imported: true,
+    students: [
+      AttendanceStudent(
+        ownerKey: firstStudentKey,
+        displayName: 'Иванов Иван',
+        status: 'unmarked',
+      ),
+      AttendanceStudent(
+        ownerKey: secondStudentKey,
+        displayName: 'Петров Пётр',
+        status: 'unmarked',
+      ),
+    ],
+  );
+
+  @override
+  Future<void> saveAbsences(
+    int lessonId, List<String> rosterKeys, Set<String> absentKeys,
+  ) async {
+    expect(lessonId, 7);
+    expect(rosterKeys.toSet(), {firstStudentKey, secondStudentKey});
+    savedAbsences = Set.of(absentKeys);
+    closed++;
+  }
+
+  @override
   Future<List<AttendanceLesson>> lessons(DateTime date) async {
     expect(date.year, 2026);
     if (!opened) return [];
     return const [
       AttendanceLesson(id: 7, date: '2026-11-14',
-        time: '10:00–11:30', subject: 'Теория управления', state: 'open'),
+        time: '10:00–11:30', subject: 'Теория управления',
+        state: closed > 0 ? 'closed' : 'open'),
     ];
   }
 
@@ -64,13 +96,19 @@ class _AttendanceFake extends AttendanceApi {
     return AttendanceDetail(
       lesson: const AttendanceLesson(
         id: 7, date: '2026-11-14', time: '10:00–11:30',
-        subject: 'Теория управления', state: 'open',
+        subject: 'Теория управления',
+        state: closed > 0 ? 'closed' : 'open',
       ),
       myStatus: starosta ? 'unmarked' : (pending ? 'pending' : 'unmarked'),
       students: starosta ? [
         AttendanceStudent(
-          ownerKey: List.filled(64, 'a').join(), displayName: 'Студент',
-          status: decided > 0 ? 'present' : 'pending',
+          ownerKey: firstStudentKey, displayName: 'Иванов Иван',
+          status: closed > 0 ? 'present' : 'unmarked',
+        ),
+        AttendanceStudent(
+          ownerKey: secondStudentKey, displayName: 'Петров Пётр',
+          status: savedAbsences.contains(secondStudentKey)
+              ? 'absent' : 'unmarked',
         ),
       ] : [],
     );
@@ -170,7 +208,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('starosta opens journal then reviews pending students',
+  testWidgets('starosta marks only absentees from imported group roster',
       (tester) async {
     tester.view.physicalSize = const Size(430, 1200);
     tester.view.devicePixelRatio = 1;
@@ -183,18 +221,28 @@ void main() {
       group: 'А-03-23', lesson: lesson, api: api,
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Открыть журнал пары'), findsOneWidget);
+    expect(find.text('Загружено студентов: 2'), findsOneWidget);
+    expect(find.text('Добавить себя'), findsNothing);
     await tester.tap(find.text('Открыть журнал пары'));
     await tester.pumpAndSettle();
-    expect(api.opened, isTrue);
-    expect(find.text('Подтвердить заявки'), findsOneWidget);
-    await tester.tap(find.text('Подтвердить заявки'));
+    expect(find.text('Выбери отсутствующих'), findsOneWidget);
+    expect(find.text('Иванов Иван'), findsOneWidget);
+    expect(find.text('Петров Пётр'), findsOneWidget);
+
+    await tester.tap(find.byKey(
+      ValueKey('attendance-absent-${api.secondStudentKey}'),
+    ));
     await tester.pumpAndSettle();
-    expect(find.text('Подтвердить заявки?'), findsOneWidget);
-    await tester.tap(find.text('Подтвердить').last);
+    expect(find.text('Отсутствуют: 1'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('save-reviewed-absences')));
     await tester.pumpAndSettle();
-    expect(api.decided, 1);
-    expect(find.text('Присутствует'), findsOneWidget);
+    expect(find.text('Подтвердить посещаемость?'), findsOneWidget);
+    await tester.tap(find.text('Сохранить').last);
+    await tester.pumpAndSettle();
+
+    expect(api.closed, 1);
+    expect(api.savedAbsences, {api.secondStudentKey});
+    expect(find.text('Итоговые отметки'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
