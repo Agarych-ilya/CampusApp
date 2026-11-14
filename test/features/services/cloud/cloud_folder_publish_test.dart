@@ -327,6 +327,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('retry of colliding Russian names keeps only one conflict copy',
+      (tester) async {
+    await _setViewport(tester);
+    final root = await Directory.systemTemp.createTemp('publish_collision_');
+    addTearDown(() => root.delete(recursive: true));
+    final fixture = await _setupPrivate(root);
+    final other = File('${root.path}/different.txt');
+    await other.writeAsString('changed note!');
+    final api = _PublishApi(root)..failAfterSaveOnce = true;
+    await api.seedOldPublishedCopy('UBS', other, 'notes.txt');
+
+    await tester.pumpWidget(MaterialApp(home: CloudScreen(
+      api: api, localStore: fixture.store,
+    )));
+    await tester.pumpAndSettle();
+    await _switchToPublic(tester);
+    expect(await fixture.store.folders(), hasLength(1));
+    expect(api.uploads, 1);
+    expect(api.remote, hasLength(2));
+
+    await _switchToPublic(tester);
+    expect(await fixture.store.folders(), isEmpty);
+    expect(api.uploads, 1);
+    expect(api.remote.map((f) => f.name).toSet(),
+        {'notes.txt', 'notes (с устройства).txt'});
+    expect(find.text('UBS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('switching an existing combined folder back to Private '
       'keeps the original local folder', (tester) async {
     await _setViewport(tester);
