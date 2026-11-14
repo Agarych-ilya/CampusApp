@@ -88,6 +88,14 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
           const students = [];
           const seen = new Set();
           for (const table of document.querySelectorAll('table')) {
+            // General group page also lists staff responsible for journals
+            // with Фамилия / Имя columns. Never import that staff table.
+            // Student rows must come from a VISIBLE student-specific grid.
+            const marker = String(table.id || '') + ' ' +
+              String(table.getAttribute('data-q-href') || '');
+            if (!/student|studlist/i.test(marker) ||
+                /responsib|journal|teacher/i.test(marker) ||
+                table.getClientRects().length === 0) continue;
             const headerRows = Array.from(table.querySelectorAll('thead tr'));
             const header = headerRows.map(row =>
               Array.from(row.querySelectorAll('th')).map(th =>
@@ -95,13 +103,14 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
                 cols.some(s => s.includes('фамилия')) &&
                 cols.some(s => s === 'имя' || s.startsWith('имя ')) ||
                 cols.some(s => s === 'фио' || s.includes('ф.и.о') ||
-                  s.includes('фамилия имя отчество')));
+                  s.includes('фамилия имя отчество') || s === 'студент'));
             if (!header) continue;
             const family = header.findIndex(s => s.includes('фамилия'));
             const name = header.findIndex(s => s === 'имя' || s.startsWith('имя '));
             const father = header.findIndex(s => s.includes('отчество'));
             const fio = header.findIndex(s => s === 'фио' ||
-              s.includes('ф.и.о') || s.includes('фамилия имя отчество'));
+              s.includes('ф.и.о') || s.includes('фамилия имя отчество') ||
+              s === 'студент');
             for (const tr of table.querySelectorAll('tbody tr')) {
               const cells = Array.from(tr.querySelectorAll(':scope > td'));
               if (!cells.length) continue;
@@ -139,8 +148,9 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
           return JSON.stringify({
             group: expected, students: students,
             error: students.length ? null :
-              'Таблица студентов не найдена. Перейди в группу → Студенты ' +
-              'и дождись загрузки таблицы.',
+              'Не найдена таблица именно вкладки «Студенты». ' +
+              'Открой её в своей группе и дождись полной загрузки. ' +
+              'Таблица ответственных за журнал не подходит.',
           });
         })()
       '''.replaceFirst('__GROUP__', jsonEncode(widget.group));
@@ -155,10 +165,10 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
         throw FormatException(error);
       }
       final rawStudents = extracted['students'];
-      if (rawStudents is! List || rawStudents.isEmpty ||
+      if (rawStudents is! List || rawStudents.length < 3 ||
           rawStudents.length > 120) {
         throw const FormatException(
-          'Нужен полный список от 1 до 120 студентов',
+          'Проверь, что загружена вся группа: найдено меньше 3 или больше 120 строк',
         );
       }
       final students = <BarsRosterStudent>[];
