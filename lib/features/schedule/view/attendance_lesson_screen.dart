@@ -413,7 +413,7 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     final isClosed = detail?.lesson.state == 'closed';
     final filter = _search.text.trim().toLowerCase();
     final shown = reviewed
-        ? detail.students.where((student) {
+        ? detail!.students.where((student) {
             if (_showAbsentOnly) {
               final absent = isClosed
                   ? student.status == 'absent'
@@ -423,10 +423,10 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
             return student.displayName.toLowerCase().contains(filter);
           }).toList()
         : <AttendanceStudent>[];
-    final total = reviewed ? detail.students.length : 0;
+    final total = reviewed ? detail!.students.length : 0;
     final missing = reviewed
         ? (isClosed
-            ? detail.students.where((s) => s.status == 'absent').length
+            ? detail!.students.where((s) => s.status == 'absent').length
             : _absentKeys.length)
         : 0;
     return Scaffold(
