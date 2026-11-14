@@ -14,6 +14,7 @@ class LessonCard extends StatelessWidget {
     this.onTap,
     this.footer,
     this.onBookSeat,
+    this.attendanceAbsent = false,
   });
 
   final String time;
@@ -23,6 +24,8 @@ class LessonCard extends StatelessWidget {
   final String teacher;
   final VoidCallback? onTap;
   final Widget? footer;
+  /// Only the current BARS-authenticated student's confirmed absence.
+  final bool attendanceAbsent;
   /// Compact booking link beside the room for configured M-307 / V-308.
   final VoidCallback? onBookSeat;
 
@@ -78,6 +81,26 @@ class LessonCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (attendanceAbsent) ...[
+                const SizedBox(width: 8),
+                Container(
+                  key: const ValueKey('schedule-absence-n'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE74D67),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Н',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),
