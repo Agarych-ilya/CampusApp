@@ -27,8 +27,6 @@ class WeekDaysRow extends StatelessWidget {
       selectedDate.month,
       selectedDate.day - selectedDate.weekday + 1,
     );
-    final onSurface = Theme.of(context).colorScheme.onSurface;
-
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
