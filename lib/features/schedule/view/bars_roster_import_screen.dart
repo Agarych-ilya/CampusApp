@@ -477,7 +477,12 @@ class _BarsRosterImportScreenState extends State<BarsRosterImportScreen> {
             padding: const EdgeInsets.all(12),
             child: Row(children: [
               Expanded(child: OutlinedButton(
-                onPressed: _busy ? null : () => setState(() => _preview = null),
+                onPressed: _busy ? null : () {
+                  setState(() => _preview = null);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && !_manual) _autoNavigate();
+                  });
+                },
                 child: const Text('Назад'),
               )),
               const SizedBox(width: 10),
