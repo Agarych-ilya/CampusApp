@@ -5,6 +5,10 @@ import '/core/config/api_config.dart';
 import '/features/services/listings/data/listings_api.dart';
 import 'schedule_lesson.dart';
 
+/// Shared key between timetable lessons and closed attendance records.
+String attendanceLessonKey(String date, String time, String subject) =>
+    '${date.trim()}|${time.trim()}|${subject.trim()}';
+
 class AttendanceIdentity {
   const AttendanceIdentity({
     required this.authenticated, required this.isStarosta,
@@ -56,13 +60,20 @@ class AttendanceStudent {
 }
 
 class BarsRosterStudent {
-  const BarsRosterStudent({required this.fullName, this.sourceId});
+  const BarsRosterStudent({
+    required this.fullName,
+    this.sourceId,
+    this.email,
+  });
   final String fullName;
   final String? sourceId;
+  /// The server retains only a one-way HMAC of the university login.
+  final String? email;
 
   Map<String, dynamic> toJson() => {
     'fullName': fullName,
     if (sourceId != null && sourceId!.isNotEmpty) 'sourceId': sourceId,
+    if (email != null && email!.isNotEmpty) 'email': email,
   };
 }
 
@@ -209,6 +220,32 @@ class AttendanceApi {
   Future<AttendanceIdentity> session() async {
     final raw = await _request('GET', '/session');
     return AttendanceIdentity.fromJson(raw);
+  }
+
+  /// Only the authenticated student's confirmed, closed absences.
+  /// This is not the group's attendance roster.
+  Future<Set<String>> myAbsentLessonKeys(DateTime from, DateTime to) async {
+    String day(DateTime date) =>
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    final raw = await _request('GET', '/my-absences', query: {
+      'from': day(from),
+      'to': day(to),
+    });
+    if (raw is! List) throw const FormatException('Неверный список пропусков');
+    return {
+      for (final row in raw)
+        if (row is Map &&
+            row['date'] is String &&
+            row['time'] is String &&
+            row['subject'] is String)
+          attendanceLessonKey(
+            row['date'] as String,
+            row['time'] as String,
+            row['subject'] as String,
+          ),
+    };
   }
 
   Future<AttendanceRoster> roster() async =>
