@@ -80,6 +80,34 @@ WebView автоматически открывает **Учебные груп�
 <a id="быстрый-старт"></a>
 ## 🚀 Быстрый старт
 
+### Сборка проекта
+
+\`CampusApp\` — **Flutter-клиент**, а \`Campus-backend\` — отдельный сервер на NestJS.
+В корне \`CampusApp\` команда \`npm run build\` теперь является удобным
+псевдонимом для сборки Android APK через Flutter (Node.js-зависимостей у
+клиента нет):
+
+\`\`\`powershell
+# Находясь в корне CampusApp
+npm run build
+# То же самое без npm: flutter build apk --release
+\`\`\`
+
+Для этой команды необходимы Flutter SDK и настроенный Android SDK.
+Результат: \`build/app/outputs/flutter-apk/app-release.apk\`.
+
+Если нужно собрать именно **NestJS-бэкенд**, открой его папку, в которой
+находится собственный \`package.json\`:
+
+\`\`\`powershell
+cd ..\Campus-backend  # если оба проекта лежат рядом
+npm ci
+npm run build
+\`\`\`
+
+\`npm ci\` выполняется при первой установке и после изменения зависимостей.
+Не требуется копировать серверный \`package.json\` в Flutter-проект.
+
 ### Требования
 
 - [Flutter SDK](https://docs.flutter.dev/get-started/install) с Dart, совместимым с sdk: ^3.9.2.
