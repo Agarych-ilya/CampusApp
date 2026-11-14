@@ -127,12 +127,38 @@ void main() {
     ));
     expect(find.byKey(const ValueKey('schedule-absence-n')), findsOneWidget);
     expect(find.text('Н'), findsOneWidget);
-    // Badge is pinned to the upper-right corner, not inside the title row.
+    // N sits to the right of the subject, lower than the lesson type,
+    // as shown in the schedule mockup. Do not put it beside 'Лекция'.
     final badge = tester.getRect(find.byKey(
       const ValueKey('schedule-absence-n')));
     final typeLabel = tester.getRect(find.text('Лекция').first);
-    expect(typeLabel.right, lessThan(badge.left));
-    expect(badge.top, lessThan(typeLabel.bottom));
+    final subject = tester.getRect(find.text('Отсутствовал'));
+    expect(badge.top, greaterThan(typeLabel.bottom));
+    expect(badge.left, greaterThan(subject.right));
+    expect(badge.top, lessThan(subject.bottom + 24));
+  });
+
+  testWidgets('absence N does not overlap the M-307 seat action',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: LessonCard(
+        time: '11:10 - 12:45',
+        subject: 'Системы управления базами данных',
+        type: 'Лекция',
+        room: 'М-307',
+        teacher: 'Преподаватель',
+        attendanceAbsent: true,
+        onBookSeat: () {},
+      ),
+    )));
+    final badge = tester.getRect(find.byKey(
+      const ValueKey('schedule-absence-n')));
+    final type = tester.getRect(find.text('Лекция'));
+    final seatAction = tester.getRect(find.byKey(
+      const ValueKey('schedule-book-seat')));
+    expect(badge.top, greaterThan(type.bottom));
+    expect(badge.bottom, lessThan(seatAction.top));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('student receives N only from private matching lesson records',

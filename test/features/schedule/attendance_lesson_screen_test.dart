@@ -291,14 +291,21 @@ void main() {
       group: 'А-03-23', lesson: lesson, api: api,
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Студентов в группе: 2'), findsOneWidget);
+    expect(find.text('Режим старосты'), findsNothing);
+    expect(find.text('Всего'), findsNothing);
     expect(find.text('Загрузить группу из БАРС'), findsNothing);
     expect(find.text('Добавить себя'), findsNothing);
     await tester.tap(find.text('Открыть журнал пары'));
     await tester.pumpAndSettle();
-    expect(find.text('Выбери отсутствующих'), findsOneWidget);
+    expect(find.text('Студентов: 2 · Отсутствуют: 0'), findsOneWidget);
+    expect(find.text('Нажми на студента, чтобы отметить пропуск'),
+        findsOneWidget);
     expect(find.text('Иванов Иван'), findsOneWidget);
     expect(find.text('Петров Пётр'), findsOneWidget);
+    // The starosta journal is a simple list, not colorful KPI/initials cards.
+    expect(find.byType(CircleAvatar), findsNothing);
+    expect(find.text('Режим старосты'), findsNothing);
+    expect(find.text('Итоговые отметки'), findsNothing);
 
     await tester.tap(find.byKey(
       ValueKey('attendance-absent-${api.secondStudentKey}'),
@@ -315,7 +322,10 @@ void main() {
 
     expect(api.closed, 1);
     expect(api.savedAbsences, {api.secondStudentKey});
-    expect(find.text('Итоговые отметки'), findsOneWidget);
+    expect(find.text('Студентов: 2 · Отсутствуют: 1 · Журнал закрыт'),
+        findsOneWidget);
+    expect(find.text('Итоговые отметки'), findsNothing);
+    expect(find.text('Список для БАРС'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

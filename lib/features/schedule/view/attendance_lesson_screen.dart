@@ -65,14 +65,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     _ => 'Не отмечен',
   };
 
-  Color _color(BuildContext context, String status) => switch (status) {
-    'present' => Colors.green.shade400,
-    'absent' => Colors.redAccent,
-    'excused' => Colors.amber.shade400,
-    'pending' => Theme.of(context).colorScheme.primary,
-    _ => Theme.of(context).colorScheme.onSurfaceVariant,
-  };
-
   bool _requiresBarsReconnect(String error) =>
       error.contains('БАРС отклонил сессию') ||
       error.contains('перенаправил на вход') ||
@@ -245,123 +237,66 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
     );
   }
 
-  String _initials(String name) {
-    final pieces = name.trim().split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty).toList();
-    if (pieces.isEmpty) return '?';
-    if (pieces.length == 1) return pieces.first.substring(0, 1).toUpperCase();
-    return (pieces.first.substring(0, 1) +
-        pieces[1].substring(0, 1)).toUpperCase();
-  }
-
-  Widget _summaryItem(
-    String title, int count, Color color,
-  ) {
-    final theme = Theme.of(context);
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.09),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          children: [
-            Text('$count',
-              style: theme.textTheme.titleLarge?.copyWith(
-                color: color, fontSize: 21, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 3),
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-  }
-
+  /// A plain attendance row: a name and one status control, no avatars,
+  /// decorative statistic cards or colour-coded labels for every student.
   Widget _absenceTile(AttendanceStudent student, {required bool closed}) {
     final theme = Theme.of(context);
-    final absent = closed ? student.status == 'absent'
+    final absent = closed
+        ? student.status == 'absent'
         : _absentKeys.contains(student.ownerKey);
-    final red = const Color(0xFFEF566E);
-    final color = absent ? red : theme.colorScheme.onSurfaceVariant;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: absent ? red.withOpacity(0.09) : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: absent ? red.withOpacity(0.55) :
-              theme.colorScheme.outlineVariant.withOpacity(0.45),
+    final muted = theme.colorScheme.onSurfaceVariant;
+    const absenceColor = Color(0xFFEF566E);
+
+    return InkWell(
+      key: ValueKey('attendance-absent-${student.ownerKey}'),
+      onTap: _saving || closed ? null : () => setState(() {
+        if (absent) {
+          _absentKeys.remove(student.ownerKey);
+        } else {
+          _absentKeys.add(student.ownerKey);
+        }
+      }),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withOpacity(0.45),
+          )),
         ),
-      ),
-      child: InkWell(
-        key: ValueKey('attendance-absent-${student.ownerKey}'),
-        borderRadius: BorderRadius.circular(15),
-        onTap: _saving || closed ? null : () => setState(() {
-          if (absent) {
-            _absentKeys.remove(student.ownerKey);
-          } else {
-            _absentKeys.add(student.ownerKey);
-          }
-        }),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 21,
-                backgroundColor: absent
-                    ? red.withOpacity(0.15)
-                    : theme.colorScheme.primary.withOpacity(0.1),
-                child: Text(_initials(student.displayName),
-                  style: TextStyle(
-                    color: absent ? red : theme.colorScheme.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  )),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(student.displayName,
-                      maxLines: 2, overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      )),
-                    const SizedBox(height: 3),
-                    Text(closed ? _label(student.status)
-                        : (absent ? 'Отсутствует' : 'Присутствует'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: closed
-                          ? _color(context, student.status) : color)),
-                  ],
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                student.displayName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(width: 8),
-              if (absent)
-                Container(
-                  key: const ValueKey('attendance-student-absence'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: red,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: const Text('Н',
-                    style: TextStyle(color: Colors.white,
-                      fontWeight: FontWeight.w900, fontSize: 15)),
-                )
-              else
-                Icon(Icons.circle_outlined, size: 24,
-                  color: theme.colorScheme.outline),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            if (absent)
+              Container(
+                key: const ValueKey('attendance-student-absence'),
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                child: const Text('Н', style: TextStyle(
+                  color: absenceColor,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                )),
+              )
+            else if (!closed)
+              Icon(Icons.radio_button_unchecked, size: 23, color: muted)
+            else if (student.status == 'present')
+              Icon(Icons.check, size: 20, color: muted)
+            else
+              Text(_label(student.status),
+                style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+          ],
         ),
       ),
     );
@@ -380,38 +315,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
       () => _api.checkIn(id),
       'Заявка отправлена старосте для проверки',
     );
-  }
-
-  Future<void> _preview() async {
-    if (_lessonId == null) return;
-    try {
-      final result = await _api.barsPreview(_lessonId!);
-      if (!mounted) return;
-      final absences = (result['absences'] as List? ?? []).whereType<Map>()
-          .map((item) => item['displayName']?.toString() ?? 'Студент')
-          .toList();
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Список для БАРС'),
-          content: SingleChildScrollView(
-            child: Text(
-              'Это предпросмотр — официальный БАРС не изменён.\n\n'
-              'Пропуски:\n'
-              '${absences.isEmpty ? 'Нет' : absences.join('\n')}',
-            ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Готово'),
-            ),
-          ],
-        ),
-      );
-    } catch (error) {
-      _message(error.toString().replaceFirst('Exception: ', ''), error: true);
-    }
   }
 
   @override
@@ -440,9 +343,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
             ? detail!.students.where((s) => s.status == 'absent').length
             : _absentKeys.length)
         : 0;
-    final present = reviewed && isClosed
-        ? detail!.students.where((s) => s.status == 'present').length
-        : total - missing;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Учебный журнал'),
@@ -463,10 +363,13 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                 children: [
                   Text(widget.lesson.subject,
                       style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900)),
+                        fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   Text('${widget.group} · ${widget.lesson.date} · '
-                      '${widget.lesson.time}'),
+                      '${widget.lesson.time}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      )),
                   const SizedBox(height: 14),
                   if (_error != null)
                     Card(
@@ -501,12 +404,7 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                     ),
                   if (account != null && account.authenticated) ...[
                     if (account.isStarosta) ...[
-                      const Text('Режим старосты',
-                          style: TextStyle(fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 10),
-                      if (_roster?.imported == true)
-                        Text('Студентов в группе: ${_roster!.students.length}')
-                      else ...[
+                      if (_roster?.imported != true) ...[
                         Text(_rosterError ??
                             'Не удалось получить список группы с сервера БАРС.'),
                         const SizedBox(height: 8),
@@ -543,12 +441,13 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                         ),
                       ],
                     ] else ...[
-                      Text(
-                        detail.lesson.state == 'closed'
-                            ? 'Журнал закрыт'
-                            : 'Приём отметок открыт',
-                        style: theme.textTheme.titleMedium,
-                      ),
+                      if (!account.isStarosta)
+                        Text(
+                          detail.lesson.state == 'closed'
+                              ? 'Журнал закрыт'
+                              : 'Приём отметок открыт',
+                          style: theme.textTheme.bodyMedium,
+                        ),
                       if (!account.isStarosta) ...[
                         const SizedBox(height: 12),
                         Text('Моя отметка: ${_label(detail.myStatus ?? 'unmarked')}'),
@@ -569,34 +468,21 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                             'Если ты не нажал кнопку, это не означает '
                             'автоматический пропуск.'),
                       ] else ...[
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(isClosed ? 'Итоговые отметки'
-                                : 'Посещаемость группы',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              )),
-                            if (!isClosed)
-                              Text('Выбери отсутствующих',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant)),
-                          ],
+                        const SizedBox(height: 14),
+                        Text(
+                          'Студентов: $total · Отсутствуют: $missing'
+                          '${isClosed ? ' · Журнал закрыт' : ''}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            _summaryItem('Всего', total,
-                                theme.colorScheme.primary),
-                            const SizedBox(width: 8),
-                            _summaryItem('Присутствуют', present,
-                                const Color(0xFF4BBE91)),
-                            const SizedBox(width: 8),
-                            _summaryItem('Отсутствуют', missing,
-                                const Color(0xFFEF566E)),
-                          ],
-                        ),
+                        if (!isClosed) ...[
+                          const SizedBox(height: 5),
+                          Text('Нажми на студента, чтобы отметить пропуск',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            )),
+                        ],
                         const SizedBox(height: 14),
                         if (detail.students.isEmpty)
                           const Text('Сначала загрузи полный список '
@@ -624,20 +510,39 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              ChoiceChip(
+                              TextButton(
                                 key: const ValueKey('attendance-filter-all'),
-                                label: const Text('Все'),
-                                selected: !_showAbsentOnly,
-                                onSelected: (_) => setState(
+                                onPressed: () => setState(
                                   () => _showAbsentOnly = false),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                                ),
+                                child: Text('Все', style: TextStyle(
+                                  fontWeight: !_showAbsentOnly
+                                      ? FontWeight.w700 : FontWeight.w400,
+                                  color: !_showAbsentOnly
+                                      ? theme.colorScheme.onSurface
+                                      : theme.colorScheme.onSurfaceVariant,
+                                )),
                               ),
                               const SizedBox(width: 8),
-                              ChoiceChip(
+                              TextButton(
                                 key: const ValueKey('attendance-filter-absent'),
-                                label: Text('Отсутствуют ($missing)'),
-                                selected: _showAbsentOnly,
-                                onSelected: (_) => setState(
+                                onPressed: () => setState(
                                   () => _showAbsentOnly = true),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                                ),
+                                child: Text('Отсутствуют ($missing)',
+                                  style: TextStyle(
+                                    fontWeight: _showAbsentOnly
+                                        ? FontWeight.w700 : FontWeight.w400,
+                                    color: _showAbsentOnly
+                                        ? theme.colorScheme.onSurface
+                                        : theme.colorScheme.onSurfaceVariant,
+                                  )),
                               ),
                             ],
                           ),
@@ -654,15 +559,6 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                               )),
                             ),
                         ],
-                        if (isClosed) ...[
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _preview,
-                            icon: const Icon(Icons.list_alt),
-                            label: const Text('Список для БАРС'),
-                          ),
-                        ],
-
                       ],
                     ],
                   ],
@@ -682,11 +578,10 @@ class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
                 ),
                 child: SizedBox(
                   height: 50,
-                  child: FilledButton.icon(
+                  child: FilledButton(
                     key: const ValueKey('save-reviewed-absences'),
                     onPressed: _saving ? null : _saveReviewedAbsences,
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: Text('Сохранить · отсутствуют $missing'),
+                    child: const Text('Сохранить посещаемость'),
                   ),
                 ),
               ),
