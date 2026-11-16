@@ -351,6 +351,12 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('campus-map-refresh'),
+            tooltip: 'Обновить метки с сервера',
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+          ),
           if (_busy)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
