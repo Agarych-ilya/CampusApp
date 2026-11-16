@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -10,6 +10,7 @@ import '../data/bars_subjects_storage.dart';
 import '../data/profile_avatar_storage.dart';
 import '../data/student_profile.dart';
 import '../data/student_profile_storage.dart';
+import '../../schedule/data/attendance_api.dart';
 import 'profile_statistics_view.dart';
 import 'settings_screen.dart';
 
@@ -65,10 +66,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final StudentProfileStorage _profileStorage = StudentProfileStorage();
   final BarsSubjectsStorage _subjectsStorage = BarsSubjectsStorage();
   final ProfileAvatarStorage _avatarStorage = ProfileAvatarStorage();
+  final AttendanceApi _avatarApi = AttendanceApi();
 
   StudentProfile? _profile;
   List<BarsSubject> _subjects = [];
-  File? _avatar;
+  Uint8List? _avatar;
   String? _selectedSemester;
   bool _loading = true;
   bool _changingAvatar = false;
@@ -86,6 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _avatarApi.dispose();
     super.dispose();
   }
 
@@ -100,7 +103,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     final profile = await _profileStorage.getProfile();
     final subjects = await _subjectsStorage.getSubjects();
-    final avatar = await _avatarStorage.getAvatar();
+    Uint8List? avatar;
+    try {
+      avatar = await _avatarApi.myAvatar();
+      // Migrate an earlier phone-only avatar to canonical server storage.
+      if (avatar == null) {
+        final legacy = await _avatarStorage.getAvatar();
+        if (legacy != null) {
+          await _avatarApi.uploadAvatar(legacy);
+          avatar = await legacy.readAsBytes();
+          await _avatarStorage.clearAvatar();
+        }
+      }
+    } catch (_) {
+      // An expired BARS session should not prevent opening the profile.
+    }
     final semesters = _getSemesters(subjects);
 
     if (!mounted) return;
@@ -178,17 +195,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _changingAvatar = true);
     try {
       if (action == _AvatarAction.delete) {
+        await _avatarApi.removeAvatar();
         await _avatarStorage.clearAvatar();
         if (mounted) setState(() => _avatar = null);
       } else {
         final image = await _avatarStorage.pickAndSaveAvatar();
-        if (mounted && image != null) setState(() => _avatar = image);
+        if (image != null) {
+          await _avatarApi.uploadAvatar(image);
+          final bytes = await image.readAsBytes();
+          await _avatarStorage.clearAvatar();
+          if (mounted) setState(() => _avatar = bytes);
+        }
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Не удалось сохранить фотографию. Выбери другое изображение.'),
+            content: Text('Не удалось загрузить фотографию на сервер. Поддерживаются JPG, PNG, WebP до 4 МБ.'),
           ),
         );
       }
@@ -427,7 +450,7 @@ class _ProfileHeader extends StatelessWidget {
   });
 
   final StudentProfile profile;
-  final File? avatar;
+  final Uint8List? avatar;
   final VoidCallback onAvatarTap;
   final bool changingAvatar;
 
@@ -467,13 +490,13 @@ class _ProfileHeader extends StatelessWidget {
                               color: scheme.primary,
                             ),
                           )
-                        : Image.file(
+                        : Image.memory(
                             avatar!,
-                            key: ValueKey(avatar!.path),
+                            key: const ValueKey('campus-server-avatar'),
                             fit: BoxFit.cover,
                             width: 74,
                             height: 74,
-                            errorBuilder: (_, _, _) => const Icon(
+                            errorBuilder: (_, __, ___) => const Icon(
                               Icons.person_rounded,
                               size: 38,
                             ),
