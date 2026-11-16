@@ -1,0 +1,22 @@
+name: CampusApp map checks
+on:
+  push:
+    branches: [map]
+  pull_request:
+    branches: [map]
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Check new headman and Spark integrations
+        run: |
+          flutter analyze lib/features/schedule/data/attendance_api.dart lib/features/services/study lib/features/services/view/services_screen.dart lib/features/profile/data/subject_grade_forecast.dart
+          flutter test test/features/services/starosta_report_csv_test.dart
+          flutter test test/features/profile/subject_grade_forecast_test.dart
+          flutter test test/features/schedule/lesson_break_progress_test.dart
