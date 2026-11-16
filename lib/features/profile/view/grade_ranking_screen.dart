@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../../schedule/data/attendance_api.dart';
 import '../data/bars_subject.dart';
+import '../data/subject_grade_forecast.dart';
 
 /// Weighted assessment marks (2–5); currentScore is intentionally ignored.
 class GradeScoreSnapshot {
@@ -19,24 +20,6 @@ class GradeScoreSnapshot {
   );
   double get average => totalWeight <= 0 ? 0 : weightedSum / totalWeight;
 
-  static double? _mark(String raw) {
-    final match = RegExp(r'^\s*([2-5])(?:[.,](\d{1,2}))?(?=\s|$|\()')
-        .firstMatch(raw);
-    if (match == null) return null;
-    final text = match.group(1)! +
-      (match.group(2) == null ? '' : '.${match.group(2)}');
-    final value = double.tryParse(text);
-    return value != null && value >= 2 && value <= 5 ? value : null;
-  }
-
-  static double? _weight(String raw) {
-    final normalized = raw.trim().replaceAll(' ', '')
-        .replaceAll('%', '').replaceAll(',', '.');
-    if (!RegExp(r'^\d+(?:\.\d{1,3})?$').hasMatch(normalized)) return null;
-    final value = double.tryParse(normalized);
-    return value != null && value > 0 && value <= 100 ? value : null;
-  }
-
   static GradeScoreSnapshot? parse(List<BarsSubject> records) {
     final marks = <GradeRankingSubject>[];
     var unweighted = 0;
@@ -44,9 +27,9 @@ class GradeScoreSnapshot {
       final subject = records[subjectIndex];
       for (var index = 0; index < subject.controls.length; index++) {
         final control = subject.controls[index];
-        final grade = _mark(control.grade);
+        final grade = SubjectGradeForecast.controlGrade(control.grade);
         if (grade == null) continue;
-        final weight = _weight(control.weight);
+        final weight = SubjectGradeForecast.controlWeight(control.weight);
         if (weight == null) {
           unweighted++;
           continue;
