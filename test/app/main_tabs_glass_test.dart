@@ -29,6 +29,16 @@ void main() {
     }
     expect(find.byType(BottomNavigationBar), findsNothing);
     expect(find.byType(BackdropFilter), findsOneWidget);
+    final dock = tester.widget<Container>(
+      find.byKey(const ValueKey('campus-glass-dock')),
+    );
+    final decoration = dock.decoration! as BoxDecoration;
+    expect(decoration.color!.alpha, lessThan(180));
+    final bounds = tester.getSize(
+      find.byKey(const ValueKey('campus-glass-dock')),
+    );
+    expect(bounds.height, 60);
+    expect(find.byType(Icon), findsNWidgets(5));
     expect(find.text('Расписание'), findsNothing);
     expect(find.text('Профиль'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('campus-glass-tab-3')));

@@ -75,23 +75,32 @@ class CampusGlassDock extends StatelessWidget {
         : const Color(0xFF77717F);
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.fromLTRB(18, 7, 18, 13),
+      minimum: const EdgeInsets.fromLTRB(20, 4, 20, 8),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(42),
+        borderRadius: BorderRadius.circular(32),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
             key: const ValueKey('campus-glass-dock'),
-            height: 77,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             decoration: BoxDecoration(
-              color: dark ? const Color(0xF1151418)
-                  : const Color(0xF5F5F2FA),
-              borderRadius: BorderRadius.circular(42),
+              // Translucent glass, not an opaque black background.
+              color: dark ? const Color(0x451B1922)
+                  : const Color(0x83F9F7FF),
+              borderRadius: BorderRadius.circular(32),
               border: Border.all(
-                color: dark ? const Color(0xFF26242B)
-                    : const Color(0xFFDAD6E6),
+                color: dark ? const Color(0x44FFFFFF)
+                    : const Color(0x88FFFFFF),
+                width: 0.8,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(dark ? 0.10 : 0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -105,7 +114,7 @@ class CampusGlassDock extends StatelessWidget {
                         selected: currentIndex == index,
                         child: InkWell(
                           key: ValueKey('campus-glass-tab-$index'),
-                          borderRadius: BorderRadius.circular(36),
+                          borderRadius: BorderRadius.circular(28),
                           onTap: () {
                             HapticFeedback.selectionClick();
                             onSelected(index);
@@ -116,16 +125,16 @@ class CampusGlassDock extends StatelessWidget {
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: currentIndex == index
-                                  ? (dark ? const Color(0xFF30283F)
-                                      : const Color(0xFFE5DEFA))
+                                  ? (dark ? const Color(0x87473860)
+                                      : const Color(0x9AE5DEFA))
                                   : Colors.transparent,
-                              borderRadius: BorderRadius.circular(36),
+                              borderRadius: BorderRadius.circular(28),
                             ),
                             child: Icon(
                               currentIndex == index
                                   ? destinations[index].selected
                                   : destinations[index].icon,
-                              size: 26,
+                              size: 23,
                               color: currentIndex == index ? lavender : idle,
                             ),
                           ),
