@@ -285,6 +285,323 @@ void main() {
     expect(find.text('Занятие А-03-23'), findsWidgets);
   });
 
+  testWidgets('selected date and semester week share bold typography',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    final week = tester.widget<Text>(
+      find.byKey(const ValueKey('schedule-semester-week')));
+    final date = tester.widget<Text>(
+      find.textContaining(RegExp(r'^\d{1,2} [а-яё]+ (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    final api = _FakeScheduleApi();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScheduleScreen(
+            scheduleApi: api,
+            groupStorage: GroupStorage(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Занятие А-03-23'), findsWidgets);
+    expect(find.byKey(const ValueKey('schedule-semester-week')), findsOneWidget);
+    final groupFinder = find.byKey(const ValueKey('schedule-group-search'));
+    expect(groupFinder, findsOneWidget);
+    final today = DateTime.now();
+    final dayFinder = find.byKey(
+      ValueKey('schedule-day-${today.year}-${today.month}-${today.day}'),
+    );
+    expect(dayFinder, findsOneWidget);
+    expect(
+      tester.getTopLeft(groupFinder).dy,
+      greaterThan(tester.getTopLeft(dayFinder).dy),
+    );
+
+    await tester.tap(groupFinder);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'А-04-23');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ListTile, 'А-04-23'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Занятие А-04-23'), findsWidgets);
+    expect(find.text('Занятие А-03-23'), findsNothing);
+    expect(api.requestedGroups, contains('А-04-23'));
+    expect(await GroupStorage().getScheduleGroup(), 'А-04-23');
+    expect(await GroupStorage().getGroup(), 'А-03-23');
+  });
+
+  testWidgets('another group stays visible but lesson details stay closed',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    await GroupStorage().saveScheduleGroup('А-04-23');
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(room: 'М-307'),
+        groupStorage: GroupStorage(),
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-04-23'), findsWidgets);
+    await tester.tap(find.text('Занятие А-04-23').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Мои оценки по предмету'), findsNothing);
+    expect(find.textContaining('Подробности и заметки доступны только'),
+        findsNothing);
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-book-seat')), findsNothing);
+  });
+
+  testWidgets('my lesson shows a saved private note under the lesson',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    final date = DateTime.now();
+    final dd = date.day.toString().padLeft(2, '0');
+    final mm = date.month.toString().padLeft(2, '0');
+    final lesson = ScheduleLesson(
+      date: '$dd.$mm.${date.year}',
+      time: '09:20 - 10:55',
+      subject: 'Занятие А-03-23',
+      type: 'Лекция',
+      room: 'С-409',
+      teacher: 'Преподаватель',
+    );
+    await PrivateLessonNotesStorage().save(
+      group: 'А-03-23',
+      lesson: lesson,
+      content: 'Сделать лабораторную',
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lesson-note-preview')), findsOneWidget);
+    expect(find.textContaining('Сделать лабораторную', findRichText: true),
+        findsOneWidget);
+  });
+
+  testWidgets('M-307 booking button opens seat map directly from timetable',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          scheduleApi: _FakeScheduleApi(room: 'М-307 (Корпус М)'),
+          groupStorage: GroupStorage(),
+          bookingApi: api,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('schedule-book-seat'));
+    expect(button, findsOneWidget);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование аудиторий'), findsOneWidget);
+    expect(find.text('М-307'), findsOneWidget);
+    expect(find.byKey(const ValueKey('booking-room-change')), findsNothing);
+    expect(find.text('Мои оценки по предмету'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+
+  testWidgets('В-308 seat booking opens directly beside the classroom',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    final api = _FakeBookingApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          scheduleApi: _FakeScheduleApi(room: 'В-308 (Корпус В)'),
+          groupStorage: GroupStorage(),
+          bookingApi: api,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('schedule-book-seat'));
+    expect(entry, findsOneWidget);
+    expect(find.text('Выбрать место'), findsOneWidget);
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.text('Бронирование аудиторий'), findsOneWidget);
+    expect(find.text('В-308'), findsOneWidget);
+    expect(find.textContaining('176 мест'), findsOneWidget);
+    expect(api, isNotNull); // Route opened without intermediate details.
+    expect(find.text('Мои оценки по предмету'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+
+  testWidgets('other classrooms never show M-307 booking CTA',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент',
+      group: 'А-03-23',
+      recordBook: '',
+      course: '4',
+      educationLevel: '',
+      email: '',
+      faculty: '',
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          scheduleApi: _FakeScheduleApi(room: 'С-401 (Корпус С)'),
+          groupStorage: GroupStorage(),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-03-23'), findsWidgets);
+    expect(find.byKey(const ValueKey('schedule-book-seat')), findsNothing);
+  });
+
+  test('choosing a timetable group does not change BARS group', () async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    final storage = GroupStorage();
+    expect(await storage.getScheduleGroup(), 'А-03-23');
+    await storage.saveScheduleGroup('А-04-23');
+    expect(await storage.getScheduleGroup(), 'А-04-23');
+    expect(await storage.getGroup(), 'А-03-23');
+  });
+}
+
+class _FakeScheduleApi extends ScheduleApi {
+  _FakeScheduleApi({this.room = 'С-409'});
+  final String room;
+  final requestedGroups = <String>[];
+
+  @override
+  Future<List<String>> searchGroups(String query) async =>
+      ['А-03-23', 'А-04-23'];
+
+  @override
+  Future<List<ScheduleLesson>> getWeekSchedule({
+    required String group,
+    required DateTime selectedDate,
+    bool forceRefresh = false,
+  }) async {
+    requestedGroups.add(group);
+    final date = DateTime.now();
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return [
+      ScheduleLesson(
+        date: '$day.$month.${date.year}',
+        time: '09:20 - 10:55',
+        subject: 'Занятие $group',
+        type: 'Лекция',
+        room: room,
+        teacher: 'Преподаватель',
+      ),
+    ];
+  }
+}
+
+class _OwnAbsencesFake extends AttendanceApi {
+  int requested = 0;
+
+  @override
+  Future<Set<String>> myAbsentLessonKeys(
+    DateTime from, DateTime to,
+  ) async {
+    requested++;
+    final now = DateTime.now();
+    String two(int x) => x.toString().padLeft(2, '0');
+    return {
+      attendanceLessonKey(
+        '${now.year}-${two(now.month)}-${two(now.day)}',
+        '09:20 - 10:55',
+        'Занятие А-03-23',
+        'Лекция',
+        'С-409',
+      ),
+    };
+  }
+}
+
+class _FakeBookingApi extends ClassroomBookingApi {
+  @override
+  Future<ClassroomAvailability> load({
+    required DateTime date,
+    required String slot,
+    String room = 'М-307',
+    bool trySession = true,
+  }) async => ClassroomAvailability(
+    room: room,
+    date: ClassroomBookingApi.dateKey(date),
+    slot: slot,
+    occupied: const <ClassroomSeat>{},
+    mine: null,
+    slots: classroomDemoSlots,
+    testMode: true,
+  );
+}
+)).first);
+    expect(date.style?.fontWeight, FontWeight.w800);
+    expect(week.style?.fontWeight, FontWeight.w800);
+    expect(date.style?.fontSize, 14);
+    expect(week.style?.fontSize, 14);
+  });
+
   testWidgets('changing group reloads real lessons, not only the label', (tester) async {
     SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
     final api = _FakeScheduleApi();
