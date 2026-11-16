@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -85,13 +87,18 @@ class CampusGlassDock extends StatelessWidget {
     return SafeArea(
       top: false,
       minimum: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-      child: Container(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
             key: const ValueKey('campus-glass-dock'),
             height: 60,
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             decoration: BoxDecoration(
-              // No black capsule: background content remains visible.
-              color: Colors.transparent,
+              // Soft translucent glass; underlying map remains visible.
+              color: dark ? const Color(0x451B1922)
+                  : const Color(0x83F9F7FF),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
                 color: dark ? const Color(0x33FFFFFF)
@@ -141,6 +148,8 @@ class CampusGlassDock extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+        ),
       ),
     );
   }
