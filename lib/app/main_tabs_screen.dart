@@ -17,6 +17,17 @@ class MainTabsScreen extends StatefulWidget {
 
 class _MainTabsScreenState extends State<MainTabsScreen> {
   int _currentIndex = 0;
+  // Keep visited tabs alive, but do not mount the map (and its inherited
+  // FlutterMap scope) while the user is still on the schedule screen.
+  final Set<int> _visited = {0};
+
+  void _selectTab(int index) {
+    if (index == _currentIndex) return;
+    setState(() {
+      _visited.add(index);
+      _currentIndex = index;
+    });
+  }
 
   final List<Widget> _screens = const [
     ScheduleScreen(),
@@ -37,14 +48,23 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
       children: [
         // Render the active screen behind the dock. A bottomNavigationBar
         // reserves a dark Scaffold region even when its child is translucent.
-        IndexedStack(index: _currentIndex, children: _screens),
+        IndexedStack(
+          index: _currentIndex,
+          children: [
+            for (var index = 0; index < _screens.length; index++)
+              if (_visited.contains(index))
+                _screens[index]
+              else
+                const SizedBox.shrink(),
+          ],
+        ),
         Positioned(
           left: 0,
           right: 0,
           bottom: 0,
           child: CampusGlassDock(
             currentIndex: _currentIndex,
-            onSelected: (index) => setState(() => _currentIndex = index),
+            onSelected: _selectTab,
           ),
         ),
       ],
