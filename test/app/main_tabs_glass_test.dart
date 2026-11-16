@@ -33,7 +33,8 @@ void main() {
       find.byKey(const ValueKey('campus-glass-dock')),
     );
     final decoration = dock.decoration! as BoxDecoration;
-    expect(decoration.color!.alpha, lessThan(180));
+    expect(decoration.color, Colors.transparent);
+    expect(decoration.boxShadow, isNull);
     final bounds = tester.getSize(
       find.byKey(const ValueKey('campus-glass-dock')),
     );
