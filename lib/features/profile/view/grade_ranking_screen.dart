@@ -3,44 +3,67 @@ import 'package:flutter/material.dart';
 import '../../schedule/data/attendance_api.dart';
 import '../data/bars_subject.dart';
 
-/// Latest-semester numeric "Балл текущего контроля" from personal BARS.
+/// Weighted assessment marks (2–5); currentScore is intentionally ignored.
 class GradeScoreSnapshot {
-  const GradeScoreSnapshot(this.semester, this.subjects);
+  const GradeScoreSnapshot(this.semester, this.subjects, this.missingWeights);
   final String semester;
   final List<GradeRankingSubject> subjects;
-  double get average => subjects.isEmpty ? 0 :
-      subjects.map((x) => x.points).reduce((a, b) => a + b) / subjects.length;
+  final int missingWeights;
+
+  double get weightedSum => subjects.fold<double>(
+    0, (sum, item) => sum + item.points * item.weight,
+  );
+  double get totalWeight => subjects.fold<double>(
+    0, (sum, item) => sum + item.weight,
+  );
+  double get average => totalWeight <= 0 ? 0 : weightedSum / totalWeight;
+
+  static double? _mark(String raw) {
+    final match = RegExp(r'^\s*([2-5])(?:[.,](\d{1,2}))?(?=\s|$|\()')
+        .firstMatch(raw);
+    if (match == null) return null;
+    final text = match.group(1)! +
+      (match.group(2) == null ? '' : '.${match.group(2)}');
+    final value = double.tryParse(text);
+    return value != null && value >= 2 && value <= 5 ? value : null;
+  }
+
+  static double? _weight(String raw) {
+    final normalized = raw.trim().replaceAll(' ', '')
+        .replaceAll('%', '').replaceAll(',', '.');
+    if (!RegExp(r'^\d+(?:\.\d{1,3})?$').hasMatch(normalized)) return null;
+    final value = double.tryParse(normalized);
+    return value != null && value > 0 && value <= 100 ? value : null;
+  }
 
   static GradeScoreSnapshot? parse(List<BarsSubject> records) {
-    final semesters = <String, List<GradeRankingSubject>>{};
-    final seen = <String, Set<String>>{};
-    for (final subject in records) {
-      final semester = subject.semester.trim();
-      final name = subject.name.trim();
-      final text = subject.currentScore.trim().replaceAll(',', '.');
-      if (semester.isEmpty || semester.length > 96 || name.isEmpty ||
-          name.length > 180 ||
-          !RegExp(r'^\d{1,3}(?:\.\d{1,2})?$').hasMatch(text)) continue;
-      final score = double.tryParse(text);
-      if (score == null || score > 100 || score < 0) continue;
-      final duplicate = seen.putIfAbsent(semester, () => {});
-      if (!duplicate.add(name.toLowerCase().replaceAll('ё', 'е'))) continue;
-      semesters.putIfAbsent(semester, () => []).add(
-        GradeRankingSubject(name: name, points: score),
-      );
+    final marks = <GradeRankingSubject>[];
+    var unweighted = 0;
+    for (var subjectIndex = 0; subjectIndex < records.length; subjectIndex++) {
+      final subject = records[subjectIndex];
+      for (var index = 0; index < subject.controls.length; index++) {
+        final control = subject.controls[index];
+        final grade = _mark(control.grade);
+        if (grade == null) continue;
+        final weight = _weight(control.weight);
+        if (weight == null) {
+          unweighted++;
+          continue;
+        }
+        final descriptor =
+            '${subject.semester} · ${subject.name} · ${control.title}';
+        final prefix = descriptor.length > 153
+            ? descriptor.substring(0, 153)
+            : descriptor;
+        marks.add(GradeRankingSubject(
+          name: '$prefix #${subjectIndex + 1}.${index + 1}',
+          points: grade,
+          weight: weight,
+        ));
+      }
     }
-    if (semesters.isEmpty) return null;
-    int order(String text) {
-      final year = int.tryParse(RegExp(r'20\d{2}').firstMatch(text)?.group(0) ?? '') ?? 0;
-      final spring = text.toLowerCase().contains('весен');
-      return year * 10 + (spring ? 2 : 1);
-    }
-    final names = semesters.keys.toList()
-      ..sort((a, b) {
-        final first = order(b).compareTo(order(a));
-        return first == 0 ? b.compareTo(a) : first;
-      });
-    return GradeScoreSnapshot(names.first, semesters[names.first]!.take(40).toList());
+    if (marks.isEmpty) return null;
+    return GradeScoreSnapshot('Все семестры', marks, unweighted);
   }
 }
 
@@ -77,7 +100,7 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
     final snapshot = GradeScoreSnapshot.parse(widget.subjects);
     if (snapshot == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Нет текущих баллов БАРС. Сначала обнови оценки в профиле.'),
+        content: Text('Нет оценок с корректными весами. Проверь работы БАРС в профиле.'),
       ));
       return;
     }
@@ -86,13 +109,17 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
       builder: (dialog) => AlertDialog(
         title: const Text('Опубликовать баллы?'),
         content: Text(
-          'Семестр: ${snapshot.semester}\n'
-          'Предметов: ${snapshot.subjects.length}\n'
-          'Средний текущий балл: ${snapshot.average.toStringAsFixed(2)}\n\n'
-          'Твоё ФИО, группа и средний балл станут видны в рейтингах '
-          'CampusApp. Баллы взяты из сохранённого БАРС на этом телефоне '
-          'и не проверяются сервером университета. '
-          'Ты сможешь удалить их в любой момент.',
+          'Период: ${snapshot.semester}\n'
+          'Оценённых работ с весом: ${snapshot.subjects.length}\n'
+          'Сумма (оценка × вес): ${snapshot.weightedSum.toStringAsFixed(2)}\n'
+          'Сумма весов: ${snapshot.totalWeight.toStringAsFixed(2)}\n'
+          'Средневзвешенная оценка: ${snapshot.average.toStringAsFixed(2)}\n'
+          'Работ без корректного веса: ${snapshot.missingWeights}\n\n'
+          'В рейтинг публикуется средневзвешенная оценка по работам БАРС '
+          '(от 2 до 5), а также твоё ФИО и группа. '
+          'Сервер не проверяет оценки через официальный БАРС. '
+          'Публикацию можно удалить.',
+
         ),
         actions: [
           TextButton(
@@ -221,7 +248,7 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
                     key: const ValueKey('score-ranking-update'),
                     onPressed: _busy ? null : _submit,
                     icon: const Icon(Icons.sync),
-                    label: const Text('Обновить баллы БАРС'),
+                    label: const Text('Пересчитать оценки'),
                   ),
                   const SizedBox(height: 6),
                   OutlinedButton.icon(
@@ -235,7 +262,7 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
                     key: const ValueKey('score-ranking-publish'),
                     onPressed: _busy ? null : _submit,
                     icon: const Icon(Icons.add_chart),
-                    label: const Text('Добавить мои баллы БАРС'),
+                    label: const Text('Опубликовать среднюю оценку'),
                   ),
                 const SizedBox(height: 11),
                 Text(
