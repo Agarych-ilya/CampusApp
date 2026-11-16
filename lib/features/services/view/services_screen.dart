@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '/features/services/style/service_palette.dart';
+import '/features/schedule/data/attendance_api.dart';
+import '/features/services/study/view/starosta_cabinet_screen.dart';
 
 import '/features/services/cloud/view/cloud_screen.dart';
 import '/features/services/study/view/study_home_screen.dart';
@@ -18,7 +20,7 @@ import 'add_community_screen.dart';
 import 'community_detail_screen.dart';
 import 'community_admin_screen.dart';
 
-enum _ServiceType { cloud, qr, nfc, study, market, found }
+enum _ServiceType { cloud, qr, nfc, study, market, found, headman }
 
 class _ServiceInfo {
   const _ServiceInfo({
@@ -112,6 +114,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
   bool _offline = false;
   bool _canManageCommunities = false;
   bool _checkingAdmin = false;
+  bool _starostaAvailable = false;
   int _activePage = 0;
   late final PageController _pageController;
   String? _deletingCommunityId;
@@ -127,6 +130,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
     _loadCachedCatalog();
     _loadCommunities();
     _checkExistingBarsAdmin();
+    _checkStarostaRole();
   }
 
   Future<void> _checkExistingBarsAdmin() async {
@@ -140,11 +144,30 @@ class _ServicesScreenState extends State<ServicesScreen> {
     }
   }
 
+  /// The student role is checked by Campus-backend, never by a local flag.
+  /// Pull-to-refresh repeats the check after BARS authorization changes.
+  Future<void> _checkStarostaRole() async {
+    final api = AttendanceApi();
+    try {
+      final identity = await api.session();
+      if (!mounted) return;
+      setState(() {
+        _starostaAvailable = identity.authenticated &&
+          (identity.isStarosta || identity.managedGroups.isNotEmpty);
+      });
+    } catch (_) {
+      if (mounted) setState(() => _starostaAvailable = false);
+    } finally {
+      api.dispose();
+    }
+  }
+
   Future<void> _refreshGroupsAndPermissions() async {
     // Allow recovery if the local backend was started after the app.
     await Future.wait([
       _loadCommunities(),
       _checkExistingBarsAdmin(),
+      _checkStarostaRole(),
     ]);
   }
 
@@ -266,6 +289,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
       _ServiceType.study => const StudyHomeScreen(),
       _ServiceType.market => const ListingsScreen(market: true),
       _ServiceType.found => const ListingsScreen(market: false),
+      _ServiceType.headman => const StarostaCabinetScreen(),
     };
 
     Navigator.of(context).push(
@@ -592,7 +616,19 @@ class _ServicesScreenState extends State<ServicesScreen> {
   Widget build(BuildContext context) {
     final theme = ServicePalette.theme(Theme.of(context));
     final query = _searchController.text.trim().toLowerCase();
-    final matchedServices = _services
+    final visibleServices = <_ServiceInfo>[
+      if (_starostaAvailable)
+        const _ServiceInfo(
+          type: _ServiceType.headman,
+          title: 'Кабинет старосты',
+          subtitle: 'Группы, списки и отчёты',
+          searchTerms: 'староста БАРС посещаемость студенты отчёты',
+          icon: Icons.co_present_outlined,
+          color: ServicePalette.accent,
+        ),
+      ..._services,
+    ];
+    final matchedServices = visibleServices
         .where((service) => service.matches(query))
         .toList();
 
@@ -791,7 +827,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                             children: [
                               _CatalogSectionTitle(
                                 title: 'Сервисы кампуса',
-                                count: _services.length,
+                                count: visibleServices.length,
                                 icon: Icons.apps_rounded,
                               ),
                               const SizedBox(height: 7),
@@ -803,7 +839,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              _serviceGrid(_services),
+                              _serviceGrid(visibleServices),
                             ],
                           ),
                         ),
