@@ -66,8 +66,9 @@ class SubjectGradeForecast {
   /// Simulation index corresponds to original BARS control order.
   /// If a 2 is retaken, the effective grade is (2 + newGrade) / 2.
   static SubjectGradeForecast? calculate(
-    BarsSubject subject,{Map<int,int> simulations=const {}},
-  ) {
+    BarsSubject subject, {
+    Map<int, int> simulations = const {},
+  }) {
     double total=0,closed=0,earned=0;
     var graded=0,remaining=0,excluded=0;
     for(var i=0;i<subject.controls.length;i++) {
