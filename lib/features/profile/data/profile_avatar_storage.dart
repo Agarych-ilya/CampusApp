@@ -4,10 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// A personal avatar stored only on this device.
+/// Legacy local avatar cache used only for one-time server migration.
 class ProfileAvatarStorage {
   static const _key = 'campus_profile_avatar_path';
-  static const _maxBytes = 15 * 1024 * 1024;
+  static const _maxBytes = 4 * 1024 * 1024;
 
   Future<File?> getAvatar() async {
     final prefs = await SharedPreferences.getInstance();
@@ -32,7 +32,7 @@ class ProfileAvatarStorage {
     final size = selection.lengthSync() ?? await selection.length();
     if (size > _maxBytes) {
       throw const FileSystemException(
-        'Выбери фотографию размером не более 15 МБ',
+        'Выбери фотографию размером не более 4 МБ',
       );
     }
 
