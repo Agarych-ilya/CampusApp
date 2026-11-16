@@ -124,6 +124,36 @@ class AttendanceRoster {
   }
 }
 
+class AttendanceRanking {
+  const AttendanceRanking({
+    required this.group, required this.imported, required this.total,
+    required this.rank, required this.attended, required this.reviewedLessons,
+  });
+  final String group;
+  final bool imported;
+  final int total;
+  final int? rank;
+  final int attended;
+  final int reviewedLessons;
+
+  factory AttendanceRanking.fromJson(dynamic raw) {
+    if (raw is! Map || raw['metric'] != 'attendance') {
+      throw const FormatException('Неверный рейтинг посещаемости');
+    }
+    int number(dynamic raw) => raw is num ? raw.toInt() : 0;
+    final total = number(raw['total']);
+    final rank = raw['rank'];
+    return AttendanceRanking(
+      group: raw['group']?.toString() ?? '',
+      imported: raw['imported'] == true,
+      total: total >= 0 ? total : 0,
+      rank: rank is num && rank > 0 && rank <= total ? rank.toInt() : null,
+      attended: number(raw['attended']),
+      reviewedLessons: number(raw['reviewedLessons']),
+    );
+  }
+}
+
 class AttendanceLesson {
   const AttendanceLesson({
     required this.id, required this.date, required this.time,
@@ -233,6 +263,10 @@ class AttendanceApi {
     }
     return jsonDecode(utf8.decode(response.bodyBytes));
   }
+
+  /// Individual standing by reviewed CampusApp attendance, not BARS grades.
+  Future<AttendanceRanking> ranking() async =>
+      AttendanceRanking.fromJson(await _request('GET', '/ranking'));
 
   Future<AttendanceIdentity> session() async {
     final raw = await _request('GET', '/session');

@@ -4,19 +4,21 @@ import 'package:flutter/material.dart';
 
 import '../data/bars_subject.dart';
 import '../data/student_profile.dart';
+import '../../schedule/data/attendance_api.dart';
 
-/// The ranking is deliberately a placeholder until the university provides
-/// authorized cohort data. Only local BARS information is used for the
-/// activity counters displayed below.
+/// Group placement is based on closed CampusApp attendance registers.
+ // Academic BARS grades of classmates and cohort-wide ranking are unavailable.
 class ProfileStatisticsView extends StatelessWidget {
   const ProfileStatisticsView({
     super.key,
     required this.profile,
     required this.subjects,
+    this.rankingApi,
   });
 
   final StudentProfile? profile;
   final List<BarsSubject> subjects;
+  final AttendanceApi? rankingApi;
 
   int get _gradedActivities {
     final gradePattern = RegExp(r'^\s*[2-5](?=\s|$)');
@@ -61,11 +63,9 @@ class ProfileStatisticsView extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: _RankingCard(
-                title: 'В группе',
-                subtitle: group.isEmpty ? 'Твоя группа' : group,
-                icon: Icons.groups_2_outlined,
-                accent: const Color(0xFF60A5FA),
+              child: _OwnGroupRank(
+                group: group,
+                api: rankingApi,
               ),
             ),
             const SizedBox(width: 12),
@@ -74,7 +74,8 @@ class ProfileStatisticsView extends StatelessWidget {
                 title: 'На потоке',
                 subtitle: 'Среди студентов потока',
                 icon: Icons.emoji_events_outlined,
-                accent: Color(0xFF8B8CF8),
+                accent: Color(0xFFA58CFA),
+                 tag: 'Нет данных',
               ),
             ),
           ],
@@ -94,9 +95,10 @@ class ProfileStatisticsView extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Рейтинг пока недоступен. Места в группе и на потоке '
-                  'появятся после подключения разрешённых данных '
-                  'университета. Сейчас отображается заглушка.',
+                  'Место в группе — по подтверждённой посещаемости CampusApp. '
+                  'Список старосты задаёт состав группы, а место появляется '
+                  'после закрытия первого журнала. Академический рейтинг '
+                  'по оценкам БАРС и рейтинг потока пока недоступны.',
                   style: TextStyle(
                     color: muted,
                     fontSize: 12,
@@ -187,18 +189,94 @@ Color _cardColor(BuildContext context) =>
         ? const Color(0xFF24282F)
         : const Color(0xFFF0F3F8);
 
+/// Loads only the current student's own attendance position.
+class _OwnGroupRank extends StatefulWidget {
+  const _OwnGroupRank({required this.group, this.api});
+  final String group;
+  final AttendanceApi? api;
+
+  @override
+  State<_OwnGroupRank> createState() => _OwnGroupRankState();
+}
+
+class _OwnGroupRankState extends State<_OwnGroupRank> {
+  late AttendanceApi _api;
+  late Future<AttendanceRanking> _ranking;
+
+  @override
+  void initState() {
+    super.initState();
+    _api = widget.api ?? AttendanceApi();
+    _ranking = _api.ranking();
+  }
+
+  @override
+  void didUpdateWidget(covariant _OwnGroupRank oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.group != widget.group || oldWidget.api != widget.api) {
+      if (oldWidget.api == null) _api.dispose();
+      _api = widget.api ?? AttendanceApi();
+      _ranking = _api.ranking();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.api == null) _api.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AttendanceRanking>(
+      future: _ranking,
+      builder: (context, snapshot) {
+        final ranking = snapshot.data;
+        final expected = widget.group.trim().toUpperCase()
+            .replaceAll('A', 'А').replaceAll(' ', '');
+        final actual = (ranking?.group ?? '').trim().toUpperCase()
+            .replaceAll('A', 'А').replaceAll(' ', '');
+        final imported = ranking?.imported == true &&
+            (expected.isEmpty || expected == actual);
+        final value = !imported ? '—' :
+            ranking!.rank != null
+              ? '${ranking.rank} / ${ranking.total}'
+              : '— / ${ranking.total}';
+        final tag = snapshot.connectionState == ConnectionState.waiting
+            ? 'Загрузка'
+            : snapshot.hasError ? 'Нет связи'
+            : !imported ? 'Нет группы'
+            : ranking!.rank == null ? 'Нет отметок'
+            : 'Посещаемость';
+        return _RankingCard(
+          title: 'В группе',
+          subtitle: widget.group.isEmpty ? 'Твоя группа' : widget.group,
+          icon: Icons.groups_2_outlined,
+          accent: Theme.of(context).colorScheme.primary,
+          value: value,
+          tag: tag,
+        );
+      },
+    );
+  }
+}
+
 class _RankingCard extends StatelessWidget {
   const _RankingCard({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.accent,
+    this.value = '—',
+    this.tag = 'Скоро',
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
   final Color accent;
+  final String value;
+  final String tag;
 
   @override
   Widget build(BuildContext context) {
@@ -232,15 +310,21 @@ class _RankingCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
-                '—',
-                style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+              Flexible(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 26, fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
               const SizedBox(width: 9),
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
-                  'Скоро',
+                  tag,
                   style: TextStyle(
                     color: accent,
                     fontSize: 11,
