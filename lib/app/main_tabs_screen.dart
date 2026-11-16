@@ -32,11 +32,22 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    extendBody: true,
-    body: IndexedStack(index: _currentIndex, children: _screens),
-    bottomNavigationBar: CampusGlassDock(
-      currentIndex: _currentIndex,
-      onSelected: (index) => setState(() => _currentIndex = index),
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        // Render the active screen behind the dock. A bottomNavigationBar
+        // reserves a dark Scaffold region even when its child is translucent.
+        IndexedStack(index: _currentIndex, children: _screens),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: CampusGlassDock(
+            currentIndex: _currentIndex,
+            onSelected: (index) => setState(() => _currentIndex = index),
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -79,28 +90,20 @@ class CampusGlassDock extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             key: const ValueKey('campus-glass-dock'),
             height: 60,
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             decoration: BoxDecoration(
-              // Translucent glass, not an opaque black background.
-              color: dark ? const Color(0x451B1922)
-                  : const Color(0x83F9F7FF),
+              // No black capsule: background content remains visible.
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
-                color: dark ? const Color(0x44FFFFFF)
-                    : const Color(0x88FFFFFF),
+                color: dark ? const Color(0x33FFFFFF)
+                    : const Color(0x66FFFFFF),
                 width: 0.8,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(dark ? 0.10 : 0.04),
-                  blurRadius: 16,
-                  offset: const Offset(0, 5),
-                ),
-              ],
             ),
             child: Row(
               children: [
