@@ -135,3 +135,4 @@ class _CampusMarkerEditorDialogState extends State<_CampusMarkerEditorDialog> {
       ),
     ],
   );
+}
