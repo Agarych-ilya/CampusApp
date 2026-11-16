@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -87,11 +85,7 @@ class CampusGlassDock extends StatelessWidget {
     return SafeArea(
       top: false,
       minimum: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
+      child: Container(
             key: const ValueKey('campus-glass-dock'),
             height: 60,
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
@@ -147,8 +141,6 @@ class CampusGlassDock extends StatelessWidget {
                   ),
               ],
             ),
-          ),
-        ),
       ),
     );
   }
