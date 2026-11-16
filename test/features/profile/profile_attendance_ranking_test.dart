@@ -181,6 +181,7 @@ void main() {
     await tester.tap(find.text('Опубликовать'));
     await tester.pumpAndSettle();
     expect(api.publishes, 1);
+    expect(api.queries, greaterThanOrEqualTo(2));
     expect(api.lastSemester, '2026/2027 осенний');
     expect(api.lastSubjects!.single.points, 75.5);
     expect(tester.takeException(), isNull);
@@ -206,6 +207,7 @@ void main() {
     await tester.tap(find.text('Удалить'));
     await tester.pumpAndSettle();
     expect(api.withdrawals, 1);
+    expect(tester.takeException(), isNull);
   });
 
   test('read local BARS current score for the newest semester only', () {
