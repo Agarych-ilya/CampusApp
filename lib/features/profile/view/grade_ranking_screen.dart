@@ -214,14 +214,21 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                if (ranking.published)
+                if (ranking.published) ...[
+                  FilledButton.icon(
+                    key: const ValueKey('score-ranking-update'),
+                    onPressed: _busy ? null : _submit,
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Обновить баллы БАРС'),
+                  ),
+                  const SizedBox(height: 6),
                   OutlinedButton.icon(
                     key: const ValueKey('score-ranking-delete'),
                     onPressed: _busy ? null : _remove,
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Убрать мои баллы'),
-                  )
-                else
+                  ),
+                ] else
                   FilledButton.icon(
                     key: const ValueKey('score-ranking-publish'),
                     onPressed: _busy ? null : _submit,
