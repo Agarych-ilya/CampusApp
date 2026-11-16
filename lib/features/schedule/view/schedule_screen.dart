@@ -560,6 +560,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                             )
                                           : null,
                                       time: lesson.time,
+                                      lessonDate: lesson.parsedDate,
                                       subject: lesson.subject,
                                       type: lesson.type,
                                       room: lesson.room,

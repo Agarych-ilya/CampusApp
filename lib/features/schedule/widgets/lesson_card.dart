@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/lesson_kind.dart';
+import 'lesson_live_progress.dart';
 
 /// A timetable lesson. An absence marker belongs to the subject row,
 /// below the lesson type, and never overlaps the room's seat-booking action.
@@ -16,6 +17,7 @@ class LessonCard extends StatelessWidget {
     this.footer,
     this.onBookSeat,
     this.attendanceAbsent = false,
+    this.lessonDate,
   });
 
   final String time;
@@ -23,6 +25,7 @@ class LessonCard extends StatelessWidget {
   final String type;
   final String room;
   final String teacher;
+  final DateTime? lessonDate;
   final VoidCallback? onTap;
   final Widget? footer;
   final VoidCallback? onBookSeat;
@@ -178,6 +181,11 @@ class LessonCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (lessonDate != null)
+              LessonLiveProgress(
+                lessonDate: lessonDate!,
+                time: time,
+              ),
             if (footer != null) footer!,
           ],
         ),
