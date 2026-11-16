@@ -6,6 +6,7 @@ import '/features/auth/view/login_screen.dart';
 
 import '../data/bars_control.dart';
 import '../data/bars_subject.dart';
+import 'subject_forecast_sheet.dart';
 import '../data/bars_subjects_storage.dart';
 import '../data/profile_avatar_storage.dart';
 import '../data/student_profile.dart';
@@ -731,6 +732,24 @@ class _SubjectCard extends StatelessWidget {
                     title: 'Итоговая оценка',
                     value: subject.finalGrade,
                   ),
+                if (subject.controls.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('bars-forecast-button'),
+                      icon: const Icon(Icons.calculate_outlined),
+                      label: const Text('Калькулятор и прогноз'),
+                      onPressed: () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        showDragHandle: true,
+                        builder: (_) => SubjectForecastSheet(subject: subject),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 if (subject.controls.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
