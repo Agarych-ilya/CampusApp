@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:campusapp/features/profile/data/bars_subject.dart';
+import 'package:campusapp/features/profile/data/bars_control.dart';
 import 'package:campusapp/features/profile/data/student_profile.dart';
 import 'package:campusapp/features/profile/view/grade_ranking_screen.dart';
 import 'package:campusapp/features/profile/view/profile_statistics_view.dart';
@@ -168,7 +169,9 @@ void main() {
           BarsSubject(
             name:'ТАУ', semester:'2026/2027 осенний',
             attestation:'', credits:'', currentScore:'75,50',
-            finalGrade:'', controls:[],
+            finalGrade:'', controls:[
+              BarsControl(title:'Практическая',weight:'25',deadline:'',grade:'5'),
+            ],
           ),
         ],
       ),
@@ -183,7 +186,8 @@ void main() {
     expect(api.publishes, 1);
     expect(api.queries, greaterThanOrEqualTo(2));
     expect(api.lastSemester, '2026/2027 осенний');
-    expect(api.lastSubjects!.single.points, 75.5);
+    expect(api.lastSubjects!.single.points, 5);
+    expect(api.lastSubjects!.single.weight, 25);
     expect(tester.takeException(), isNull);
   });
 
@@ -210,27 +214,52 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('read local BARS current score for the newest semester only', () {
+  test('weighted mean uses every graded control with its weight, not currentScore',
+    () {
     const subjects = [
       BarsSubject(
-        name: 'Математика', semester: '2026/2027 осенний',
-        attestation: '', credits: '', currentScore: '72,50',
-        finalGrade: '', controls: [],
+        name:'Математика', semester:'2026/2027 осенний',
+        attestation:'', credits:'', currentScore:'2.65',
+        finalGrade:'5', controls:[
+          BarsControl(title:'Работа 1',weight:'30',deadline:'',grade:'5'),
+          BarsControl(title:'Работа 2',weight:'70%',deadline:'',grade:'4 (16.11.2026)'),
+        ],
       ),
       BarsSubject(
-        name: 'Физика', semester: '2026/2027 осенний',
-        attestation: '', credits: '', currentScore: '87,50',
-        finalGrade: '', controls: [],
-      ),
-      BarsSubject(
-        name: 'История', semester: '2025/2026 осенний',
-        attestation: '', credits: '', currentScore: '99',
-        finalGrade: '', controls: [],
+        name:'История', semester:'2025/2026 осенний',
+        attestation:'', credits:'', currentScore:'99',
+        finalGrade:'2', controls:[
+          BarsControl(title:'Работа 3',weight:'20',deadline:'',grade:'3'),
+          BarsControl(title:'Без веса',weight:'',deadline:'',grade:'5'),
+          BarsControl(title:'Не оценено',weight:'15',deadline:'',grade:''),
+        ],
       ),
     ];
     final snapshot = GradeScoreSnapshot.parse(subjects)!;
-    expect(snapshot.semester, '2026/2027 осенний');
-    expect(snapshot.subjects.length, 2);
-    expect(snapshot.average, 80);
+    expect(snapshot.semester,'Все семестры');
+    expect(snapshot.subjects.length,3);
+    expect(snapshot.missingWeights,1);
+    expect(snapshot.weightedSum,490); // 5*30 + 4*70 + 3*20
+    expect(snapshot.totalWeight,120);
+    expect(snapshot.average,closeTo(490 / 120,1e-10));
+    expect(snapshot.subjects.first.points,5);
+    expect(snapshot.subjects.first.weight,30);
+    expect(snapshot.subjects.last.weight,20);
+    // Old 2.65 from currentScore must never be used as the ranking value.
+    expect(snapshot.average, isNot(2.65));
+  });
+
+  test('unweighted BARS controls do not fabricate a 0 grade', () {
+    const subjects = [
+      BarsSubject(
+        name:'ТАУ',semester:'2026/2027 осенний',
+        attestation:'',credits:'',currentScore:'2.65',
+        finalGrade:'5',
+        controls:[
+          BarsControl(title:'Письменная',weight:'?',deadline:'',grade:'5'),
+        ],
+      ),
+    ];
+    expect(GradeScoreSnapshot.parse(subjects),isNull);
   });
 }
