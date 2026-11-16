@@ -218,7 +218,9 @@ class _ScoreRankingCardState extends State<_ScoreRankingCard> {
       ),
     ));
     if (mounted) {
-      setState(() => _future = _api.gradeRanking(scope: widget.scope));
+      setState(() {
+        _future = _api.gradeRanking(scope: widget.scope);
+      });
     }
   }
 
