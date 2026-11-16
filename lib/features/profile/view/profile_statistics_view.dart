@@ -313,32 +313,24 @@ class _RankingCard extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: muted),
           ),
           const SizedBox(height: 13),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Flexible(
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 26, fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  tag,
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 26, fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            tag,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: accent,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
