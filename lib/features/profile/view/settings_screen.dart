@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '/app/router_app.dart';
+import '/features/map/data/campus_map_preferences.dart';
 import '/features/auth/view/login_screen.dart';
 import '/features/profile/data/bars_subjects_storage.dart';
 import '/features/profile/data/profile_avatar_storage.dart';
@@ -27,6 +28,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final GroupStorage _groupStorage = GroupStorage();
 
   bool _loggingOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    CampusMapPreferences.load().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<void> _chooseMapType() async {
+    final type = await showDialog<CampusMapType>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('Тип карты'),
+        children: [
+          for (final option in CampusMapType.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialog, option),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(option == CampusMapPreferences.selected.value
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked),
+                title: Text(option.label),
+                subtitle: Text(option.subtitle),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (type == null) return;
+    try {
+      await CampusMapPreferences.setType(type);
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось сохранить тип карты')),
+      );
+    }
+  }
 
   Future<void> _logout() async {
     if (_loggingOut) {
@@ -137,6 +178,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
 
+              const Divider(height: 1, indent: 56),
+
+              _SettingsTile(
+                icon: Icons.layers_outlined,
+                title: 'Тип карты',
+                subtitle: CampusMapPreferences.selected.value.label,
+                onTap: _chooseMapType,
+              ),
               const Divider(height: 1, indent: 56),
 
               _SettingsTile(

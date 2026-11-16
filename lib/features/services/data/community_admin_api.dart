@@ -321,6 +321,41 @@ class CommunityAdminApi {
     await _request('DELETE', '/groups/' + Uri.encodeComponent(id));
   }
 
+  /// Use the existing BARS-verified moderator cookie and CSRF token.
+  Future<Map<String, dynamic>> mapMutation(
+    String method, String suffix, {Map<String, dynamic>? body},
+  ) async {
+    if (!['POST', 'PATCH', 'DELETE'].contains(method)) {
+      throw ArgumentError('Недопустимый метод карты');
+    }
+    final cookie = _cookie, csrf = _csrf;
+    if (cookie == null || csrf == null) {
+      throw Exception('Подтверди права администратора через БАРС');
+    }
+    final request = http.Request(method, Uri.parse(
+      ApiConfig.baseUrl + '/services/map/markers' + suffix,
+    ));
+    request.headers.addAll({
+      'Cookie': cookie,
+      'X-Community-CSRF': csrf,
+      if (body != null) 'Content-Type': 'application/json',
+    });
+    if (body != null) request.body = jsonEncode(body);
+    final response = await http.Response.fromStream(
+      await request.send().timeout(const Duration(seconds: 15)),
+    ).timeout(const Duration(seconds: 15));
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      _cookie = null; _csrf = null;
+      throw Exception('Сессия администратора истекла или нет прав');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_message(response));
+    }
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    if (data is! Map) throw const FormatException('Неверный ответ карты');
+    return Map<String, dynamic>.from(data);
+  }
+
   Future<http.Response> _request(
     String method,
     String path, {
