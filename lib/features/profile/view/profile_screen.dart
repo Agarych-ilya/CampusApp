@@ -73,6 +73,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
   bool _changingAvatar = false;
   int _activePage = 0;
+  int _rankingRevision = 0;
   late final PageController _pageController;
 
   @override
@@ -116,6 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _selectedSemester = semesters.first;
       }
       _loading = false;
+      _rankingRevision++;
     });
   }
 
@@ -250,7 +252,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: PageView(
               controller: _pageController,
               onPageChanged: (index) {
-                if (mounted) setState(() => _activePage = index);
+                if (mounted) setState(() {
+                  _activePage = index;
+                  if (index == 1) _rankingRevision++;
+                });
               },
               children: [
                 // Default view: swipe left to open Statistics.
@@ -318,6 +323,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ProfileStatisticsView(
                         profile: _profile,
                         subjects: _subjects,
+                        rankingRevision: _rankingRevision,
                       ),
                     ],
                   ),

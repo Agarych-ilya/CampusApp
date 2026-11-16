@@ -14,11 +14,13 @@ class ProfileStatisticsView extends StatelessWidget {
     required this.profile,
     required this.subjects,
     this.rankingApi,
+    this.rankingRevision = 0,
   });
 
   final StudentProfile? profile;
   final List<BarsSubject> subjects;
   final AttendanceApi? rankingApi;
+  final int rankingRevision;
 
   int get _gradedActivities {
     final gradePattern = RegExp(r'^\s*[2-5](?=\s|$)');
@@ -66,6 +68,7 @@ class ProfileStatisticsView extends StatelessWidget {
               child: _OwnGroupRank(
                 group: group,
                 api: rankingApi,
+                revision: rankingRevision,
               ),
             ),
             const SizedBox(width: 12),
@@ -191,9 +194,10 @@ Color _cardColor(BuildContext context) =>
 
 /// Loads only the current student's own attendance position.
 class _OwnGroupRank extends StatefulWidget {
-  const _OwnGroupRank({required this.group, this.api});
+  const _OwnGroupRank({required this.group, this.api, required this.revision});
   final String group;
   final AttendanceApi? api;
+  final int revision;
 
   @override
   State<_OwnGroupRank> createState() => _OwnGroupRankState();
@@ -213,7 +217,9 @@ class _OwnGroupRankState extends State<_OwnGroupRank> {
   @override
   void didUpdateWidget(covariant _OwnGroupRank oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.group != widget.group || oldWidget.api != widget.api) {
+    if (oldWidget.group != widget.group ||
+        oldWidget.api != widget.api ||
+        oldWidget.revision != widget.revision) {
       if (oldWidget.api == null) _api.dispose();
       _api = widget.api ?? AttendanceApi();
       _ranking = _api.ranking();
