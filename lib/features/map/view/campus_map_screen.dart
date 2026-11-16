@@ -277,14 +277,17 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     switch (action) {
       case 'edit':
         await _save(place.point, old: place);
+        break;
       case 'move':
         setState(() {
           _movingMarker = place;
           _selectedPlace = null;
         });
         _notice('Нажми на карте, куда переместить метку');
+        break;
       case 'delete':
         await _remove(place);
+        break;
     }
   }
 
