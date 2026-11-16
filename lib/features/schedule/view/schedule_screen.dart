@@ -431,19 +431,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       _formatSelectedDate(date),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.62),
-                      ),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                         fontSize: 14,
+                         fontWeight: FontWeight.w800,
+                         color: theme.colorScheme.onSurface,
+                       ),
                     ),
                   ),
                 ),
                 Text(
                   semesterWeekLabel(date),
                   key: const ValueKey('schedule-semester-week'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                     fontSize: 14,
+                     fontWeight: FontWeight.w800,
+                     color: theme.colorScheme.onSurface,
+                   ),
                 ),
                 Expanded(
                   child: Align(

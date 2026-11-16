@@ -40,8 +40,8 @@ void main() {
     expect(lessonKindLabel('Лекция', subject: 'Факультатив'), 'Факультатив');
     expect(lessonKindColor(LessonKind.elective), const Color(0xFF807B89));
     expect(lessonKindColor(LessonKind.lecture), const Color(0xFFA58CFA));
-    expect(lessonKindColor(LessonKind.practice), const Color(0xFF9B82ED));
-    expect(lessonKindColor(LessonKind.laboratory), const Color(0xFF72C4AD));
+    expect(lessonKindColor(LessonKind.practice), const Color(0xFFA58CFA));
+    expect(lessonKindColor(LessonKind.laboratory), const Color(0xFF72CDB7));
   });
 
   testWidgets('each lesson appears as a coloured dot on its day', (tester) async {

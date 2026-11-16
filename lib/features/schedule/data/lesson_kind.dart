@@ -34,9 +34,9 @@ Color lessonKindColor(LessonKind kind) {
     case LessonKind.lecture:
       return const Color(0xFFA58CFA);
     case LessonKind.practice:
-      return const Color(0xFF9B82ED);
+      return const Color(0xFFA58CFA);
     case LessonKind.laboratory:
-      return const Color(0xFF72C4AD);
+      return const Color(0xFF72CDB7);
     case LessonKind.other:
     case LessonKind.elective:
       return const Color(0xFF807B89);
