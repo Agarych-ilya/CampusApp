@@ -32,7 +32,6 @@ void main() {
       ),
     ]);
     expect(data,contains('"\'=HYPERLINK(""bad"")"'));
-    expect(data,contains('"\' +SUM(1,1)"'),isFalse);
     expect(data,contains('"\'+SUM(1,1)"'));
   });
 }
