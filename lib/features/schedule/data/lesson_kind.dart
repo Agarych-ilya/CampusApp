@@ -32,11 +32,11 @@ LessonKind lessonKind(String type, {String subject = ''}) {
 Color lessonKindColor(LessonKind kind) {
   switch (kind) {
     case LessonKind.lecture:
-      return const Color(0xFFA58CFA);
+      return const Color(0xFF34C759);
     case LessonKind.practice:
-      return const Color(0xFFA58CFA);
+      return const Color(0xFFFACC15);
     case LessonKind.laboratory:
-      return const Color(0xFF72CDB7);
+      return const Color(0xFFEF4444);
     case LessonKind.other:
     case LessonKind.elective:
       return const Color(0xFF807B89);
