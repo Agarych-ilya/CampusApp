@@ -27,7 +27,7 @@ void main() {
     expect(semesterWeekNumber(DateTime(2027, 3, 1)), 5);
   });
 
-  test('lesson type determines green/yellow/red/gray colors', () {
+  test('lesson type determines lavender/violet/mint/gray colors', () {
     expect(lessonKind('Лекция'), LessonKind.lecture);
     expect(lessonKind('Практическое занятие'), LessonKind.practice);
     expect(lessonKind('Лабораторная работа'), LessonKind.laboratory);
@@ -104,13 +104,13 @@ void main() {
         find.byKey(ValueKey('lesson-dot-2026-11-2-$i')),
       );
       final decoration = dot.decoration! as BoxDecoration;
-      expect(decoration.color, const Color(0xFF312255));
+      expect(decoration.color, lessonKindColor(kinds[i]));
     }
     expect(find.byKey(const ValueKey('lesson-dot-2026-11-3-0')),
         findsNothing);
   });
 
-  testWidgets('reference N appears only on an explicitly absent lesson card',
+  testWidgets('N appears only on an explicitly absent lesson card',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(body: Column(children: [
@@ -131,10 +131,11 @@ void main() {
     // as shown in the schedule mockup. Do not put it beside 'Лекция'.
     final badge = tester.getRect(find.byKey(
       const ValueKey('schedule-absence-n')));
-    final typeLabel = tester.getRect(find.text('ЛЕК').first);
+    final typeLabel = tester.getRect(find.text('Лекция').first);
     final subject = tester.getRect(find.text('Отсутствовал'));
     expect(badge.top, greaterThan(typeLabel.bottom));
-    expect(badge.left, greaterThan(subject.left));
+    expect(badge.left, greaterThan(subject.right));
+    expect(badge.top, lessThan(subject.bottom + 24));
   });
 
   testWidgets('absence N does not overlap the M-307 seat action',
@@ -152,7 +153,7 @@ void main() {
     )));
     final badge = tester.getRect(find.byKey(
       const ValueKey('schedule-absence-n')));
-    final type = tester.getRect(find.text('ЛЕК'));
+    final type = tester.getRect(find.text('Лекция'));
     final seatAction = tester.getRect(find.byKey(
       const ValueKey('schedule-book-seat')));
     expect(badge.top, greaterThan(type.bottom));
@@ -240,9 +241,8 @@ void main() {
         ),
       ),
     );
-    expect(find.text('ЛЕК'), findsOneWidget);
-    expect(find.text('09:20'), findsOneWidget);
-    expect(find.text('10:55'), findsOneWidget);
+    expect(find.text('Лекция'), findsOneWidget);
+    expect(find.text('09:20 - 10:55'), findsOneWidget);
     expect(find.text('С-409'), findsOneWidget);
   });
 
@@ -260,27 +260,12 @@ void main() {
         ),
       ),
     );
-    expect(find.text('ФАК'), findsOneWidget);
-    final label = tester.widget<Text>(find.text('ФАК'));
+    expect(find.text('Факультатив'), findsOneWidget);
+    final label = tester.widget<Text>(find.text('Факультатив'));
     expect(label.style?.color, const Color(0xFF807B89));
   });
 
-  testWidgets('break label uses actual gap between two lessons',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: ScheduleScreen(
-        scheduleApi: _GapScheduleApi(),
-        groupStorage: GroupStorage(),
-      )),
-    ));
-    await tester.pumpAndSettle();
-    expect(find.text('перерыв 30 мин'), findsOneWidget);
-    expect(find.text('Первое занятие'), findsOneWidget);
-    expect(find.text('Второе занятие'), findsOneWidget);
-  });
-
-  testWidgets('reference schedule switches day week and month modes',
+  testWidgets('original schedule layout is preserved without mode selector',
       (tester) async {
     SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
     await tester.pumpWidget(MaterialApp(home: Scaffold(
@@ -290,22 +275,14 @@ void main() {
       ),
     )));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('schedule-view-selector')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('schedule-floating-today')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('schedule-lesson-list')),
-        findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('schedule-view-week')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('schedule-view-selector')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-floating-today')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-group-search')), findsOneWidget);
+    final today = DateTime.now();
+    expect(find.byKey(ValueKey(
+      'schedule-day-${today.year}-${today.month}-${today.day}')),
+      findsOneWidget);
     expect(find.text('Занятие А-03-23'), findsWidgets);
-    await tester.tap(find.byKey(const ValueKey('schedule-view-month')));
-    await tester.pumpAndSettle();
-    expect(find.byType(CalendarDatePicker), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('schedule-view-day')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('schedule-lesson-list')),
-        findsOneWidget);
   });
 
   testWidgets('changing group reloads real lessons, not only the label', (tester) async {
@@ -604,35 +581,4 @@ class _FakeBookingApi extends ClassroomBookingApi {
     slots: classroomDemoSlots,
     testMode: true,
   );
-}
-
-class _GapScheduleApi extends _FakeScheduleApi {
-  @override
-  Future<List<ScheduleLesson>> getWeekSchedule({
-    required String group,
-    required DateTime selectedDate,
-    bool forceRefresh = false,
-  }) async {
-    final today = DateTime.now();
-    final day = today.day.toString().padLeft(2, '0');
-    final month = today.month.toString().padLeft(2, '0');
-    return [
-      ScheduleLesson(
-        date: '$day.$month.${today.year}',
-        time: '09:00 - 10:30',
-        subject: 'Первое занятие',
-        type: 'Практика',
-        room: 'С-101',
-        teacher: '',
-      ),
-      ScheduleLesson(
-        date: '$day.$month.${today.year}',
-        time: '11:00 - 12:30',
-        subject: 'Второе занятие',
-        type: 'Практика',
-        room: 'С-102',
-        teacher: '',
-      ),
-    ];
-  }
 }

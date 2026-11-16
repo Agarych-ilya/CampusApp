@@ -44,7 +44,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _initializationError;
   bool _isInitializing = true;
   bool _changingGroup = false;
-  ScheduleViewMode _mode = ScheduleViewMode.day;
   int _notesRevision = 0;
   Set<String> _bookableRooms = bookableClassrooms.toSet();
   late DateTime _selectedDate;
@@ -292,6 +291,31 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
+  Future<void> _showMonthCalendar() async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.08),
+      builder: (dialogContext) => Dialog(
+        alignment: Alignment.topLeft,
+        insetPadding: EdgeInsets.only(
+          left: 20,
+          top: MediaQuery.of(dialogContext).padding.top + 52,
+          right: 20,
+          bottom: 24,
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: MonthCalendarPopup(
+          selectedDate: _selectedDate,
+          onDateSelected: (date) {
+            _selectDate(date);
+            Navigator.of(dialogContext).pop();
+          },
+        ),
+      ),
+    );
+  }
+
   bool _isSameDate(DateTime first, DateTime second) =>
       first.year == second.year &&
       first.month == second.month &&
@@ -373,46 +397,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  int? _breakBetween(ScheduleLesson previous, ScheduleLesson next) {
-    final times = RegExp(r'\d{1,2}:\d{2}');
-    final first = times.allMatches(previous.time)
-        .map((match) => match.group(0)!).toList();
-    final second = times.allMatches(next.time)
-        .map((match) => match.group(0)!).toList();
-    if (first.length < 2 || second.isEmpty) return null;
-    int minutes(String text) {
-      final parts = text.split(':');
-      return int.parse(parts[0]) * 60 + int.parse(parts[1]);
-    }
-    final gap = minutes(second.first) - minutes(first[1]);
-    return gap >= 10 && gap <= 180 ? gap : null;
-  }
-
-  Widget _breakSeparator(BuildContext context, int minutes) {
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 5, 14, 23),
-      child: Row(
-        children: [
-          Expanded(child: Container(
-            height: 1, color: muted.withOpacity(0.18),
-          )),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 13),
-            child: Text('перерыв $minutes мин',
-              style: TextStyle(
-                color: muted.withOpacity(0.84),
-                fontSize: 12,
-              )),
-          ),
-          Expanded(child: Container(
-            height: 1, color: muted.withOpacity(0.18),
-          )),
-        ],
-      ),
-    );
-  }
-
   Widget _weekPage(BuildContext context, int page) {
     final theme = Theme.of(context);
     final date = _dateForPage(page);
@@ -422,17 +406,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       future: _lessonsForPage(page),
       builder: (context, snapshot) {
         final all = snapshot.data ?? const <ScheduleLesson>[];
-        final todayLessons = _mode == ScheduleViewMode.week
-            ? (List<ScheduleLesson>.of(all)..sort((a, b) {
-                final aDate = a.parsedDate;
-                final bDate = b.parsedDate;
-                if (aDate == null || bDate == null) {
-                  return a.time.compareTo(b.time);
-                }
-                final diff = aDate.compareTo(bDate);
-                return diff == 0 ? a.time.compareTo(b.time) : diff;
-              }))
-            : _lessonsForDay(all, date);
+        final todayLessons = _lessonsForDay(all, date);
         final isOwnGroup = canOpenOwnLessonDetails(
           profileGroup: _profileGroup,
           viewedGroup: _groupName,
@@ -441,43 +415,78 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ReferenceScheduleHeader(
-              date: date,
+            const SizedBox(height: 6),
+            WeekDaysRow(
+              selectedDate: date,
               weekLessons: all,
-              mode: _mode,
-              onModeSelected: (mode) => setState(() => _mode = mode),
               onDateSelected: _selectDate,
-              onGroupSearch: _chooseGroup,
-              groupName: _groupName,
-              semesterLabel: semesterWeekLabel(date),
-              lessonCount: _mode == ScheduleViewMode.week
-                  ? all.length : todayLessons.length,
-              onPrevious: () => _selectDate(
-                _mode == ScheduleViewMode.month
-                    ? DateTime(date.year, date.month - 1, date.day)
-                    : DateTime(date.year, date.month, date.day - 7),
-              ),
-              onNext: () => _selectDate(
-                _mode == ScheduleViewMode.month
-                    ? DateTime(date.year, date.month + 1, date.day)
-                    : DateTime(date.year, date.month, date.day + 7),
-              ),
             ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _mode == ScheduleViewMode.month
-                  ? SingleChildScrollView(
-                      child: CalendarDatePicker(
-                        initialDate: date,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2045),
-                        onDateChanged: (selected) {
-                          setState(() => _mode = ScheduleViewMode.day);
-                          _selectDate(selected);
-                        },
+            const SizedBox(height: 13),
+            Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _formatSelectedDate(date),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.62),
                       ),
-                    )
-                  : snapshot.connectionState == ConnectionState.waiting
+                    ),
+                  ),
+                ),
+                Text(
+                  semesterWeekLabel(date),
+                  key: const ValueKey('schedule-semester-week'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_changingGroup)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: SizedBox(
+                              height: 14,
+                              width: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        Flexible(
+                          child: TextButton.icon(
+                            key: const ValueKey('schedule-group-search'),
+                            onPressed: _changingGroup ? null : _chooseGroup,
+                            icon: const Icon(Icons.search_rounded, size: 17),
+                            label: Text(
+                              _groupName ?? 'Группа',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 7,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 15),
+            Expanded(
+              child: snapshot.connectionState == ConnectionState.waiting
                   ? const Center(
                       child: CircularProgressIndicator(color: AppTheme.accent),
                     )
@@ -505,8 +514,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 }
                               },
                               child: ListView(
-                                key: const ValueKey('schedule-lesson-list'),
-                                padding: const EdgeInsets.only(bottom: 150),
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 children: [
                                   if (_scheduleApi.showingOfflineCopy)
@@ -527,28 +534,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                         ],
                                       ),
                                     ),
-                                  for (var i = 0;
-                                      i < todayLessons.length; i++) ...[
-                                    if (_mode == ScheduleViewMode.week &&
-                                        (i == 0 ||
-                                            todayLessons[i].parsedDate !=
-                                            todayLessons[i - 1].parsedDate))
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                            3, 5, 0, 12),
-                                        child: Text(
-                                          _getWeekDayName(
-                                            todayLessons[i].parsedDate ?? date),
-                                          style: theme.textTheme.titleMedium
-                                              ?.copyWith(fontSize: 17),
-                                        ),
-                                      ),
-                                    if (_mode == ScheduleViewMode.day && i > 0)
-                                      if (_breakBetween(
-                                        todayLessons[i - 1], todayLessons[i],
-                                      ) case final int minutes)
-                                        _breakSeparator(context, minutes),
-                                    for (final lesson in [todayLessons[i]])
+                                  for (final lesson in todayLessons)
                                     FutureBuilder<Set<String>>(
                                       future: isOwnGroup
                                           ? _absencesForPage(page) : null,
@@ -581,7 +567,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                           ) ?? false),
                                     ),
                                     ),
-                                  ],
                                 ],
                               ),
                             ),
@@ -632,57 +617,63 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
 
     return SafeArea(
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: PageView.builder(
-              key: ValueKey('schedule-pages-${_groupName ?? ''}'),
-              controller: _weekController,
-              physics: _changingGroup
-                  ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(),
-              onPageChanged: _onWeekChanged,
-              itemBuilder: (context, page) => _weekPage(context, page),
-            ),
-          ),
-          Positioned(
-            right: 22,
-            bottom: 100,
-            child: Material(
-              color: const Color(0xFF201C2B),
-              borderRadius: BorderRadius.circular(26),
-              child: InkWell(
-                key: const ValueKey('schedule-floating-today'),
-                borderRadius: BorderRadius.circular(26),
-                onTap: () {
-                  setState(() => _mode = ScheduleViewMode.day);
-                  _selectDate(DateTime.now());
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 17, vertical: 11,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.calendar_today_outlined,
-                          color: theme.colorScheme.primary, size: 18),
-                      const SizedBox(width: 10),
-                      Text('Сегодня', style: TextStyle(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      )),
-                    ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 15),
+            Row(
+              children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _showMonthCalendar,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: Row(
+                      children: [
+                        Text(
+                          _getWeekDayName(_selectedDate),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.keyboard_arrow_down, size: 19),
+                      ],
+                    ),
                   ),
                 ),
+                const Spacer(),
+                Text(
+                  _getMonthName(_selectedDate),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Обновить расписание',
+                  onPressed: _refreshWeekSchedule,
+                  icon: const Icon(Icons.refresh, size: 21),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: PageView.builder(
+                key: ValueKey('schedule-pages-${_groupName ?? ''}'),
+                controller: _weekController,
+                physics: _changingGroup
+                    ? const NeverScrollableScrollPhysics()
+                    : const PageScrollPhysics(),
+                onPageChanged: _onWeekChanged,
+                itemBuilder: (context, page) => _weekPage(context, page),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    );
+      );
   }
 
   String _getWeekDayName(DateTime date) {
@@ -699,7 +690,43 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return weekDays[date.weekday - 1];
   }
 
+  String _getMonthName(DateTime date) {
+    const months = [
+      'Январь',
+      'Февраль',
+      'Март',
+      'Апрель',
+      'Май',
+      'Июнь',
+      'Июль',
+      'Август',
+      'Сентябрь',
+      'Октябрь',
+      'Ноябрь',
+      'Декабрь',
+    ];
 
+    return months[date.month - 1];
+  }
+
+  String _formatSelectedDate(DateTime date) {
+    const months = [
+      'января',
+      'февраля',
+      'марта',
+      'апреля',
+      'мая',
+      'июня',
+      'июля',
+      'августа',
+      'сентября',
+      'октября',
+      'ноября',
+      'декабря',
+    ];
+
+    return '${date.day} ${months[date.month - 1]}';
+  }
 }
 
 
