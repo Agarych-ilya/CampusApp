@@ -5,6 +5,35 @@ import 'package:campusapp/app/main_tabs_screen.dart';
 import 'package:campusapp/core/theme/app_theme.dart';
 
 void main() {
+  testWidgets('bright campus map gets a darker translucent dock',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        bottomNavigationBar: CampusGlassDock(
+          currentIndex: 1,
+          onSelected: (_) {},
+        ),
+      ),
+    ));
+    await tester.pump();
+    final dock = tester.widget<Container>(
+      find.byKey(const ValueKey('campus-glass-dock')),
+    );
+    final decoration = dock.decoration! as BoxDecoration;
+    expect(decoration.color, const Color(0xCF17151E));
+    expect(decoration.color!.alpha, lessThan(255));
+    final icons = tester.widgetList<Icon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('campus-glass-dock')),
+        matching: find.byType(Icon),
+      ),
+    ).toList();
+    expect(icons, hasLength(5));
+    expect(icons[0].color, const Color(0xFFE9E6F0));
+    expect(icons[1].color, const Color(0xFFB4A0FA));
+  });
+
   testWidgets('glass navigation shows five interactive icons without captions',
       (tester) async {
     tester.view.physicalSize = const Size(430, 900);
