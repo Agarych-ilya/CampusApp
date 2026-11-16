@@ -154,6 +154,76 @@ class AttendanceRanking {
   }
 }
 
+/// Voluntarily published personal BARS points. Scores are participant-supplied,
+/// not independently verified by the BARS server.
+class GradeRankingEntry {
+  const GradeRankingEntry({
+    required this.place, required this.displayName,
+    required this.group, required this.averageScore,
+    required this.subjectCount, required this.mine,
+  });
+  final int place;
+  final String displayName;
+  final String group;
+  final double averageScore;
+  final int subjectCount;
+  final bool mine;
+
+  factory GradeRankingEntry.fromJson(dynamic raw) {
+    if (raw is! Map) throw const FormatException('Неверная запись рейтинга');
+    return GradeRankingEntry(
+      place: (raw['place'] as num).toInt(),
+      displayName: raw['displayName']?.toString() ?? '',
+      group: raw['group']?.toString() ?? '',
+      averageScore: (raw['averageScore'] as num).toDouble(),
+      subjectCount: (raw['subjectCount'] as num).toInt(),
+      mine: raw['mine'] == true,
+    );
+  }
+}
+
+class GradeRanking {
+  const GradeRanking({
+    required this.scope, required this.group, required this.semester,
+    required this.total, required this.participants, required this.myPlace,
+    required this.myAverage, required this.published, required this.entries,
+  });
+  final String scope;
+  final String group;
+  final String? semester;
+  final int total;
+  final int participants;
+  final int? myPlace;
+  final double? myAverage;
+  final bool published;
+  final List<GradeRankingEntry> entries;
+
+  factory GradeRanking.fromJson(dynamic raw) {
+    if (raw is! Map || raw['source'] != 'participant_submitted') {
+      throw const FormatException('Неверный рейтинг по баллам');
+    }
+    return GradeRanking(
+      scope: raw['scope']?.toString() ?? 'group',
+      group: raw['group']?.toString() ?? '',
+      semester: raw['semester']?.toString(),
+      total: (raw['total'] as num).toInt(),
+      participants: (raw['participants'] as num).toInt(),
+      myPlace: (raw['myPlace'] as num?)?.toInt(),
+      myAverage: (raw['myAverage'] as num?)?.toDouble(),
+      published: raw['published'] == true,
+      entries: (raw['entries'] as List)
+          .map((entry) => GradeRankingEntry.fromJson(entry)).toList(),
+    );
+  }
+}
+
+class GradeRankingSubject {
+  const GradeRankingSubject({required this.name, required this.points});
+  final String name;
+  final double points;
+  Map<String, dynamic> toJson() => {'name': name, 'points': points};
+}
+
 class AttendanceLesson {
   const AttendanceLesson({
     required this.id, required this.date, required this.time,
@@ -255,6 +325,8 @@ class AttendanceApi {
     } else if (method == 'PATCH') {
       response = await _client.patch(uri, headers: requestHeaders,
           body: jsonEncode(body ?? {}));
+    } else if (method == 'DELETE') {
+      response = await _client.delete(uri, headers: requestHeaders);
     } else {
       throw const FormatException('Недопустимый метод');
     }
@@ -262,6 +334,30 @@ class AttendanceApi {
       throw Exception(_message(response));
     }
     return jsonDecode(utf8.decode(response.bodyBytes));
+  }
+
+  /// Both scopes return only rows published with explicit student consent.
+  Future<GradeRanking> gradeRanking({String scope = 'group'}) async {
+    if (scope != 'group' && scope != 'stream') {
+      throw const FormatException('Неверный тип рейтинга');
+    }
+    return GradeRanking.fromJson(
+      await _request('GET', '/score-ranking', query: {'scope': scope}),
+    );
+  }
+
+  Future<void> publishGradePoints(
+    String semester, List<GradeRankingSubject> subjects,
+  ) async {
+    await _request('POST', '/score-ranking', body: {
+      'semester': semester,
+      'subjects': subjects.map((subject) => subject.toJson()).toList(),
+    });
+  }
+
+  /// Delete the student's score snapshot and leaderboard entry.
+  Future<void> withdrawGradePoints() async {
+    await _request('DELETE', '/score-ranking');
   }
 
   /// Individual standing by reviewed CampusApp attendance, not BARS grades.
