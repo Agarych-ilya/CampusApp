@@ -28,13 +28,13 @@ void main() {
       expect(find.byKey(ValueKey('campus-glass-tab-$i')), findsOneWidget);
     }
     expect(find.byType(BottomNavigationBar), findsNothing);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(BackdropFilter), findsOneWidget);
     final dock = tester.widget<Container>(
       find.byKey(const ValueKey('campus-glass-dock')),
     );
     final decoration = dock.decoration! as BoxDecoration;
-    expect(decoration.color, Colors.transparent);
-    expect(decoration.boxShadow, isNull);
+    expect(decoration.color, const Color(0x451B1922));
+    expect(decoration.color!.alpha, lessThan(130));
     expect(decoration.boxShadow, isNull);
     final bounds = tester.getSize(
       find.byKey(const ValueKey('campus-glass-dock')),
