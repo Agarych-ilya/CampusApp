@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
 
 import '../../schedule/data/attendance_api.dart';
 import '../data/bars_subject.dart';
@@ -82,6 +83,7 @@ class GradeRankingScreen extends StatefulWidget {
 class _GradeRankingScreenState extends State<GradeRankingScreen> {
   late Future<GradeRanking> _future;
   bool _busy = false;
+  final Map<String,Future<Uint8List?>> _photos = {};
 
   @override
   void initState() {
@@ -180,6 +182,38 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Widget _rankingAvatar(GradeRankingEntry entry,ThemeData theme) {
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final initials = entry.displayName.trim().split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty).take(2)
+        .map((part) => part.substring(0,1).toUpperCase()).join();
+    Widget placeholder() => CircleAvatar(
+      radius: 20,
+      backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
+      child: Text(initials.isEmpty ? '•' : initials,
+        style: TextStyle(color: muted,fontSize: 13,
+          fontWeight: FontWeight.w800)),
+    );
+    if (entry.avatarId == null || entry.avatarId!.isEmpty) {
+      return placeholder();
+    }
+    return FutureBuilder<Uint8List?>(
+      future: _photos.putIfAbsent(
+        entry.avatarId!, () => widget.api.rankingAvatar(entry.avatarId!),
+      ),
+      builder: (context,snapshot) {
+        final data = snapshot.data;
+        if (data == null || data.isEmpty) return placeholder();
+        return CircleAvatar(
+          key: ValueKey('ranking-server-avatar-${entry.avatarId}'),
+          radius: 20,
+          backgroundImage: MemoryImage(data),
+          onBackgroundImageError: (_, __) {},
+        );
+      },
+    );
   }
 
   @override
@@ -299,10 +333,12 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
                       ),
                       child: Row(
                         children: [
-                          SizedBox(width: 36, child: Text('${entry.place}',
+                          SizedBox(width: 28, child: Text('${entry.place}',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w900,
                             ))),
+                          _rankingAvatar(entry,theme),
+                          const SizedBox(width: 10),
                           Expanded(child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
