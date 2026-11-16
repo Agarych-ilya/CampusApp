@@ -39,13 +39,13 @@ class BarsLoginScreen extends StatelessWidget {
                 width: 86,
                 height: 86,
                 decoration: BoxDecoration(
-                  color: AppTheme.pink.withOpacity(0.12),
+                  color: AppTheme.accent.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(26),
                 ),
                 child: const Icon(
                   Icons.school_rounded,
                   size: 44,
-                  color: AppTheme.pink,
+                  color: AppTheme.accent,
                 ),
               ),
 

@@ -34,8 +34,8 @@ class CommunityAvatar extends StatelessWidget {
   static List<Color> colorsFor(String kind) => switch (kind) {
     'chat' => const [Color(0xFF20BDEB), Color(0xFF1679C9)],
     'campus' => const [Color(0xFF8874FD), Color(0xFF5F42C9)],
-    'news' => const [Color(0xFFFB6195), Color(0xFFD82A6F)],
-    'study' => const [Color(0xFFFFB14F), Color(0xFFF16C40)],
+    'news' => const [Color(0xFF88AEEF), Color(0xFF557FBE)],
+    'study' => const [Color(0xFFB4DCD8), Color(0xFF9ABADC)],
     'club' => const [Color(0xFF62DABA), Color(0xFF139986)],
     'events' => const [Color(0xFF8BA5FF), Color(0xFF5355C9)],
     _ => const [Color(0xFF8874FD), Color(0xFF5F42C9)],

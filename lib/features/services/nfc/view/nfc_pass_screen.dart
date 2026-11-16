@@ -442,7 +442,7 @@ class _NfcPassScreenState extends State<NfcPassScreen> {
                     Text(
                       _error!,
                       style: const TextStyle(
-                        color: Color(0xFFE1747F),
+                        color: Color(0xFF93BDE9),
                         fontSize: 12,
                       ),
                     ),

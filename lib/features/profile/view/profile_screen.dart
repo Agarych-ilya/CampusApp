@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -10,6 +10,7 @@ import '../data/bars_subjects_storage.dart';
 import '../data/profile_avatar_storage.dart';
 import '../data/student_profile.dart';
 import '../data/student_profile_storage.dart';
+import '../../schedule/data/attendance_api.dart';
 import 'profile_statistics_view.dart';
 import 'settings_screen.dart';
 
@@ -44,13 +45,13 @@ String? _gradeNumber(String raw) {
 
 Color _subjectSurface(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF202535)
-        : const Color(0xFFF0F3FB);
+        ? const Color(0xFF1A181F)
+        : const Color(0xFFF7F5FA);
 
 Color _subjectInnerSurface(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF2A3144)
-        : const Color(0xFFE4EAF6);
+        ? const Color(0xFF27232F)
+        : const Color(0xFFE9E5F2);
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -65,14 +66,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final StudentProfileStorage _profileStorage = StudentProfileStorage();
   final BarsSubjectsStorage _subjectsStorage = BarsSubjectsStorage();
   final ProfileAvatarStorage _avatarStorage = ProfileAvatarStorage();
+  final AttendanceApi _avatarApi = AttendanceApi();
 
   StudentProfile? _profile;
   List<BarsSubject> _subjects = [];
-  File? _avatar;
+  Uint8List? _avatar;
   String? _selectedSemester;
   bool _loading = true;
   bool _changingAvatar = false;
   int _activePage = 0;
+  int _rankingRevision = 0;
   late final PageController _pageController;
 
   @override
@@ -85,6 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _avatarApi.dispose();
     super.dispose();
   }
 
@@ -99,7 +103,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     final profile = await _profileStorage.getProfile();
     final subjects = await _subjectsStorage.getSubjects();
-    final avatar = await _avatarStorage.getAvatar();
+    Uint8List? avatar;
+    try {
+      avatar = await _avatarApi.myAvatar();
+      // Migrate an earlier phone-only avatar to canonical server storage.
+      if (avatar == null) {
+        final legacy = await _avatarStorage.getAvatar();
+        if (legacy != null) {
+          await _avatarApi.uploadAvatar(legacy);
+          avatar = await legacy.readAsBytes();
+          await _avatarStorage.clearAvatar();
+        }
+      }
+    } catch (_) {
+      // An expired BARS session should not prevent opening the profile.
+    }
     final semesters = _getSemesters(subjects);
 
     if (!mounted) return;
@@ -116,6 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _selectedSemester = semesters.first;
       }
       _loading = false;
+      _rankingRevision++;
     });
   }
 
@@ -176,17 +195,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _changingAvatar = true);
     try {
       if (action == _AvatarAction.delete) {
+        await _avatarApi.removeAvatar();
         await _avatarStorage.clearAvatar();
         if (mounted) setState(() => _avatar = null);
       } else {
         final image = await _avatarStorage.pickAndSaveAvatar();
-        if (mounted && image != null) setState(() => _avatar = image);
+        if (image != null) {
+          await _avatarApi.uploadAvatar(image);
+          final bytes = await image.readAsBytes();
+          await _avatarStorage.clearAvatar();
+          if (mounted) setState(() => _avatar = bytes);
+        }
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Не удалось сохранить фотографию. Выбери другое изображение.'),
+            content: Text('Не удалось загрузить фотографию на сервер. Поддерживаются JPG, PNG, WebP до 4 МБ.'),
           ),
         );
       }
@@ -250,7 +275,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: PageView(
               controller: _pageController,
               onPageChanged: (index) {
-                if (mounted) setState(() => _activePage = index);
+                if (mounted) setState(() {
+                  _activePage = index;
+                  if (index == 1) _rankingRevision++;
+                });
               },
               children: [
                 // Default view: swipe left to open Statistics.
@@ -318,6 +346,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ProfileStatisticsView(
                         profile: _profile,
                         subjects: _subjects,
+                        rankingRevision: _rankingRevision,
                       ),
                     ],
                   ),
@@ -344,14 +373,14 @@ class _ProfilePagerTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final background = dark
-        ? const Color(0xFF222630)
+        ? const Color(0xFF1C1A22)
         : const Color(0xFFE9EDF3);
     final active = dark
-        ? const Color(0xFF343D50)
+        ? const Color(0xFF302B39)
         : const Color(0xFFFFFFFF);
     final activeText = dark
-        ? const Color(0xFFB9D7FF)
-        : const Color(0xFF225D9D);
+        ? const Color(0xFFC6B3FF)
+        : const Color(0xFF7D61C6);
 
     Widget tab(int index, IconData icon, String title) {
       final selected = selectedPage == index;
@@ -421,7 +450,7 @@ class _ProfileHeader extends StatelessWidget {
   });
 
   final StudentProfile profile;
-  final File? avatar;
+  final Uint8List? avatar;
   final VoidCallback onAvatarTap;
   final bool changingAvatar;
 
@@ -431,7 +460,7 @@ class _ProfileHeader extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final surface = dark
         ? const Color(0xFF282332)
-        : const Color(0xFFFFEDF5);
+        : const Color(0xFFF0EBFC);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -461,13 +490,13 @@ class _ProfileHeader extends StatelessWidget {
                               color: scheme.primary,
                             ),
                           )
-                        : Image.file(
+                        : Image.memory(
                             avatar!,
-                            key: ValueKey(avatar!.path),
+                            key: const ValueKey('campus-server-avatar'),
                             fit: BoxFit.cover,
                             width: 74,
                             height: 74,
-                            errorBuilder: (_, _, _) => const Icon(
+                            errorBuilder: (_, __, ___) => const Icon(
                               Icons.person_rounded,
                               size: 38,
                             ),
@@ -806,11 +835,11 @@ class _GradeDot extends StatelessWidget {
       case '5':
         color = const Color(0xFF2AA77D);
       case '4':
-        color = const Color(0xFF327BD6);
+        color = const Color(0xFF9F88EC);
       case '3':
         color = const Color(0xFFE3A030);
       case '2':
-        color = const Color(0xFFD65E65);
+        color = const Color(0xFFA58CFA);
       default:
         color = Theme.of(context).colorScheme.primary;
     }

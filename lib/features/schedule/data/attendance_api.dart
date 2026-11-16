@@ -1,0 +1,576 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import '/core/config/api_config.dart';
+import '/features/services/listings/data/listings_api.dart';
+import 'schedule_lesson.dart';
+
+/// Shared key between timetable lessons and closed attendance records.
+String attendanceLessonKey(
+  String date, String time, String subject, String type, String room,
+) => '${date.trim()}|${time.trim()}|${subject.trim()}'
+    '|${type.trim()}|${room.trim()}';
+
+String? attendanceKeyForSchedule(ScheduleLesson lesson) {
+  final date = lesson.parsedDate;
+  if (date == null) return null;
+  String two(int number) => number.toString().padLeft(2, '0');
+  return attendanceLessonKey(
+    '${date.year}-${two(date.month)}-${two(date.day)}',
+    lesson.time,
+    lesson.subject,
+    lesson.type,
+    lesson.room,
+  );
+}
+
+class AttendanceIdentity {
+  const AttendanceIdentity({
+    required this.authenticated, required this.isStarosta,
+    required this.registered, this.group, this.displayName,
+  });
+
+  final bool authenticated;
+  final bool isStarosta;
+  final bool registered;
+  final String? group;
+  final String? displayName;
+
+  factory AttendanceIdentity.fromJson(Object? raw) {
+    if (raw is! Map) throw const FormatException('Неверная сессия журнала');
+    return AttendanceIdentity(
+      authenticated: raw['authenticated'] == true,
+      isStarosta: raw['isStarosta'] == true,
+      registered: raw['registered'] == true,
+      group: raw['group']?.toString(),
+      displayName: raw['displayName']?.toString(),
+    );
+  }
+}
+
+class AttendanceStudent {
+  const AttendanceStudent({
+    required this.ownerKey, required this.displayName,
+    required this.status, this.note,
+  });
+
+  final String ownerKey;
+  final String displayName;
+  final String status;
+  final String? note;
+
+  factory AttendanceStudent.fromJson(Object? raw) {
+    if (raw is! Map) throw const FormatException('Неверная строка журнала');
+    final key = raw['ownerKey']?.toString() ?? '';
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(key)) {
+      throw const FormatException('Неверный идентификатор студента');
+    }
+    return AttendanceStudent(
+      ownerKey: key,
+      displayName: raw['displayName']?.toString() ?? 'Студент',
+      status: raw['status']?.toString() ?? 'unmarked',
+      note: raw['note']?.toString(),
+    );
+  }
+}
+
+class BarsRosterStudent {
+  const BarsRosterStudent({
+    required this.fullName,
+    this.sourceId,
+    this.email,
+  });
+  final String fullName;
+  final String? sourceId;
+  /// The server retains only a one-way HMAC of the university login.
+  final String? email;
+
+  Map<String, dynamic> toJson() => {
+    'fullName': fullName,
+    if (sourceId != null && sourceId!.isNotEmpty) 'sourceId': sourceId,
+    if (email != null && email!.isNotEmpty) 'email': email,
+  };
+}
+
+class AttendanceRoster {
+  const AttendanceRoster({
+    required this.group,
+    required this.students,
+    required this.imported,
+    this.importedAt,
+  });
+
+  final String group;
+  final List<AttendanceStudent> students;
+  final bool imported;
+  final String? importedAt;
+
+  factory AttendanceRoster.fromJson(dynamic raw) {
+    if (raw is! Map) throw const FormatException('Неверный список группы');
+    final rows = raw['students'];
+    if (rows is! List) throw const FormatException('Нет списка студентов');
+    return AttendanceRoster(
+      group: raw['group']?.toString() ?? '',
+      imported: raw['imported'] == true,
+      importedAt: raw['importedAt']?.toString(),
+      students: [
+        for (final row in rows)
+          AttendanceStudent.fromJson({
+            ...?((row is Map) ? Map<String, dynamic>.from(row) : null),
+            'status': 'unmarked',
+          }),
+      ],
+    );
+  }
+}
+
+class AttendanceRanking {
+  const AttendanceRanking({
+    required this.group, required this.imported, required this.total,
+    required this.rank, required this.attended, required this.reviewedLessons,
+  });
+  final String group;
+  final bool imported;
+  final int total;
+  final int? rank;
+  final int attended;
+  final int reviewedLessons;
+
+  factory AttendanceRanking.fromJson(dynamic raw) {
+    if (raw is! Map || raw['metric'] != 'attendance') {
+      throw const FormatException('Неверный рейтинг посещаемости');
+    }
+    int number(dynamic raw) => raw is num ? raw.toInt() : 0;
+    final total = number(raw['total']);
+    final rank = raw['rank'];
+    return AttendanceRanking(
+      group: raw['group']?.toString() ?? '',
+      imported: raw['imported'] == true,
+      total: total >= 0 ? total : 0,
+      rank: rank is num && rank > 0 && rank <= total ? rank.toInt() : null,
+      attended: number(raw['attended']),
+      reviewedLessons: number(raw['reviewedLessons']),
+    );
+  }
+}
+
+/// Voluntarily published personal BARS points. Scores are participant-supplied,
+/// not independently verified by the BARS server.
+class GradeRankingEntry {
+  const GradeRankingEntry({
+    required this.place, required this.displayName,
+    required this.group, required this.averageScore,
+    required this.subjectCount, required this.mine, this.avatarId,
+  });
+  final int place;
+  final String displayName;
+  final String group;
+  final double averageScore;
+  final int subjectCount;
+  final bool mine;
+  final String? avatarId;
+
+  factory GradeRankingEntry.fromJson(dynamic raw) {
+    if (raw is! Map) throw const FormatException('Неверная запись рейтинга');
+    return GradeRankingEntry(
+      place: (raw['place'] as num).toInt(),
+      displayName: raw['displayName']?.toString() ?? '',
+      group: raw['group']?.toString() ?? '',
+      averageScore: (raw['averageScore'] as num).toDouble(),
+      subjectCount: (raw['subjectCount'] as num).toInt(),
+      mine: raw['mine'] == true,
+      avatarId: raw['avatarId'] is String ? raw['avatarId'] as String : null,
+    );
+  }
+}
+
+class GradeRanking {
+  const GradeRanking({
+    required this.scope, required this.group, required this.semester,
+    required this.total, required this.participants, required this.myPlace,
+    required this.myAverage, required this.published, required this.entries,
+  });
+  final String scope;
+  final String group;
+  final String? semester;
+  final int total;
+  final int participants;
+  final int? myPlace;
+  final double? myAverage;
+  final bool published;
+  final List<GradeRankingEntry> entries;
+
+  factory GradeRanking.fromJson(dynamic raw) {
+    if (raw is! Map || raw['source'] != 'participant_submitted' ||
+        raw['metric'] != 'weighted_control_grades_2_5') {
+      throw const FormatException('Неверный рейтинг по баллам');
+    }
+    return GradeRanking(
+      scope: raw['scope']?.toString() ?? 'group',
+      group: raw['group']?.toString() ?? '',
+      semester: raw['semester']?.toString(),
+      total: (raw['total'] as num).toInt(),
+      participants: (raw['participants'] as num).toInt(),
+      myPlace: (raw['myPlace'] as num?)?.toInt(),
+      myAverage: (raw['myAverage'] as num?)?.toDouble(),
+      published: raw['published'] == true,
+      entries: (raw['entries'] as List)
+          .map((entry) => GradeRankingEntry.fromJson(entry)).toList(),
+    );
+  }
+}
+
+class GradeRankingSubject {
+  const GradeRankingSubject({
+    required this.name, required this.points, required this.weight,
+  });
+  final String name;
+  final double points;
+  final double weight;
+  Map<String, dynamic> toJson() => {
+    'name': name, 'points': points, 'weight': weight,
+  };
+}
+
+class AttendanceLesson {
+  const AttendanceLesson({
+    required this.id, required this.date, required this.time,
+    required this.subject, required this.state,
+  });
+
+  final int id;
+  final String date;
+  final String time;
+  final String subject;
+  final String state;
+
+  factory AttendanceLesson.fromJson(Object? raw) {
+    if (raw is! Map || raw['id'] is! num) {
+      throw const FormatException('Неверный идентификатор журнала');
+    }
+    return AttendanceLesson(
+      id: (raw['id'] as num).toInt(),
+      date: raw['date']?.toString() ?? '',
+      time: raw['time']?.toString() ?? '',
+      subject: raw['subject']?.toString() ?? '',
+      state: raw['state']?.toString() ?? 'open',
+    );
+  }
+}
+
+class AttendanceDetail {
+  const AttendanceDetail({
+    required this.lesson, required this.students, this.myStatus,
+  });
+
+  final AttendanceLesson lesson;
+  final List<AttendanceStudent> students;
+  final String? myStatus;
+
+  bool get readyToClose => students.isNotEmpty && students.every(
+    (student) => const ['present', 'absent', 'excused'].contains(student.status),
+  );
+
+  int count(String status) =>
+      students.where((student) => student.status == status).length;
+
+  factory AttendanceDetail.fromJson(Object? raw) {
+    if (raw is! Map) throw const FormatException('Ошибка загрузки журнала');
+    return AttendanceDetail(
+      lesson: AttendanceLesson.fromJson(raw),
+      myStatus: (raw['mine'] is Map)
+          ? (raw['mine'] as Map)['status']?.toString() : null,
+      students: (raw['students'] is List)
+          ? (raw['students'] as List).map(AttendanceStudent.fromJson).toList()
+          : [],
+    );
+  }
+}
+
+class AttendanceApi {
+  AttendanceApi({http.Client? client}) : _client = client ?? http.Client();
+
+  static Future<int>? _pendingSync;
+
+  final http.Client _client;
+  Uri get _base => Uri.parse('${ApiConfig.baseUrl}/services/attendance');
+
+  Uri _route(String suffix, [Map<String, String>? query]) => _base.replace(
+    path: '${_base.path}$suffix', queryParameters: query,
+  );
+
+  String _message(http.Response response) {
+    try {
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is Map) {
+        final message = decoded['message'];
+        if (message is String) return message;
+        if (message is List) return message.join(', ');
+      }
+    } catch (_) {}
+    return 'HTTP ${response.statusCode}';
+  }
+
+  Future<dynamic> _request(String method, String path, {
+    Map<String, String>? query, Object? body,
+  }) async {
+    // Uses the same BARS-authenticated CampusApp session as schedule notes.
+    // No second username/password or Telegram login.
+    final headers = await ListingsApi.instance.scheduleNotesAuthHeaders(
+      write: method != 'GET',
+    );
+    final uri = _route(path, query);
+    late http.Response response;
+    final requestHeaders = {
+      ...headers, 'Accept': 'application/json',
+      if (method != 'GET') 'Content-Type': 'application/json',
+    };
+    if (method == 'GET') {
+      response = await _client.get(uri, headers: requestHeaders);
+    } else if (method == 'POST') {
+      response = await _client.post(uri, headers: requestHeaders,
+          body: jsonEncode(body ?? {}));
+    } else if (method == 'PATCH') {
+      response = await _client.patch(uri, headers: requestHeaders,
+          body: jsonEncode(body ?? {}));
+    } else if (method == 'DELETE') {
+      response = await _client.delete(uri, headers: requestHeaders);
+    } else {
+      throw const FormatException('Недопустимый метод');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_message(response));
+    }
+    return jsonDecode(utf8.decode(response.bodyBytes));
+  }
+
+  /// Server-stored avatars, accessed with the same BARS session.
+  Future<Uint8List?> myAvatar() => _imageBytes('/avatar');
+
+  Future<Uint8List?> rankingAvatar(String avatarId) async {
+    if (!RegExp(r'^[a-f0-9-]{36}$', caseSensitive: false)
+        .hasMatch(avatarId)) {
+      return null;
+    }
+    return _imageBytes('/avatars/$avatarId');
+  }
+
+  Future<Uint8List?> _imageBytes(String path) async {
+    final headers = await ListingsApi.instance.scheduleNotesAuthHeaders(
+      write: false,
+    );
+    final response = await _client.get(_route(path), headers: headers);
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw Exception(_message(response));
+    }
+    return response.bodyBytes;
+  }
+
+  Future<void> uploadAvatar(File file) async {
+    final headers = await ListingsApi.instance.scheduleNotesAuthHeaders(
+      write: true,
+    );
+    final request = http.MultipartRequest('POST', _route('/avatar'));
+    request.headers.addAll(headers);
+    request.files.add(await http.MultipartFile.fromPath(
+      'avatar', file.path,
+    ));
+    final response = await http.Response.fromStream(
+      await _client.send(request),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_message(response));
+    }
+  }
+
+  Future<void> removeAvatar() async {
+    await _request('DELETE', '/avatar');
+  }
+
+  /// Both scopes return only rows published with explicit student consent.
+  Future<GradeRanking> gradeRanking({String scope = 'group'}) async {
+    if (scope != 'group' && scope != 'stream') {
+      throw const FormatException('Неверный тип рейтинга');
+    }
+    return GradeRanking.fromJson(
+      await _request('GET', '/score-ranking', query: {'scope': scope}),
+    );
+  }
+
+  Future<void> publishGradePoints(
+    String semester, List<GradeRankingSubject> subjects,
+  ) async {
+    await _request('POST', '/score-ranking', body: {
+      'semester': semester,
+      'subjects': subjects.map((subject) => subject.toJson()).toList(),
+    });
+  }
+
+  /// Delete the student's score snapshot and leaderboard entry.
+  Future<void> withdrawGradePoints() async {
+    await _request('DELETE', '/score-ranking');
+  }
+
+  /// Individual standing by reviewed CampusApp attendance, not BARS grades.
+  Future<AttendanceRanking> ranking() async =>
+      AttendanceRanking.fromJson(await _request('GET', '/ranking'));
+
+  Future<AttendanceIdentity> session() async {
+    final raw = await _request('GET', '/session');
+    return AttendanceIdentity.fromJson(raw);
+  }
+
+  /// Only the authenticated student's confirmed, closed absences.
+  /// This is not the group's attendance roster.
+  Future<Set<String>> myAbsentLessonKeys(DateTime from, DateTime to) async {
+    String day(DateTime date) =>
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    final raw = await _request('GET', '/my-absences', query: {
+      'from': day(from),
+      'to': day(to),
+    });
+    if (raw is! List) throw const FormatException('Неверный список пропусков');
+    return {
+      for (final row in raw)
+        if (row is Map &&
+            row['date'] is String &&
+            row['time'] is String &&
+            row['subject'] is String &&
+            row['type'] is String && row['room'] is String)
+          attendanceLessonKey(
+            row['date'] as String,
+            row['time'] as String,
+            row['subject'] as String,
+            row['type'] as String,
+            row['room'] as String,
+          ),
+    };
+  }
+
+  Future<AttendanceRoster> roster() async =>
+      AttendanceRoster.fromJson(await _request('GET', '/roster'));
+
+  /// Backend reads BARS through its own browser. Flutter only sends the
+  /// already authenticated BARS cookies; no hidden student-table WebView.
+  Future<int> syncRoster() {
+    final existing = _pendingSync;
+    if (existing != null) return existing;
+    final future = _syncRosterOnServer();
+    _pendingSync = future;
+    return future.whenComplete(() => _pendingSync = null);
+  }
+
+  Future<int> _syncRosterOnServer() async {
+    final cookies = await ListingsApi.instance.barsCookiesForServer();
+    final raw = await _request('POST', '/roster/sync',
+        body: {'cookieHeader': cookies});
+    if (raw is! Map || raw['count'] is! num) {
+      throw const FormatException('Сервер не подтвердил импорт группы БАРС');
+    }
+    return (raw['count'] as num).toInt();
+  }
+
+  /// Legacy explicit import, kept for compatibility with existing tests.
+  /// Loads one reviewed BARS student table, not individual manual names.
+  Future<int> importRoster(
+    String group, List<BarsRosterStudent> students,
+  ) async {
+    final raw = await _request('POST', '/roster/import', body: {
+      'group': group, 'students': students.map((x) => x.toJson()).toList(),
+    });
+    if (raw is! Map || raw['count'] is! num) {
+      throw const FormatException('Импорт списка не подтверждён сервером');
+    }
+    return (raw['count'] as num).toInt();
+  }
+
+  /// Correct a single saved mark; backend checks the verified starosta,
+  /// group and expected previous status before persisting an audit entry.
+  Future<void> correctClosedAttendance(
+    int lessonId, String ownerKey, {
+    required String expectedStatus,
+    required String status,
+  }) async {
+    if (!{'present', 'absent'}.contains(expectedStatus) ||
+        !{'present', 'absent'}.contains(status)) {
+      throw const FormatException('Неверный статус исправления');
+    }
+    await _request('PATCH', '/lessons/$lessonId/attendance', body: {
+      'ownerKey': ownerKey,
+      'expectedStatus': expectedStatus,
+      'status': status,
+    });
+  }
+
+  /// Marks the explicitly selected absentees, and confirms the rest present.
+  /// Saves ONLY into CampusApp; official BARS remains untouched.
+  Future<void> saveAbsences(
+    int lessonId, List<String> rosterKeys, Set<String> absentKeys,
+  ) async {
+    await _request('POST', '/lessons/$lessonId/absences', body: {
+      'rosterKeys': rosterKeys,
+      'absentKeys': absentKeys.toList(),
+    });
+  }
+
+  Future<void> register(String name) async {
+    await _request('POST', '/register', body: {'displayName': name.trim()});
+  }
+
+  Future<List<AttendanceLesson>> lessons(DateTime date) async {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    final raw = await _request('GET', '/lessons', query: {'date': '$y-$m-$d'});
+    if (raw is! List) throw const FormatException('Неверный список занятий');
+    return raw.map(AttendanceLesson.fromJson).toList();
+  }
+
+  Future<int> open(ScheduleLesson lesson) async {
+    final date = lesson.parsedDate;
+    if (date == null) throw const FormatException('Дата занятия неизвестна');
+    final result = await _request('POST', '/lessons', body: {
+      'date': '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}',
+      'time': lesson.time, 'subject': lesson.subject,
+      'type': lesson.type, 'room': lesson.room,
+    });
+    if (result is! Map || result['id'] is! num) {
+      throw const FormatException('Сервер не создал журнал');
+    }
+    return (result['id'] as num).toInt();
+  }
+
+  Future<AttendanceDetail> detail(int id) async =>
+      AttendanceDetail.fromJson(await _request('GET', '/lessons/$id'));
+
+  Future<void> checkIn(int id) async {
+    await _request('POST', '/lessons/$id/check-in');
+  }
+
+  Future<void> decide(int id, AttendanceStudent student, String status) async {
+    await _request('PATCH', '/lessons/$id/decision', body: {
+      'ownerKey': student.ownerKey, 'status': status,
+    });
+  }
+
+  Future<void> close(int id, List<AttendanceStudent> students) async {
+    await _request('POST', '/lessons/$id/close', body: {
+      'acknowledgedStudentKeys': students.map((e) => e.ownerKey).toList(),
+    });
+  }
+
+  Future<Map<String, dynamic>> barsPreview(int id) async {
+    final result = await _request('GET', '/lessons/$id/bars-preview');
+    if (result is! Map) throw const FormatException('Нет предпросмотра');
+    return Map<String, dynamic>.from(result);
+  }
+
+  void dispose() => _client.close();
+}

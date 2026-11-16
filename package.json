@@ -1,0 +1,11 @@
+{
+  "name": "campusapp-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optional npm shortcuts for the Flutter CampusApp client. Dependencies are managed by Flutter.",
+  "scripts": {
+    "build": "flutter build apk --release",
+    "start": "flutter run",
+    "test": "flutter test"
+  }
+}

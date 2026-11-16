@@ -39,7 +39,7 @@ Color lessonKindColor(LessonKind kind) {
       return const Color(0xFFEF4444);
     case LessonKind.other:
     case LessonKind.elective:
-      return const Color(0xFF8C8C94);
+      return const Color(0xFF807B89);
   }
 }
 

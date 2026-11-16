@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:campusapp/features/schedule/data/group_storage.dart';
+import 'package:campusapp/features/schedule/data/attendance_api.dart';
 import 'package:campusapp/features/services/booking/data/classroom_booking_api.dart';
 import 'package:campusapp/features/schedule/data/semester_week.dart';
 import 'package:campusapp/features/schedule/data/private_lesson_notes_storage.dart';
@@ -26,7 +27,7 @@ void main() {
     expect(semesterWeekNumber(DateTime(2027, 3, 1)), 5);
   });
 
-  test('lesson type determines green/yellow/red/gray colors', () {
+  test('lesson type determines lavender/violet/mint/gray colors', () {
     expect(lessonKind('Лекция'), LessonKind.lecture);
     expect(lessonKind('Практическое занятие'), LessonKind.practice);
     expect(lessonKind('Лабораторная работа'), LessonKind.laboratory);
@@ -37,7 +38,7 @@ void main() {
       LessonKind.elective,
     );
     expect(lessonKindLabel('Лекция', subject: 'Факультатив'), 'Факультатив');
-    expect(lessonKindColor(LessonKind.elective), const Color(0xFF8C8C94));
+    expect(lessonKindColor(LessonKind.elective), const Color(0xFF807B89));
     expect(lessonKindColor(LessonKind.lecture), const Color(0xFF34C759));
     expect(lessonKindColor(LessonKind.practice), const Color(0xFFFACC15));
     expect(lessonKindColor(LessonKind.laboratory), const Color(0xFFEF4444));
@@ -109,6 +110,123 @@ void main() {
         findsNothing);
   });
 
+  testWidgets('N appears only on an explicitly absent lesson card',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: Column(children: [
+        LessonCard(
+          time: '09:20 - 10:55', subject: 'Отсутствовал',
+          type: 'Лекция', room: 'С-401', teacher: '',
+          attendanceAbsent: true,
+        ),
+        LessonCard(
+          time: '11:10 - 12:45', subject: 'Присутствовал',
+          type: 'Лекция', room: 'С-405', teacher: '',
+        ),
+      ])),
+    ));
+    expect(find.byKey(const ValueKey('schedule-absence-n')), findsOneWidget);
+    expect(find.text('Н'), findsOneWidget);
+    // N sits to the right of the subject, lower than the lesson type,
+    // as shown in the schedule mockup. Do not put it beside 'Лекция'.
+    final badge = tester.getRect(find.byKey(
+      const ValueKey('schedule-absence-n')));
+    final typeLabel = tester.getRect(find.text('Лекция').first);
+    final subject = tester.getRect(find.text('Отсутствовал'));
+    expect(badge.top, greaterThan(typeLabel.bottom));
+    expect(badge.left, greaterThan(subject.right));
+    expect(badge.top, lessThan(subject.bottom + 24));
+  });
+
+  testWidgets('absence N does not overlap the M-307 seat action',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: LessonCard(
+        time: '11:10 - 12:45',
+        subject: 'Системы управления базами данных',
+        type: 'Лекция',
+        room: 'М-307',
+        teacher: 'Преподаватель',
+        attendanceAbsent: true,
+        onBookSeat: () {},
+      ),
+    )));
+    final badge = tester.getRect(find.byKey(
+      const ValueKey('schedule-absence-n')));
+    final type = tester.getRect(find.text('Лекция'));
+    final seatAction = tester.getRect(find.byKey(
+      const ValueKey('schedule-book-seat')));
+    expect(badge.top, greaterThan(type.bottom));
+    expect(badge.bottom, lessThan(seatAction.top));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('student receives N only from private matching lesson records',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Петров Пётр Сергеевич',
+      group: 'А-03-23', recordBook: '', course: '4',
+      educationLevel: '', email: '', faculty: '',
+    ));
+    final fake = _OwnAbsencesFake();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        attendanceApi: fake,
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(fake.requested, greaterThan(0));
+    expect(find.byKey(const ValueKey('schedule-absence-n')), findsOneWidget);
+    expect(find.text('Н'), findsOneWidget);
+  });
+
+  test('N markers distinguish different rooms and lesson types', () {
+    const lesson = ScheduleLesson(
+      date: '12.11.2026', time: '09:20 - 10:55',
+      subject: 'Моделирование систем управления',
+      type: 'Лекция', room: 'В-308', teacher: '',
+    );
+    final key = attendanceKeyForSchedule(lesson);
+    expect(key, attendanceLessonKey(
+      '2026-11-12', '09:20 - 10:55',
+      'Моделирование систем управления', 'Лекция', 'В-308',
+    ));
+    expect(key, isNot(attendanceLessonKey(
+      '2026-11-12', '09:20 - 10:55',
+      'Моделирование систем управления', 'Лекция', 'М-307',
+    )));
+    expect(key, isNot(attendanceLessonKey(
+      '2026-11-12', '09:20 - 10:55',
+      'Моделирование систем управления', 'Лабораторная', 'В-308',
+    )));
+  });
+
+  testWidgets('opening another group cannot display N from the own group',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await StudentProfileStorage().saveProfile(const StudentProfile(
+      fullName: 'Студент', group: 'А-03-23',
+      recordBook: '', course: '4',
+      educationLevel: '', email: '', faculty: '',
+    ));
+    await GroupStorage().saveScheduleGroup('А-04-23');
+    final fake = _OwnAbsencesFake();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        attendanceApi: fake,
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Занятие А-04-23'), findsWidgets);
+    expect(find.byKey(const ValueKey('schedule-absence-n')), findsNothing);
+    expect(fake.requested, 0);
+  });
+
   testWidgets('lesson type is to the right of its time', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -144,7 +262,47 @@ void main() {
     );
     expect(find.text('Факультатив'), findsOneWidget);
     final label = tester.widget<Text>(find.text('Факультатив'));
-    expect(label.style?.color, const Color(0xFF8C8C94));
+    expect(label.style?.color, const Color(0xFF807B89));
+  });
+
+  testWidgets('original schedule layout is preserved without mode selector',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('schedule-view-selector')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-floating-today')), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-group-search')), findsOneWidget);
+    final today = DateTime.now();
+    expect(find.byKey(ValueKey(
+      'schedule-day-${today.year}-${today.month}-${today.day}')),
+      findsOneWidget);
+    expect(find.text('Занятие А-03-23'), findsWidgets);
+  });
+
+  testWidgets('selected date and semester week share bold typography',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'student_group': 'А-03-23'});
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: ScheduleScreen(
+        scheduleApi: _FakeScheduleApi(),
+        groupStorage: GroupStorage(),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    final week = tester.widget<Text>(
+      find.byKey(const ValueKey('schedule-semester-week')));
+    final date = tester.widget<Text>(
+      find.textContaining(RegExp(r'^\d{1,2} [а-яё]+$')).first);
+    expect(date.style?.fontWeight, FontWeight.w800);
+    expect(week.style?.fontWeight, FontWeight.w800);
+    expect(date.style?.fontSize, 14);
+    expect(week.style?.fontSize, 14);
   });
 
   testWidgets('changing group reloads real lessons, not only the label', (tester) async {
@@ -402,6 +560,28 @@ class _FakeScheduleApi extends ScheduleApi {
         teacher: 'Преподаватель',
       ),
     ];
+  }
+}
+
+class _OwnAbsencesFake extends AttendanceApi {
+  int requested = 0;
+
+  @override
+  Future<Set<String>> myAbsentLessonKeys(
+    DateTime from, DateTime to,
+  ) async {
+    requested++;
+    final now = DateTime.now();
+    String two(int x) => x.toString().padLeft(2, '0');
+    return {
+      attendanceLessonKey(
+        '${now.year}-${two(now.month)}-${two(now.day)}',
+        '09:20 - 10:55',
+        'Занятие А-03-23',
+        'Лекция',
+        'С-409',
+      ),
+    };
   }
 }
 

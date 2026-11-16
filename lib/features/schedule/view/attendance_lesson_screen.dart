@@ -1,0 +1,760 @@
+import 'package:flutter/material.dart';
+
+import '/features/auth/view/login_screen.dart';
+import '/features/services/listings/data/listings_api.dart';
+import '../data/attendance_api.dart';
+import '../data/schedule_lesson.dart';
+
+/// Student check-in and starosta review for ONE lesson from the real timetable.
+class AttendanceLessonScreen extends StatefulWidget {
+  const AttendanceLessonScreen({
+    super.key,
+    required this.group,
+    required this.lesson,
+    this.api,
+  });
+
+  final String group;
+  final ScheduleLesson lesson;
+  final AttendanceApi? api;
+
+  @override
+  State<AttendanceLessonScreen> createState() => _AttendanceLessonScreenState();
+}
+
+class _AttendanceLessonScreenState extends State<AttendanceLessonScreen> {
+  late final AttendanceApi _api;
+  AttendanceIdentity? _identity;
+  AttendanceDetail? _detail;
+  AttendanceRoster? _roster;
+  Set<String> _absentKeys = {};
+  final TextEditingController _search = TextEditingController();
+  bool _showAbsentOnly = false;
+  bool _attemptedAutoImport = false;
+  String? _rosterError;
+  int? _lessonId;
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _api = widget.api ?? AttendanceApi();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    if (widget.api == null) _api.dispose();
+    super.dispose();
+  }
+
+  String _norm(String value) => value
+      .trim().toUpperCase()
+      .replaceAll('A', 'А')
+      .replaceAll(RegExp(r'\s+'), '');
+
+  String _label(String status) => switch (status) {
+    'pending' => 'Ожидает проверки',
+    'present' => 'Присутствует',
+    'absent' => 'Пропуск',
+    'excused' => 'Уважительная причина',
+    'rejected' => 'Заявка отклонена',
+    _ => 'Не отмечен',
+  };
+
+  bool _requiresBarsReconnect(String error) =>
+      error.contains('БАРС отклонил сессию') ||
+      error.contains('перенаправил на вход') ||
+      error.contains('Нет подтверждённой сессии БАРС') ||
+      error.contains('Сессия БАРС не найдена') ||
+      error.contains('БАРС не подтвердил сессию');
+
+  Future<void> _reconnectBars() async {
+    // The profile cached at app startup is not itself a live BARS session.
+    // Reuse the existing BARS WebView login without logging out of CampusApp.
+    final authenticated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(returnToPreviousScreen: true),
+      ),
+    );
+    if (!mounted) return;
+    if (authenticated == true) await _load();
+  }
+
+  Future<void> _retryRoster() async {
+    if (_loading || _saving) return;
+    _attemptedAutoImport = false;
+    await _load();
+  }
+
+  Future<void> _refreshStarostaRole() async {
+    if (_saving || _loading) return;
+    setState(() => _saving = true);
+    try {
+      await ListingsApi.instance.refreshBarsRole();
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      if (_identity?.isStarosta != true) {
+        _message(
+          'БАРС не подтвердил права старосты. Проверь, доступна ли '
+          'страница своей учебной группы в БАРС.',
+          error: true,
+        );
+      }
+    } catch (error) {
+      _message(error.toString().replaceFirst('Exception: ', ''), error: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final account = await _api.session();
+      if (!account.authenticated ||
+          _norm(account.group ?? '') != _norm(widget.group)) {
+        throw Exception(
+          'Учебный журнал доступен только студентам этой группы, '
+          'подтверждённым через БАРС',
+        );
+      }
+      var roster = account.isStarosta ? await _api.roster() : null;
+      if (account.isStarosta && roster?.imported != true &&
+          widget.api == null && !_attemptedAutoImport) {
+        _attemptedAutoImport = true;
+        try {
+          await _api.syncRoster();
+          roster = await _api.roster();
+          _rosterError = null;
+        } catch (error) {
+          _rosterError = error.toString().replaceFirst('Exception: ', '');
+        }
+      }
+      final date = widget.lesson.parsedDate;
+      if (date == null) throw Exception('Дата пары не определена');
+      final lessons = await _api.lessons(date);
+      final existing = lessons.where((item) =>
+          item.subject == widget.lesson.subject &&
+          item.time == widget.lesson.time).toList();
+      if (!mounted) return;
+      if (existing.length > 1) {
+        throw Exception('Найдено несколько журналов к одной паре');
+      }
+      final id = existing.isEmpty ? null : existing.single.id;
+      final detail = id == null ? null : await _api.detail(id);
+      if (!mounted) return;
+      setState(() {
+        _identity = account;
+        _roster = roster;
+        _lessonId = id;
+        _detail = detail;
+        _absentKeys = {
+          if (detail != null)
+            for (final student in detail.students)
+              if (student.status == 'absent') student.ownerKey,
+        };
+      });
+    } catch (error) {
+      if (mounted) setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _message(String text, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(text),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: error ? Theme.of(context).colorScheme.error : null,
+    ));
+  }
+
+  Future<void> _run(Future<void> Function() action, String success) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await action();
+      if (mounted) _message(success);
+      await _load();
+    } catch (error) {
+      _message(error.toString().replaceFirst('Exception: ', ''), error: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveReviewedAbsences() async {
+    final detail = _detail;
+    if (_identity?.isStarosta != true || detail == null || _saving ||
+        detail.lesson.state != 'open') return;
+    final roster = detail.students;
+    if (roster.isEmpty || _roster?.imported != true) {
+      _message('Сначала загрузи полный список группы из БАРС', error: true);
+      return;
+    }
+    final absent = roster.where((student) =>
+        _absentKeys.contains(student.ownerKey)).toList();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Подтвердить посещаемость?'),
+        content: SingleChildScrollView(child: Text(
+          'Всего студентов: ${roster.length}\n'
+          'Отсутствовали: ${absent.length}\n'
+          'Присутствовали: ${roster.length - absent.length}\n\n'
+          '${absent.isEmpty ? 'Отсутствующих нет' :
+            absent.map((student) => student.displayName).join('\n')}\n\n'
+          'Проверь, что список группы полный. Это сохранит отметки '
+          'в CampusApp и закроет журнал. Официальный БАРС не изменяется.',
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Сохранить')),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await _run(
+      () => _api.saveAbsences(
+        detail.lesson.id,
+        roster.map((student) => student.ownerKey).toList(),
+        Set.of(_absentKeys),
+      ),
+      'Посещаемость сохранена в CampusApp',
+    );
+  }
+
+  /// Saved lessons can be corrected without reopening the whole journal.
+  /// The backend verifies the group, old status and logs each correction.
+  Future<void> _correctSavedMark(AttendanceStudent student) async {
+    final lesson = _detail?.lesson;
+    if (_saving || lesson == null || lesson.state != 'closed' ||
+        _identity?.isStarosta != true) return;
+    if (student.status != 'present' && student.status != 'absent') return;
+    final remove = student.status == 'absent';
+    final next = remove ? 'present' : 'absent';
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(remove ? 'Снять пропуск?' : 'Поставить пропуск?'),
+        content: Text(
+          student.displayName + '\n\n' +
+          (remove
+            ? 'Отметка «Н» будет снята, студент станет присутствующим.'
+            : 'Студент будет отмечен как отсутствующий.') +
+          '\nИзменение сохранится в CampusApp и в истории журнала.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Исправить'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || accepted != true) return;
+    await _run(
+      () => _api.correctClosedAttendance(
+        lesson.id, student.ownerKey,
+        expectedStatus: student.status, status: next,
+      ),
+      remove ? 'Пропуск снят' : 'Пропуск сохранён',
+    );
+  }
+
+  // The journal uses the original roster position for row numbers. Filtering
+  // must not silently renumber students, as this is a group roll call.
+  static const double _numberColumnWidth = 34;
+  static const double _absenceColumnWidth = 72;
+
+  String _compactStudentName(String fullName) {
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    if (parts.length <= 1) return fullName.trim();
+    // Surname + initials; the full BARS name remains available on long press.
+    final initials = parts.skip(1).take(2)
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}.').join(' ');
+    return '${parts.first} $initials';
+  }
+
+  Widget _attendanceTableHeader(ThemeData theme) {
+    return Padding(
+      key: const ValueKey('attendance-table-header'),
+      padding: const EdgeInsets.fromLTRB(5, 14, 5, 12),
+      child: Row(
+        children: [
+          Text(
+            'СТУДЕНТЫ',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.7,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '«Н» — ПРОПУСК',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A distinct, touch-friendly tile without any horizontal separator lines.
+  /// A saved N can be corrected in-place with an explicit confirmation.
+  Widget _absenceTile(
+    AttendanceStudent student, {
+    required int number,
+    required bool closed,
+  }) {
+    final theme = Theme.of(context);
+    final absent = closed
+        ? student.status == 'absent'
+        : _absentKeys.contains(student.ownerKey);
+    final scheme = theme.colorScheme;
+    final primary = scheme.primary;
+    final dark = theme.brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Tooltip(
+        message: student.displayName,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey('attendance-absent-${student.ownerKey}'),
+            borderRadius: BorderRadius.circular(20),
+            onTap: _saving ? null : () {
+              if (closed) {
+                _correctSavedMark(student);
+              } else {
+                setState(() {
+                  if (absent) {
+                    _absentKeys.remove(student.ownerKey);
+                  } else {
+                    _absentKeys.add(student.ownerKey);
+                  }
+                });
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              constraints: const BoxConstraints(minHeight: 66),
+              padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: absent
+                      ? [
+                          primary.withOpacity(dark ? 0.19 : 0.12),
+                          scheme.surfaceContainerLow,
+                        ]
+                      : [
+                          scheme.surfaceContainerLow,
+                          scheme.surfaceContainer.withOpacity(0.76),
+                        ],
+                ),
+                border: Border.all(
+                  color: absent
+                      ? primary.withOpacity(0.48)
+                      : scheme.outlineVariant.withOpacity(0.23),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(dark ? 0.11 : 0.025),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: _numberColumnWidth,
+                    child: Text(
+                      number.toString().padLeft(2, '0'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _compactStudentName(student.displayName),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 43,
+                    height: 39,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: absent
+                          ? primary.withOpacity(0.19)
+                          : scheme.surfaceContainerHigh.withOpacity(0.52),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: absent
+                            ? primary.withOpacity(0.35)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Text(
+                      absent ? 'Н' : '—',
+                      key: absent
+                          ? const ValueKey('attendance-student-absence')
+                          : null,
+                      style: TextStyle(
+                        color: absent ? primary : scheme.onSurfaceVariant,
+                        fontSize: absent ? 17 : 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open() async {
+    await _run(() async {
+      _lessonId = await _api.open(widget.lesson);
+    }, 'Журнал открыт для отметок');
+  }
+
+  Future<void> _checkIn() async {
+    final id = _lessonId;
+    if (id == null) return;
+    await _run(
+      () => _api.checkIn(id),
+      'Заявка отправлена старосте для проверки',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final account = _identity;
+    final detail = _detail;
+    final reviewed = account?.isStarosta == true &&
+        detail != null && detail.students.isNotEmpty;
+    final isClosed = detail?.lesson.state == 'closed';
+    final filter = _search.text.trim().toLowerCase();
+    final shown = reviewed
+        ? detail!.students.where((student) {
+            if (_showAbsentOnly) {
+              final absent = isClosed
+                  ? student.status == 'absent'
+                  : _absentKeys.contains(student.ownerKey);
+              if (!absent) return false;
+            }
+            return student.displayName.toLowerCase().contains(filter);
+          }).toList()
+        : <AttendanceStudent>[];
+    final total = reviewed ? detail!.students.length : 0;
+    final missing = reviewed
+        ? (isClosed
+            ? detail!.students.where((s) => s.status == 'absent').length
+            : _absentKeys.length)
+        : 0;
+    final rosterNumbers = reviewed
+        ? <String, int>{
+            for (var i = 0; i < detail!.students.length; i++)
+              detail!.students[i].ownerKey: i + 1,
+          }
+        : <String, int>{};
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Учебный журнал'),
+        actions: [
+          IconButton(
+            tooltip: 'Обновить',
+            onPressed: _loading || _saving ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(widget.lesson.subject,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Text('${widget.group} · ${widget.lesson.date} · '
+                      '${widget.lesson.time}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      )),
+                  const SizedBox(height: 14),
+                  if (_error != null)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_error!, style: TextStyle(
+                              color: theme.colorScheme.error,
+                            )),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              key: const ValueKey('attendance-retry-session'),
+                              onPressed: _saving || _loading ? null : _load,
+                              icon: const Icon(Icons.refresh_outlined),
+                              label: const Text('Повторить проверку'),
+                            ),
+                            if (_requiresBarsReconnect(_error!)) ...[
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                key: const ValueKey('attendance-reconnect-bars'),
+                                onPressed: _saving || _loading
+                                    ? null : _reconnectBars,
+                                icon: const Icon(Icons.login),
+                                label: const Text('Обновить вход в БАРС'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (account != null && account.authenticated) ...[
+                    if (account.isStarosta) ...[
+                      if (_roster?.imported != true) ...[
+                        Text(_rosterError ??
+                            'Не удалось получить список группы с сервера БАРС.'),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          key: const ValueKey('attendance-retry-roster'),
+                          onPressed: _retryRoster,
+                          icon: const Icon(Icons.sync),
+                          label: const Text('Повторить загрузку'),
+                        ),
+                      ],
+                    ] else ...[
+                      const Text('Учебный журнал ведёт староста группы. '
+                          'ФИО студентов загружаются из БАРС, '
+                          'вводить их вручную не требуется.'),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        key: const ValueKey('attendance-check-starosta-role'),
+                        onPressed: _saving || _loading
+                            ? null : _refreshStarostaRole,
+                        icon: const Icon(Icons.verified_user_outlined),
+                        label: const Text('Проверить права старосты'),
+                      ),
+                    ],
+                    if (detail == null) ...[
+                      const SizedBox(height: 14),
+                      const Text('Староста ещё не открыл журнал этой пары.'),
+                      if (account.isStarosta) ...[
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _saving || _roster?.imported != true
+                              ? null : _open,
+                          icon: const Icon(Icons.playlist_add_check),
+                          label: const Text('Открыть журнал пары'),
+                        ),
+                      ],
+                    ] else ...[
+                      if (!account.isStarosta)
+                        Text(
+                          detail.lesson.state == 'closed'
+                              ? 'Журнал закрыт'
+                              : 'Приём отметок открыт',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      if (!account.isStarosta) ...[
+                        const SizedBox(height: 12),
+                        Text('Моя отметка: ${_label(detail.myStatus ?? 'unmarked')}'),
+                        const SizedBox(height: 10),
+                        if (detail.lesson.state == 'open' &&
+                            account.registered &&
+                            ['unmarked', 'pending']
+                              .contains(detail.myStatus ?? 'unmarked'))
+                          FilledButton.icon(
+                            onPressed: _saving ? null : _checkIn,
+                            icon: const Icon(Icons.how_to_reg),
+                            label: Text(detail.myStatus == 'pending'
+                                ? 'Отправить повторно'
+                                : 'Я присутствую'),
+                          ),
+                        const SizedBox(height: 10),
+                        const Text('Отметка ожидает подтверждения старосты. '
+                            'Если ты не нажал кнопку, это не означает '
+                            'автоматический пропуск.'),
+                      ] else ...[
+                        const SizedBox(height: 14),
+                        Text(
+                          'В группе: $total · Пропусков: $missing'
+                          '${isClosed ? ' · Сохранён' : ''}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          isClosed
+                              ? 'Нашёл ошибку? Нажми на строку, чтобы исправить '
+                                  'сохранённую отметку.'
+                              : 'Нажми на студента, чтобы поставить или снять «Н»',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        if (detail.students.isEmpty)
+                          const Text('Сначала загрузи полный список '
+                              'студентов из БАРС.')
+                        else ...[
+                          TextField(
+                            key: const ValueKey('attendance-search'),
+                            controller: _search,
+                            onChanged: (_) => setState(() {}),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              hintText: 'Найти студента по ФИО',
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon: _search.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.close, size: 19),
+                                      onPressed: () => setState(_search.clear),
+                                    )
+                                  : null,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              TextButton(
+                                key: const ValueKey('attendance-filter-all'),
+                                onPressed: () => setState(
+                                  () => _showAbsentOnly = false),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                                ),
+                                child: Text('Все', style: TextStyle(
+                                  fontWeight: !_showAbsentOnly
+                                      ? FontWeight.w700 : FontWeight.w400,
+                                  color: !_showAbsentOnly
+                                      ? theme.colorScheme.onSurface
+                                      : theme.colorScheme.onSurfaceVariant,
+                                )),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                key: const ValueKey('attendance-filter-absent'),
+                                onPressed: () => setState(
+                                  () => _showAbsentOnly = true),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                                ),
+                                child: Text('Отсутствуют ($missing)',
+                                  style: TextStyle(
+                                    fontWeight: _showAbsentOnly
+                                        ? FontWeight.w700 : FontWeight.w400,
+                                    color: _showAbsentOnly
+                                        ? theme.colorScheme.onSurface
+                                        : theme.colorScheme.onSurfaceVariant,
+                                  )),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          _attendanceTableHeader(theme),
+                          for (final student in shown)
+                            _absenceTile(
+                              student,
+                              number: rosterNumbers[student.ownerKey]!,
+                              closed: isClosed,
+                            ),
+                          if (shown.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 28),
+                              child: Center(child: Text(
+                                'По этому запросу студентов нет',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant),
+                              )),
+                            ),
+                        ],
+                      ],
+                    ],
+                  ],
+                ],
+              ),
+            ),
+      bottomNavigationBar: reviewed && !isClosed
+          ? SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 9, 16, 12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(top: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                  )),
+                ),
+                child: SizedBox(
+                  height: 50,
+                  child: FilledButton(
+                    key: const ValueKey('save-reviewed-absences'),
+                    onPressed: _saving ? null : _saveReviewedAbsences,
+                    child: const Text('Сохранить посещаемость'),
+                  ),
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+}

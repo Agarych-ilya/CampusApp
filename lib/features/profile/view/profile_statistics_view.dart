@@ -4,19 +4,24 @@ import 'package:flutter/material.dart';
 
 import '../data/bars_subject.dart';
 import '../data/student_profile.dart';
+import '../../schedule/data/attendance_api.dart';
+import 'grade_ranking_screen.dart';
 
-/// The ranking is deliberately a placeholder until the university provides
-/// authorized cohort data. Only local BARS information is used for the
-/// activity counters displayed below.
+/// BARS-point leaderboard uses explicitly published student snapshots.
+ // The official university leaderboard is not available.
 class ProfileStatisticsView extends StatelessWidget {
   const ProfileStatisticsView({
     super.key,
     required this.profile,
     required this.subjects,
+    this.rankingApi,
+    this.rankingRevision = 0,
   });
 
   final StudentProfile? profile;
   final List<BarsSubject> subjects;
+  final AttendanceApi? rankingApi;
+  final int rankingRevision;
 
   int get _gradedActivities {
     final gradePattern = RegExp(r'^\s*[2-5](?=\s|$)');
@@ -61,51 +66,25 @@ class ProfileStatisticsView extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: _RankingCard(
-                title: 'В группе',
-                subtitle: group.isEmpty ? 'Твоя группа' : group,
-                icon: Icons.groups_2_outlined,
-                accent: const Color(0xFF60A5FA),
+              child: _ScoreRankingCard(
+                scope: 'group',
+                group: group,
+                subjects: subjects,
+                api: rankingApi,
+                revision: rankingRevision,
               ),
             ),
             const SizedBox(width: 12),
-            const Expanded(
-              child: _RankingCard(
-                title: 'На потоке',
-                subtitle: 'Среди студентов потока',
-                icon: Icons.emoji_events_outlined,
-                accent: Color(0xFF8B8CF8),
+            Expanded(
+              child: _ScoreRankingCard(
+                scope: 'stream',
+                group: group,
+                subjects: subjects,
+                api: rankingApi,
+                revision: rankingRevision,
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(
-            color: _cardColor(context),
-            borderRadius: BorderRadius.circular(17),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.info_outline, size: 20, color: muted),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Рейтинг пока недоступен. Места в группе и на потоке '
-                  'появятся после подключения разрешённых данных '
-                  'университета. Сейчас отображается заглушка.',
-                  style: TextStyle(
-                    color: muted,
-                    fontSize: 12,
-                    height: 1.45,
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
         const SizedBox(height: 27),
         Text(
@@ -187,24 +166,122 @@ Color _cardColor(BuildContext context) =>
         ? const Color(0xFF24282F)
         : const Color(0xFFF0F3F8);
 
+class _ScoreRankingCard extends StatefulWidget {
+  const _ScoreRankingCard({
+    required this.scope, required this.group, required this.subjects,
+    required this.api, required this.revision,
+  });
+  final String scope;
+  final String group;
+  final List<BarsSubject> subjects;
+  final AttendanceApi? api;
+  final int revision;
+
+  @override
+  State<_ScoreRankingCard> createState() => _ScoreRankingCardState();
+}
+
+class _ScoreRankingCardState extends State<_ScoreRankingCard> {
+  late AttendanceApi _api;
+  late Future<GradeRanking> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _api = widget.api ?? AttendanceApi();
+    _future = _api.gradeRanking(scope: widget.scope);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScoreRankingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scope != widget.scope ||
+        oldWidget.group != widget.group ||
+        oldWidget.revision != widget.revision ||
+        oldWidget.api != widget.api) {
+      if (oldWidget.api == null) _api.dispose();
+      _api = widget.api ?? AttendanceApi();
+      _future = _api.gradeRanking(scope: widget.scope);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.api == null) _api.dispose();
+    super.dispose();
+  }
+
+  Future<void> _open() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => GradeRankingScreen(
+        scope: widget.scope, subjects: widget.subjects, api: _api,
+      ),
+    ));
+    if (mounted) {
+      setState(() {
+        _future = _api.gradeRanking(scope: widget.scope);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = widget.scope == 'stream';
+    return FutureBuilder<GradeRanking>(
+      future: _future,
+      builder: (context, snapshot) {
+        final ranking = snapshot.data;
+        final value = ranking?.myPlace == null
+            ? '—'
+            : '${ranking!.myPlace} / ${ranking.participants}';
+        final tag = snapshot.connectionState == ConnectionState.waiting
+            ? 'Загрузка'
+            : snapshot.hasError ? 'Нет связи'
+            : ranking == null ? 'Нет данных'
+            : 'Участников: ${ranking.participants}';
+        return _RankingCard(
+          title: stream ? 'На потоке' : 'В группе',
+          subtitle: stream ? 'Все группы «А-»'
+              : widget.group.isEmpty ? 'Твоя группа' : widget.group,
+          icon: stream ? Icons.emoji_events_outlined
+              : Icons.groups_2_outlined,
+          accent: Theme.of(context).colorScheme.primary,
+          value: value,
+          tag: tag,
+          onTap: _open,
+        );
+      },
+    );
+  }
+}
+
 class _RankingCard extends StatelessWidget {
   const _RankingCard({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.accent,
+    this.value = '—',
+    this.tag = 'Скоро',
+    this.onTap,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
   final Color accent;
+  final String value;
+  final String tag;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
 
-    return Container(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
       constraints: const BoxConstraints(minHeight: 164),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -215,7 +292,14 @@ class _RankingCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: accent, size: 23),
+          Row(
+            children: [
+              Icon(icon, color: accent, size: 23),
+              const Spacer(),
+              if (onTap != null) Icon(Icons.chevron_right_rounded,
+                size: 20, color: muted),
+            ],
+          ),
           const SizedBox(height: 13),
           Text(
             title,
@@ -229,28 +313,27 @@ class _RankingCard extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: muted),
           ),
           const SizedBox(height: 13),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text(
-                '—',
-                style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(width: 9),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  'Скоро',
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 26, fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            tag,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: accent,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -344,7 +427,7 @@ class _GradeDistributionCard extends StatelessWidget {
       5: Color(0xFF32B28D),
       4: Color(0xFF5FA8FF),
       3: Color(0xFFE6B460),
-      2: Color(0xFFE1747F),
+      2: Color(0xFF93BDE9),
     };
     final segments = <_RingPiece>[
       for (final grade in [5, 4, 3, 2])

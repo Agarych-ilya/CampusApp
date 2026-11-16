@@ -515,7 +515,7 @@ class _AddCommunityScreenState extends State<AddCommunityScreen> {
                   _error!,
                   style: const TextStyle(
                     fontSize: 13,
-                    color: Color(0xFFFF808D),
+                    color: Color(0xFF9FC2FF),
                   ),
                 ),
               ],

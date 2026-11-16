@@ -10,13 +10,21 @@ import '/features/profile/data/bars_subject.dart';
 import '/features/profile/data/bars_subjects_storage.dart';
 import '/features/profile/data/student_profile.dart';
 import '/features/profile/data/student_profile_storage.dart';
+import '/features/services/listings/data/listings_api.dart';
 
 import '/features/schedule/data/group_storage.dart';
 
 import '../data/bars_auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.returnToPreviousScreen = false,
+  });
+
+  /// Reconnect BARS for an existing CampusApp user without clearing the
+  /// navigation stack or deleting a locally cached student profile.
+  final bool returnToPreviousScreen;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -365,6 +373,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       debugPrint('BARS: group saved');
 
+      // This is a real completed WebView login, not an automatic page load.
+      // Re-enable one server verification attempt with the fresh BARS cookies.
+      ListingsApi.instance.barsLoginCompleted();
       _finished = true;
 
       _watchTimer?.cancel();
@@ -373,9 +384,12 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      Navigator.of(
-        context,
-      ).pushNamedAndRemoveUntil(AppRoutes.main, (route) => false);
+      if (widget.returnToPreviousScreen) {
+        Navigator.of(context).pop(true);
+      } else {
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil(AppRoutes.main, (route) => false);
+      }
     } catch (e) {
       debugPrint('BARS save error: $e');
 

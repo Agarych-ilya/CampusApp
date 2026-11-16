@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 
-/// A restrained, service-only palette. The rest of CampusApp keeps its theme.
+/// A shared service palette aligned with the reference schedule's near-black
+/// surfaces and muted violet accents.
 class ServicePalette {
   ServicePalette._();
 
-  // Ninja MIREA-like: neutral graphite surfaces, light-blue accents.
+  // Ninja-like: neutral graphite surfaces and reference violet accents.
   // Green is reserved for the study activity heatmap.
-  static const Color accent = Color(0xFFAAC8FF);
-  static const Color accentOnDark = Color(0xFF182B4B);
-  static const Color accentLightTheme = Color(0xFF3464A6);
-  static const Color slate = Color(0xFF95B5E8);
-  static const Color mint = Color(0xFF78C0A9);
-  static const Color amber = Color(0xFFF0BF78);
-  static const Color headerStart = Color(0xFF222225);
-  static const Color headerEnd = Color(0xFF18181B);
+  static const Color accent = Color(0xFFA58CFA);
+  static const Color accentOnDark = Color(0xFF22172F);
+  static const Color accentLightTheme = Color(0xFF7057B9);
+  static const Color slate = Color(0xFFAA94E6);
+  static const Color mint = Color(0xFF87B8AD);
+  static const Color amber = Color(0xFFD1B68E);
+  static const Color headerStart = Color(0xFF201E26);
+  static const Color headerEnd = Color(0xFF111014);
   static const Color headerSubtitle = Color(0xFFC1C1CB);
 
   static const Color heat1 = Color(0xFF0E4429);
@@ -29,20 +30,20 @@ class ServicePalette {
       primary: primary,
       onPrimary: onPrimary,
       primaryContainer:
-          light ? const Color(0xFFE3EDFF) : const Color(0xFF2A3343),
+          light ? const Color(0xFFE3EDFF) : const Color(0xFF302838),
       onPrimaryContainer:
-          light ? const Color(0xFF24466F) : const Color(0xFFE4EEFF),
+          light ? const Color(0xFF443567) : const Color(0xFFE4EEFF),
       secondary: light ? const Color(0xFF457C92) : mint,
       onSecondary: light ? Colors.white : const Color(0xFF142D38),
       surface: light ? const Color(0xFFFFFFFF) : const Color(0xFF0F0F10),
       surfaceContainerLow:
-          light ? const Color(0xFFF8F8F9) : const Color(0xFF151517),
+          light ? const Color(0xFFF8F8F9) : const Color(0xFF151418),
       surfaceContainer:
-          light ? const Color(0xFFF2F2F4) : const Color(0xFF1B1B1E),
+          light ? const Color(0xFFF2F2F4) : const Color(0xFF1D1B22),
       surfaceContainerHigh:
-          light ? const Color(0xFFEAEAED) : const Color(0xFF232327),
+          light ? const Color(0xFFEAEAED) : const Color(0xFF26232D),
       surfaceContainerHighest:
-          light ? const Color(0xFFE0E0E5) : const Color(0xFF2D2D32),
+          light ? const Color(0xFFE0E0E5) : const Color(0xFF302C37),
       outlineVariant:
           light ? const Color(0xFFD5D5DD) : const Color(0xFF37373E),
       onSurface:

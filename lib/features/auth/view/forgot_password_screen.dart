@@ -111,7 +111,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 child: const Text(
                   'Вернуться ко входу',
                   style: TextStyle(
-                    color: AppTheme.pink,
+                    color: AppTheme.accent,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

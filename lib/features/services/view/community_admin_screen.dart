@@ -301,7 +301,7 @@ class _CommunityAdminScreenState extends State<CommunityAdminScreen> {
                         padding: const EdgeInsets.only(top: 13),
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: Color(0xFFFF808D)),
+                          style: const TextStyle(color: Color(0xFF9FC2FF)),
                         ),
                       ),
                     const SizedBox(height: 15),
@@ -719,7 +719,7 @@ class _CommunityAdminEditScreenState extends State<_CommunityAdminEditScreen> {
                   padding: const EdgeInsets.only(top: 13),
                   child: Text(
                     _error!,
-                    style: const TextStyle(color: Color(0xFFFF808D)),
+                    style: const TextStyle(color: Color(0xFF9FC2FF)),
                   ),
                 ),
               const SizedBox(height: 24),

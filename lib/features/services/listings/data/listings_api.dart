@@ -135,12 +135,41 @@ class ListingDraft {
   };
 }
 
+// A BARS 401 is not a network retry case: the phone must complete a fresh
+// login in the existing official BARS WebView before trying again.
+class _BarsLoginRequired implements Exception {
+  const _BarsLoginRequired(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 class ListingsApi {
   ListingsApi._();
   static final ListingsApi instance = ListingsApi._();
 
   String? _cookie;
   String? _csrf;
+  String? _sessionGroup;
+  Future<void>? _pendingEnsureSession;
+  DateTime? _retryBARSAfter;
+  String? _lastBARSError;
+  bool _mustLoginToBars = false;
+  int _barsLoginGeneration = 0;
+
+  /// Called only after the BARS WebView has successfully parsed and saved
+  /// the actual student profile (not on every WebView page load).
+  /// Invalidate any Campus session belonging to the previous BARS identity.
+  void barsLoginCompleted() {
+    _barsLoginGeneration++;
+    _mustLoginToBars = false;
+    _retryBARSAfter = null;
+    _lastBARSError = null;
+    _cookie = null;
+    _csrf = null;
+    _sessionGroup = null;
+  }
+
   String get _base => ApiConfig.baseUrl + '/services/listings';
   bool get hasSession => _cookie != null && _csrf != null;
 
@@ -177,11 +206,20 @@ class ListingsApi {
     final request = http.Request(method, Uri.parse(_base + path));
     request.headers.addAll(_headers(json: body != null, change: change));
     if (body != null) request.body = jsonEncode(body);
+    // BARS authentication verifies two independent protected pages.
+    // 17 seconds can expire before both 9-second upstream requests finish.
+    final timeout = path == '/bars-login'
+        ? const Duration(seconds: 120)
+        : const Duration(seconds: 17);
     final response = await http.Response.fromStream(
-      await request.send().timeout(const Duration(seconds: 17)),
-    ).timeout(const Duration(seconds: 17));
+      await request.send().timeout(timeout),
+    ).timeout(timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(_error(response));
+      final message = _error(response);
+      if (path == '/bars-login' && response.statusCode == 401) {
+        throw _BarsLoginRequired(message);
+      }
+      throw Exception(message);
     }
     return response;
   }
@@ -217,23 +255,83 @@ class ListingsApi {
     return CampusListing.fromJson(jsonDecode(utf8.decode(r.bodyBytes)));
   }
 
+  /// Multiple widgets can request Campus sessions simultaneously. Never
+  /// submit a burst of identical BARS verification requests on a failure.
+  /// A user-triggered "refreshBarsRole" bypasses the cooldown.
   Future<void> ensureSession({bool requireGroup = false}) async {
+    final pending = _pendingEnsureSession;
+    if (pending != null) {
+      await pending;
+    } else {
+      if (_mustLoginToBars) {
+        throw _BarsLoginRequired(_lastBARSError ??
+            'Войди в БАРС повторно через CampusApp.');
+      }
+      final now = DateTime.now();
+      if (_retryBARSAfter != null && now.isBefore(_retryBARSAfter!)) {
+        throw Exception(_lastBARSError ??
+            'Проверка БАРС временно недоступна. Повтори попытку позже.');
+      }
+      final generation = _barsLoginGeneration;
+      final running = _ensureSessionOnce();
+      _pendingEnsureSession = running;
+      try {
+        await running;
+        if (generation != _barsLoginGeneration) {
+          // A stale async session check must not replace a newly logged-in
+          // BARS account. The caller can retry with the new session.
+          _cookie = null;
+          _csrf = null;
+          _sessionGroup = null;
+          throw const _BarsLoginRequired('Обновилась сессия БАРС. Повтори запрос.');
+        }
+        _retryBARSAfter = null;
+        _lastBARSError = null;
+      } catch (error) {
+        if (generation == _barsLoginGeneration) {
+          _lastBARSError = error.toString().replaceFirst('Exception: ', '');
+          if (error is _BarsLoginRequired) {
+            _mustLoginToBars = true;
+            _retryBARSAfter = null;
+          } else {
+            _retryBARSAfter = DateTime.now().add(const Duration(seconds: 30));
+          }
+        }
+        rethrow;
+      } finally {
+        if (identical(_pendingEnsureSession, running)) {
+          _pendingEnsureSession = null;
+        }
+      }
+    }
+    // Never infer study-group access from an authenticated Campus cookie.
+    if (requireGroup && (_sessionGroup?.trim().isEmpty ?? true)) {
+      throw Exception('БАРС не подтвердил твою учебную группу');
+    }
+  }
+
+  Future<void> _ensureSessionOnce() async {
     if (hasSession) {
       try {
         final r = await _send('GET', '/session');
         final data = jsonDecode(utf8.decode(r.bodyBytes));
-        if (data is Map && data['authenticated'] == true &&
-            (!requireGroup || (data['group'] is String &&
-                (data['group'] as String).trim().isNotEmpty))) return;
-      } catch (_) {}
+        if (data is Map && data['authenticated'] == true) {
+          _sessionGroup = data['group'] is String
+              ? (data['group'] as String).trim() : null;
+          return;
+        }
+      } catch (_) {
+        // The existing Campus session may have expired.
+      }
     }
     _cookie = null;
     _csrf = null;
+    _sessionGroup = null;
     final address = Uri.tryParse(ApiConfig.baseUrl);
     if (address == null ||
         !(address.scheme == 'https' ||
-            (address.scheme == 'http' &&
-             ['127.0.0.1', 'localhost'].contains(address.host)))) {
+          (address.scheme == 'http' &&
+            ['127.0.0.1', 'localhost'].contains(address.host)))) {
       throw Exception(
         'Для публикации через БАРС требуется HTTPS или USB ADB Reverse '
         'с адресом 127.0.0.1:8000.',
@@ -248,7 +346,9 @@ class ListingsApi {
         cookie.value.isNotEmpty &&
         !cookie.value.contains(RegExp(r'[\r\n;]'))).toList();
     if (allowed.isEmpty) {
-      throw Exception('Сессия БАРС не найдена. Войди в БАРС в CampusApp.');
+      throw const _BarsLoginRequired(
+        'Сессия БАРС не найдена. Войди в БАРС через CampusApp.',
+      );
     }
     final cookieHeader = allowed
         .map((item) => item.name + '=' + item.value).join('; ');
@@ -268,10 +368,56 @@ class ListingsApi {
     }
     _cookie = rawCookie.split(';').first;
     _csrf = csrf;
-    if (requireGroup &&
-        (result is! Map || result['group'] is! String ||
-         (result['group'] as String).trim().isEmpty)) {
-      throw Exception('БАРС не подтвердил твою учебную группу');
+    _sessionGroup = result is Map && result['group'] is String
+        ? (result['group'] as String).trim() : null;
+  }
+
+  /// Hand existing BARS cookies to the authenticated backend to perform
+  /// a server-side roster refresh. Never read/parse student HTML in Flutter.
+  /// Cookies are not stored in the backend; transport must be TLS or ADB.
+  Future<String> barsCookiesForServer() async {
+    final address = Uri.tryParse(ApiConfig.baseUrl);
+    if (address == null ||
+        !(address.scheme == 'https' ||
+          (address.scheme == 'http' &&
+           ['127.0.0.1', 'localhost'].contains(address.host)))) {
+      throw Exception('Для синхронизации БАРС нужен HTTPS или USB ADB Reverse');
+    }
+    final cookies = await WebViewCookieManager().getCookies(
+      domain: Uri.parse('https://bars.mpei.ru/bars_web/ST/Student/ListStudent'),
+    );
+    final allowed = cookies.where((cookie) =>
+        RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(cookie.name) &&
+        cookie.value.isNotEmpty &&
+        !cookie.value.contains(RegExp(r'[\r\n;]'))).toList();
+    if (allowed.isEmpty) throw Exception('Сессия БАРС не найдена. Выполни вход.');
+    final cookieHeader = allowed.map((c) => '${c.name}=${c.value}').join('; ');
+    if (cookieHeader.length > 8192) throw Exception('Слишком много cookie БАРС');
+    return cookieHeader;
+  }
+
+  /// Recheck the user's existing BARS WebView cookies to obtain their
+  /// current university role. This never accepts a role/name from Flutter.
+  Future<void> refreshBarsRole() async {
+    final oldCookie = _cookie;
+    final oldCsrf = _csrf;
+    final oldGroup = _sessionGroup;
+    _cookie = null;
+    _csrf = null;
+    _sessionGroup = null;
+    // Explicit user action must be able to retry immediately.
+    _mustLoginToBars = false;
+    _retryBARSAfter = null;
+    _lastBARSError = null;
+    try {
+      await ensureSession(requireGroup: true);
+    } catch (_) {
+      // Keep using the previous CampusApp session for ordinary features
+      // if the external BARS role check is temporarily unavailable.
+      _cookie = oldCookie;
+      _csrf = oldCsrf;
+      _sessionGroup = oldGroup;
+      rethrow;
     }
   }
 

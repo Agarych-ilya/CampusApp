@@ -205,65 +205,13 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: 20,
+              bottom: 94,
               child: _PlaceCard(
                 place: _selectedPlace!,
               ),
             ),
 
-          if (_selectedPlace == null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 20,
-              child: Material(
-                color: theme.colorScheme.surface,
-                elevation: 4,
-                borderRadius: BorderRadius.circular(24),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary
-                              .withOpacity(0.10),
-                          borderRadius:
-                              BorderRadius.circular(15),
-                        ),
-                        child: Icon(
-                          Icons.school,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'НИУ «МЭИ»',
-                              style: TextStyle(
-                                fontWeight:
-                                    FontWeight.w900,
-                                fontSize: 16,
-                              ),
-                            ),
-                            SizedBox(height: 3),
-                            Text(
-                              'Нажми на корпус на карте',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+
         ],
       ),
     );

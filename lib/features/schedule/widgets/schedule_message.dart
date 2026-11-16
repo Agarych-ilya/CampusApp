@@ -29,7 +29,7 @@ class ScheduleMessage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 54, color: AppTheme.pink),
+            Icon(icon, size: 54, color: AppTheme.accent),
 
             const SizedBox(height: 16),
 
@@ -59,7 +59,7 @@ class ScheduleMessage extends StatelessWidget {
                 child: Text(
                   buttonText!,
                   style: const TextStyle(
-                    color: AppTheme.pink,
+                    color: AppTheme.accent,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../data/attendance_api.dart';
 import '../data/group_lesson_notes_api.dart';
 import '../data/lesson_grades_summary.dart';
 import '../data/lesson_kind.dart';
 import '../data/private_lesson_notes_storage.dart';
 import '../data/own_lesson_note_preview_storage.dart';
 import '../data/schedule_lesson.dart';
+import 'attendance_lesson_screen.dart';
 
 /// A bottom-sheet opened from a timetable lesson.
 class LessonDetailsSheet extends StatefulWidget {
@@ -15,6 +17,7 @@ class LessonDetailsSheet extends StatefulWidget {
     required this.lesson,
     required this.scrollController,
     this.notesApi,
+    this.attendanceApi,
     this.onNotesChanged,
   });
 
@@ -22,6 +25,7 @@ class LessonDetailsSheet extends StatefulWidget {
   final ScheduleLesson lesson;
   final ScrollController scrollController;
   final GroupLessonNotesApi? notesApi;
+  final AttendanceApi? attendanceApi;
   final VoidCallback? onNotesChanged;
 
   @override
@@ -33,6 +37,8 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
   final _privateStore = PrivateLessonNotesStorage();
   final _previewStore = OwnLessonNotePreviewStorage();
   late final GroupLessonNotesApi _notesApi;
+  late final AttendanceApi _attendanceApi;
+  late final Future<bool> _isVerifiedStarosta;
   late Future<LessonGradesSummary> _grades;
   Future<List<GroupLessonNote>>? _shared;
   bool _forGroup = false;
@@ -46,6 +52,8 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
   void initState() {
     super.initState();
     _notesApi = widget.notesApi ?? GroupLessonNotesApi();
+    _attendanceApi = widget.attendanceApi ?? AttendanceApi();
+    _isVerifiedStarosta = _checkStarostaRole();
     _grades = LessonGradesSummary.load(widget.lesson.subject);
     _loadPersonal();
   }
@@ -54,7 +62,25 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
   void dispose() {
     _noteController.dispose();
     if (widget.notesApi == null) _notesApi.dispose();
+    if (widget.attendanceApi == null) _attendanceApi.dispose();
     super.dispose();
+  }
+
+  // Never expose the attendance action until the backend confirms the user's
+  // role AND the exact lesson group. Failed/expired sessions are hidden too.
+  Future<bool> _checkStarostaRole() async {
+    try {
+      final identity = await _attendanceApi.session();
+      String normalized(String? group) => (group ?? '')
+          .trim().toUpperCase().replaceAll('A', 'А')
+          .replaceAll(RegExp(r'\s+'), '');
+      return identity.authenticated &&
+          identity.isStarosta &&
+          normalized(identity.group).isNotEmpty &&
+          normalized(identity.group) == normalized(widget.group);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Synchronize the local card preview after reading actual server notes.
@@ -381,7 +407,32 @@ class _LessonDetailsSheetState extends State<LessonDetailsSheet> {
           Text('Аудитория: ${widget.lesson.room}'),
         if (widget.lesson.teacher.trim().isNotEmpty)
           Text('Преподаватель: ${widget.lesson.teacher}'),
-        const SizedBox(height: 22),
+        // Show the journal button ONLY to a BARS-verified starosta of this
+        // group; regular students don't see the action at all.
+        FutureBuilder<bool>(
+          future: _isVerifiedStarosta,
+          builder: (context, snapshot) {
+            if (snapshot.data != true) {
+              return const SizedBox(height: 22);
+            }
+            return Padding(
+              padding: const EdgeInsets.only(top: 18, bottom: 22),
+              child: OutlinedButton.icon(
+                key: const ValueKey('open-attendance-journal'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AttendanceLessonScreen(
+                      group: widget.group,
+                      lesson: widget.lesson,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('Учебный журнал · посещаемость'),
+              ),
+            );
+          },
+        ),
         Text('Мои оценки по предмету',
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w800,
