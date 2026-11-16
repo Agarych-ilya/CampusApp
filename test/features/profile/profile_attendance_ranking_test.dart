@@ -12,6 +12,24 @@ class _GradeApiStub extends AttendanceApi {
   final GradeRanking groupData;
   final GradeRanking streamData;
   int queries = 0;
+  int publishes = 0;
+  int withdrawals = 0;
+  String? lastSemester;
+  List<GradeRankingSubject>? lastSubjects;
+
+  @override
+  Future<void> publishGradePoints(
+    String semester, List<GradeRankingSubject> subjects,
+  ) async {
+    publishes++;
+    lastSemester = semester;
+    lastSubjects = subjects;
+  }
+
+  @override
+  Future<void> withdrawGradePoints() async {
+    withdrawals++;
+  }
 
   @override
   Future<GradeRanking> gradeRanking({String scope = 'group'}) async {
@@ -126,6 +144,68 @@ void main() {
     expect(find.text('Участников: 0'), findsNWidgets(2));
     expect(find.text('13 / 13'), findsNothing);
     expect(find.text('—'), findsNWidgets(2));
+  });
+
+  testWidgets('publishing BARS scores requires an explicit confirmation',
+      (tester) async {
+    final api = _GradeApiStub(
+      const GradeRanking(
+        scope:'group', group:'А-03-23', semester:null,
+        total:13, participants:0, myPlace:null,
+        myAverage:null, published:false, entries:[],
+      ), _streamRanking,
+    );
+    addTearDown(api.dispose);
+    tester.view.physicalSize = const Size(430, 1050);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: GradeRankingScreen(
+        scope:'group', api:api, subjects: const [
+          BarsSubject(
+            name:'ТАУ', semester:'2026/2027 осенний',
+            attestation:'', credits:'', currentScore:'75,50',
+            finalGrade:'', controls:[],
+          ),
+        ],
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('score-ranking-publish')));
+    await tester.pumpAndSettle();
+    expect(api.publishes, 0); // No automatic sharing
+    expect(find.text('Опубликовать баллы?'), findsOneWidget);
+    await tester.tap(find.text('Опубликовать'));
+    await tester.pumpAndSettle();
+    expect(api.publishes, 1);
+    expect(api.lastSemester, '2026/2027 осенний');
+    expect(api.lastSubjects!.single.points, 75.5);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('participant can withdraw their points from both rankings',
+      (tester) async {
+    final api = _GradeApiStub(_groupRanking, _streamRanking);
+    addTearDown(api.dispose);
+    tester.view.physicalSize = const Size(430, 1050);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: GradeRankingScreen(scope:'group', api:api, subjects: const []),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('score-ranking-delete')));
+    await tester.pumpAndSettle();
+    expect(api.withdrawals, 0);
+    await tester.tap(find.text('Удалить'));
+    await tester.pumpAndSettle();
+    expect(api.withdrawals, 1);
   });
 
   test('read local BARS current score for the newest semester only', () {
