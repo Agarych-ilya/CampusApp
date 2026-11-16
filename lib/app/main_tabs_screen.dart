@@ -81,9 +81,14 @@ class CampusGlassDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    // The map is bright even when the app uses a dark theme.
+    // Use darker glass and high-contrast icons on this tab only.
+    final onMap = currentIndex == 1;
     const lavender = Color(0xFFB4A0FA);
-    final idle = dark ? const Color(0xFFACABB7)
-        : const Color(0xFF77717F);
+    final idle = onMap
+        ? const Color(0xFFE9E6F0)
+        : dark ? const Color(0xFFACABB7)
+            : const Color(0xFF77717F);
     return SafeArea(
       top: false,
       minimum: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -96,13 +101,18 @@ class CampusGlassDock extends StatelessWidget {
             height: 60,
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             decoration: BoxDecoration(
-              // Soft translucent glass; underlying map remains visible.
-              color: dark ? const Color(0x451B1922)
-                  : const Color(0x83F9F7FF),
+              // Dark translucent glass only over the bright map.
+              // Other tabs keep the previous semi-transparent surface.
+              color: onMap
+                  ? const Color(0xCF17151E)
+                  : dark ? const Color(0x451B1922)
+                      : const Color(0x83F9F7FF),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
-                color: dark ? const Color(0x33FFFFFF)
-                    : const Color(0x66FFFFFF),
+                color: onMap
+                    ? const Color(0x66FFFFFF)
+                    : dark ? const Color(0x33FFFFFF)
+                        : const Color(0x66FFFFFF),
                 width: 0.8,
               ),
             ),
@@ -129,8 +139,9 @@ class CampusGlassDock extends StatelessWidget {
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: currentIndex == index
-                                  ? (dark ? const Color(0x87473860)
-                                      : const Color(0x9AE5DEFA))
+                                  ? (onMap ? const Color(0xB34A3B6B)
+                                      : dark ? const Color(0x87473860)
+                                          : const Color(0x9AE5DEFA))
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(28),
                             ),
