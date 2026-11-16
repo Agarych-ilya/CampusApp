@@ -260,7 +260,7 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Container(
-                      key: ValueKey('score-ranking-${entry.place}'),
+                      key: ValueKey('score-ranking-${entry.group}-${entry.displayName}'),
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: entry.mine
