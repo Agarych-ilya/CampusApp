@@ -67,7 +67,9 @@ class _GradeRankingScreenState extends State<GradeRankingScreen> {
   }
 
   Future<void> _reload() async {
-    setState(() => _future = widget.api.gradeRanking(scope: widget.scope));
+    setState(() {
+      _future = widget.api.gradeRanking(scope: widget.scope);
+    });
     try { await _future; } catch (_) {}
   }
 
