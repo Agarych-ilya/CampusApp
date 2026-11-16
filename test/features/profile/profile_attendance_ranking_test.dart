@@ -185,7 +185,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.publishes, 1);
     expect(api.queries, greaterThanOrEqualTo(2));
-    expect(api.lastSemester, '2026/2027 осенний');
+    expect(api.lastSemester, 'Все семестры');
     expect(api.lastSubjects!.single.points, 5);
     expect(api.lastSubjects!.single.weight, 25);
     expect(tester.takeException(), isNull);
@@ -247,6 +247,24 @@ void main() {
     expect(snapshot.subjects.last.weight,20);
     // Old 2.65 from currentScore must never be used as the ranking value.
     expect(snapshot.average, isNot(2.65));
+  });
+
+  test('published weighted scores use the same effective retake grade', () {
+    const subjects = [
+      BarsSubject(
+        name:'ТАУ',semester:'2026/2027 осенний',
+        attestation:'',credits:'',currentScore:'2.65',
+        finalGrade:'',
+        controls: [
+          BarsControl(title:'Первый КМ',weight:'30',deadline:'',grade:'2/5'),
+          BarsControl(title:'Второй КМ',weight:'70',deadline:'',grade:'4'),
+        ],
+      ),
+    ];
+    final snapshot=GradeScoreSnapshot.parse(subjects)!;
+    expect(snapshot.subjects.length,2);
+    expect(snapshot.subjects.first.points,3.5);
+    expect(snapshot.average,closeTo(3.85,1e-10));
   });
 
   test('unweighted BARS controls do not fabricate a 0 grade', () {
