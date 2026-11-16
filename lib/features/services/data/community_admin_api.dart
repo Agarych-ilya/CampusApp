@@ -323,8 +323,10 @@ class CommunityAdminApi {
 
   /// Use the existing BARS-verified moderator cookie and CSRF token.
   Future<Map<String, dynamic>> mapMutation(
-    String method, String suffix, {Map<String, dynamic>? body},
-  ) async {
+    String method,
+    String suffix, {
+    Map<String, dynamic>? body,
+  }) async {
     if (!['POST', 'PATCH', 'DELETE'].contains(method)) {
       throw ArgumentError('Недопустимый метод карты');
     }
