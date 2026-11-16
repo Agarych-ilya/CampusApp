@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ruz_lookup_screen.dart';
 import '/features/services/booking/data/classroom_booking_api.dart';
 import '/features/services/booking/view/classroom_booking_screen.dart';
 
@@ -654,6 +655,16 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
+                ),
+                IconButton(
+                  key: const ValueKey('schedule-ruz-search'),
+                  tooltip: 'Преподаватели и аудитории',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RuzLookupScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.search_outlined, size: 21),
                 ),
                 IconButton(
                   tooltip: 'Обновить расписание',
